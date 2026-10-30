@@ -258,6 +258,15 @@ export class SessionStore {
     this.schedulePersist();
   }
 
+  /** f031-#13: a different session was pinned (/resume) — the old
+   * session's context/model/totals no longer describe it. */
+  resetStats(chatId: string): void {
+    const entry = this.data[chatId];
+    if (!entry) return;
+    entry.stats = this.#freshStats();
+    this.schedulePersist();
+  }
+
   /** Per-scope idle-timeout override. `undefined` means no override set. */
   getIdleTimeoutMinutes(chatId: string): number | undefined {
     return this.data[chatId]?.idleTimeoutMinutes;

@@ -663,7 +663,7 @@ async function applyResume(sessionId: string, ctx: CommandContext): Promise<void
           policyFingerprint: ctx.sessionCatalogIdentity.policyFingerprint,
           sessionId: resolved.sessionId!,
         });
-        ctx.sessions.set(ctx.scope, resolved.sessionId!, ctx.sessionCatalogIdentity.cwdRealpath);
+        pinResumedSession(ctx, resolved.sessionId!, ctx.sessionCatalogIdentity.cwdRealpath);
       }
       await reply(ctx, RESUME_APPLIED_REPLY);
       return;
@@ -679,7 +679,7 @@ async function applyResume(sessionId: string, ctx: CommandContext): Promise<void
     }
     ctx.activeRuns.interrupt(ctx.scope);
     if (ctx.sessionCatalogIdentity.agentId === 'claude') {
-      ctx.sessions.set(ctx.scope, sessionId, ctx.sessionCatalogIdentity.cwdRealpath);
+      pinResumedSession(ctx, sessionId, ctx.sessionCatalogIdentity.cwdRealpath);
     }
     await reply(ctx, RESUME_APPLIED_REPLY);
     return;
@@ -696,8 +696,15 @@ async function applyResume(sessionId: string, ctx: CommandContext): Promise<void
     return;
   }
   ctx.activeRuns.interrupt(ctx.scope);
-  ctx.sessions.set(ctx.scope, sessionId, cwd);
+  pinResumedSession(ctx, sessionId, cwd);
   await reply(ctx, RESUME_APPLIED_REPLY);
+}
+
+/** f031-#13: pin a resumed session; a different one starts fresh stats. */
+function pinResumedSession(ctx: CommandContext, sessionId: string, cwd: string): void {
+  const prevId = ctx.sessions.getRaw(ctx.scope)?.sessionId;
+  ctx.sessions.set(ctx.scope, sessionId, cwd);
+  if (prevId !== sessionId) ctx.sessions.resetStats(ctx.scope);
 }
 
 function issueResumeCandidate(
@@ -924,8 +931,10 @@ async function handleStop(args: string, ctx: CommandContext): Promise<void> {
         : `未找到正在运行的任务：\`${scope}\`。`,
     );
   }
-  // No reply for the current IM scope: if there was a run, its in-flight
-  // render loop will mark the card as interrupted and re-render.
+  // No reply for the current IM scope when a run was stopped: its in-flight
+  // render loop marks the card as interrupted. f031-#14: with nothing
+  // running, say so instead of leaving the user with silence.
+  if (!targetScope && !ok) await reply(ctx, '当前没有正在运行的任务。');
 }
 
 async function handleTimeout(args: string, ctx: CommandContext): Promise<void> {

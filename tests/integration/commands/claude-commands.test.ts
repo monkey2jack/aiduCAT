@@ -133,6 +133,28 @@ describe('Claude slash command visible behavior', () => {
     expect(lastMarkdown(h.channel)).toContain('已完成');
   });
 
+  it('f031-#13 /resume use drops the previous session\'s /status numbers', async () => {
+    const h = await createHarness();
+    h.workspaces.setCwd('chat-1', h.tmp.workspace);
+    h.sessions.set('chat-1', 'sess-old', h.tmp.workspace);
+    h.sessions.recordUsage('chat-1', { inputTokens: 4386, cachedInputTokens: 151_200, cacheCreationInputTokens: 1_200 });
+    h.sessions.recordModel('chat-1', 'old-model');
+    expect(h.sessions.getRaw('chat-1')?.stats?.contextTokens).toBe(156_786);
+
+    await expect(h.run('/resume use sess-1234567890')).resolves.toBe(true);
+
+    const st = h.sessions.getRaw('chat-1')?.stats;
+    expect(st?.contextTokens).toBeUndefined();
+    expect(st?.model).toBeUndefined();
+    expect(h.sessions.resumeFor('chat-1', h.tmp.workspace)).toBe('sess-1234567890');
+  });
+
+  it('f031-#14 /stop with nothing running says so instead of staying silent', async () => {
+    const h = await createHarness();
+    await expect(h.run('/stop')).resolves.toBe(true);
+    expect(lastMarkdown(h.channel)).toContain('没有正在运行的任务');
+  });
+
   it('handles /status and /help with cards', async () => {
     const h = await createHarness();
     await writeLarkCliTarget(h, {
