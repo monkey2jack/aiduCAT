@@ -205,6 +205,9 @@ const handlers: Record<string, Handler> = {
   '/meeting': handleMeeting,
 };
 
+/** f031-func-#4: every registered slash command (/help must list them all). */
+export const REGISTERED_COMMANDS: readonly string[] = Object.freeze(Object.keys(handlers));
+
 /**
  * Commands that can mutate credentials, lifecycle, filesystem reach, or
  * surface sensitive runtime state. Gated by unified access policy; runtime
