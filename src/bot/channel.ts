@@ -42,6 +42,7 @@ import {
   getRunToolTimeoutMs,
   getShowToolCalls,
 } from '../config/schema';
+import type { KeystorePaths } from '../config/keystore';
 import { resolveAppSecret } from '../config/secret-resolver';
 import { log, reportMetric, withTrace } from '../core/logger';
 import { MediaCache, type LocalAttachment } from '../media/cache';
@@ -186,7 +187,7 @@ export interface StartChannelDeps {
   sessionCatalog?: SessionCatalog;
   workspaces: WorkspaceStore;
   controls: Controls;
-  appPaths?: Pick<AppPaths, 'secretsFile' | 'keystoreSaltFile' | 'mediaDir'>;
+  appPaths?: KeystorePaths & Pick<AppPaths, 'mediaDir'>;
 }
 
 export async function startChannel(deps: StartChannelDeps): Promise<BridgeChannel> {
