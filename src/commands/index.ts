@@ -2050,7 +2050,12 @@ async function showConfigForm(ctx: CommandContext): Promise<void> {
   // Surface the local web console URL when the supervisor (`--web-ui`) is
   // running — read from the host sidecar and confirm the owning process is
   // alive so we don't advertise a stale address.
-  const sidecar = await readUiSidecar(commandProfilePaths(ctx).hostUiFile).catch(() => undefined);
+  // f031-sec-M2: never in a group (everyone there would see it); in a DM the
+  // card shows the token-free address only (config-card masks it).
+  const sidecar =
+    ctx.chatMode === 'p2p'
+      ? await readUiSidecar(commandProfilePaths(ctx).hostUiFile).catch(() => undefined)
+      : undefined;
   const consoleUrl = sidecar && isAlive(sidecar.pid) ? sidecar.url : undefined;
   const card = configFormCard({
     agentKind: ctx.controls.profileConfig.agentKind,

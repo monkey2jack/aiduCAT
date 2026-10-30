@@ -19,10 +19,12 @@ const base: ConfigFormOpts = {
 };
 
 describe('configFormCard console URL', () => {
-  it('shows the web console URL when one is running', () => {
+  it('f031-sec-M2 says the console is running without leaking its token', () => {
     const url = 'http://127.0.0.1:53219/?token=abc123';
     const card = configFormCard({ ...base, consoleUrl: url });
-    expect(JSON.stringify(card)).toContain(url);
+    expect(JSON.stringify(card)).not.toContain('abc123');
+    expect(JSON.stringify(card)).toContain('http://127.0.0.1:53219/');
+    expect(JSON.stringify(card)).toContain('aiduCAT ui');
     expect(JSON.stringify(card)).toContain('Web 控制台');
   });
 
