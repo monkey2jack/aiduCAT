@@ -144,12 +144,17 @@ describe('MeetingManager routing', () => {
     expect(m.list()).toHaveLength(0);
   });
 
-  it('auto-joins on invite when configured', async () => {
+  it('auto-joins on invite when configured (owner/admin inviter, f031-sec-M3)', async () => {
     const { channel, handlers } = fakeChannel();
-    const m = manager({ channel, config: cfg({ autoJoinOnInvite: true }) });
+    const m = new MeetingManager({
+      client: fakeClient(),
+      config: () => cfg({ autoJoinOnInvite: true }),
+      channel,
+      canAutoJoin: (id) => id === 'ou_owner',
+    });
     m.attachPush();
 
-    handlers.get(VC_BOT_EVENTS.invited)?.({ meeting: { meeting_no: '123456789' } });
+    handlers.get(VC_BOT_EVENTS.invited)?.({ meeting: { meeting_no: '123456789' }, operator: { open_id: 'ou_owner' } });
 
     await vi.waitFor(() => expect(m.list()).toHaveLength(1));
     expect(m.list()[0]?.meetingNo).toBe('123456789');

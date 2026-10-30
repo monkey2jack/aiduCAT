@@ -2557,7 +2557,12 @@ async function handleMeeting(args: string, ctx: CommandContext): Promise<void> {
           question,
           // Typed privately -> answer only to the caller. Broadcasting a
           // summary somebody asked for in a DM would surprise the meeting.
-          { deliver: 'caller' },
+          {
+            deliver: 'caller',
+            // /meeting is admin-gated: the caller is the owner or an admin.
+            access: canRunAdminCommand(ctx.controls.profileConfig, ctx.controls, ctx.msg.senderId),
+            actorId: ctx.msg.senderId,
+          },
         );
         await reply(ctx, answer || '（没有产生回答）');
       } catch (err) {

@@ -49,6 +49,7 @@ import {
   toPromptAttachment,
 } from '../media/attachment';
 import {
+  canRunAdminCommand,
   canUseDm,
   canUseGroup,
   noteOwnerTenant,
@@ -458,6 +459,9 @@ export async function startChannel(deps: StartChannelDeps): Promise<BridgeChanne
       config: meetingConfig,
       botOpenId: () => channel.botIdentity?.openId,
       channel,
+      // f031-sec-M3: only an owner/admin invite pulls the bot into a meeting.
+      canAutoJoin: (inviterId) =>
+        Boolean(inviterId) && canRunAdminCommand(controls.profileConfig, controls, inviterId!).ok,
       // Meeting over: optionally summarize to IM (config-gated inside).
       onEnded: (session) =>
         void summarizeEndedMeeting({
