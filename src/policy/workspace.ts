@@ -1,6 +1,6 @@
 import { realpath, stat } from 'node:fs/promises';
 import { homedir, tmpdir } from 'node:os';
-import { basename, dirname, resolve } from 'node:path';
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 
 export type WorkingDirectoryRejectReason =
   | 'empty-requested-cwd'
@@ -12,7 +12,8 @@ export type WorkingDirectoryRejectReason =
   | 'system-root'
   | 'temp-root'
   | 'broad-user-folder'
-  | 'volume-root';
+  | 'volume-root'
+  | 'sensitive-dir';
 
 export type WorkingDirectoryResolveResult =
   | { ok: true; requestedCwd: string; cwdRealpath: string }
@@ -109,5 +110,42 @@ function classifyHighRiskWorkingDirectory(
     return reject('volume-root', requestedCwd, '不能把磁盘卷根目录设为工作目录，请选择更具体的子目录。');
   }
 
+  if (sensitiveRoots(home).some((root) => isWithin(real, root))) {
+    return reject('sensitive-dir', requestedCwd, '这是凭据或系统目录（含子目录），不能设为工作目录。');
+  }
+
   return undefined;
+}
+
+/**
+ * f031-sec-L2: directories that hold credentials or system state. Their whole
+ * subtree is off-limits as a cwd (the old list only matched exact roots, so
+ * `/etc/ssh` or `~/.ssh` were accepted).
+ */
+const HOME_SENSITIVE = [
+  '.ssh', '.gnupg', '.aws', '.azure', '.kube', '.docker', '.netrc',
+  '.lark-channel', '.lark-cli', '.claude', '.codex',
+  join('.config', 'gh'), join('.config', 'gcloud'), join('.config', 'lark-cli'),
+  join('Library', 'Keychains'),
+];
+const SYSTEM_SENSITIVE = ['/etc', '/proc', '/sys', '/dev', '/boot', '/private/etc', '/private/var/root'];
+
+function sensitiveRoots(home: string): string[] {
+  const roots = HOME_SENSITIVE.map((rel) => join(home, rel));
+  for (const env of ['LARK_CHANNEL_HOME', 'CLAUDE_CONFIG_DIR', 'CODEX_HOME']) {
+    const v = process.env[env]?.trim();
+    if (v && isAbsolute(v)) roots.push(resolve(v));
+  }
+  if (process.platform !== 'win32') {
+    roots.push(...SYSTEM_SENSITIVE);
+    // root's home, unless this process *is* running with it as $HOME
+    if (!isWithin(home, '/root')) roots.push('/root');
+  }
+  return roots;
+}
+
+function isWithin(child: string, parent: string): boolean {
+  if (child === parent) return true;
+  const rel = relative(parent, child);
+  return rel !== '' && !rel.startsWith('..') && !isAbsolute(rel) && !rel.startsWith(`..${sep}`);
 }
