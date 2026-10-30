@@ -13,6 +13,9 @@ let root = '';
 describe('f031-sec-M4 / L8 private log + cache files, credential shapes masked', () => {
   beforeEach(async () => {
     root = await mkdtemp(join(tmpdir(), 'f031-sec-logs-'));
+    // every test logs inside its own root (a stale dir from a previous test
+    // would otherwise be recreated by a late log line)
+    configureLogger({ logsDir: join(root, 'default-logs') });
     vi.spyOn(console, 'warn').mockImplementation(() => {});
     vi.spyOn(console, 'log').mockImplementation(() => {});
   });
