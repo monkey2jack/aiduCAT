@@ -45,6 +45,34 @@ describe('IM run flow', () => {
     expect(h.agent.runOptions).toEqual([]);
   });
 
+  it('f031-sec-#5 personal + user-default pins non-owner runs to the bot identity', async () => {
+    for (const [reason, expectBot] of [['allowed-user', true], ['owner', false]] as const) {
+      const h = await createHarness();
+      h.workspaces.setCwd('chat-1', h.tmp.workspace);
+      const profileConfig = {
+        ...h.profileConfig,
+        larkCli: { ...h.profileConfig.larkCli, identityPreset: 'user-default' as const },
+      };
+      const result = await startRunFlow({
+        scopeId: 'chat-1',
+        scope: { source: 'im', chatType: 'p2p', chatId: 'chat-1', actorId: 'ou_user' },
+        prompt: 'hello',
+        attachments: [],
+        access: { ok: true, reason },
+        capability: claudeCapability(profileConfig),
+        profileConfig,
+        sessions: h.sessions,
+        workspaces: h.workspaces,
+        executor: h.executor,
+        now: 1000,
+      } as Parameters<typeof startRunFlow>[0]);
+      expect(result.ok).toBe(true);
+      const env = (h.agent.runOptions[0] as { envOverrides?: Record<string, string> }).envOverrides ?? {};
+      expect(env.LARKSUITE_CLI_DEFAULT_AS).toBe(expectBot ? 'bot' : undefined);
+      expect(env.LARKSUITE_CLI_STRICT_MODE).toBe(expectBot ? 'bot' : undefined);
+    }
+  });
+
   it('submits cwd through RunExecutor and resumes matching sessions', async () => {
     const h = await createHarness();
     const workspaceRealpath = await realpath(h.tmp.workspace);

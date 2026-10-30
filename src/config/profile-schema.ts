@@ -200,6 +200,19 @@ export function effectiveLarkCliIdentity(
   return profile.mode === 'team' ? 'bot-only' : profile.larkCli.identityPreset;
 }
 
+/**
+ * f031-sec-#5: per-run lark-cli identity. With `user-default` the agent could
+ * act as the owner's Feishu user; a run started by anyone but the owner is
+ * pinned to the bot identity for that run only.
+ */
+export function runLarkCliIdentityEnv(
+  profile: Pick<ProfileConfig, 'mode' | 'larkCli'>,
+  actorIsOwner: boolean,
+): Record<string, string> {
+  if (effectiveLarkCliIdentity(profile) !== 'user-default' || actorIsOwner) return {};
+  return { LARKSUITE_CLI_STRICT_MODE: 'bot', LARKSUITE_CLI_DEFAULT_AS: 'bot' };
+}
+
 export interface RootConfig {
   schemaVersion: 2;
   activeProfile: string;

@@ -2,7 +2,7 @@ import type { AgentCapability } from '../agent/capability';
 import { compactPct } from './context-window';
 import { resolveModelArg } from '../agent/models';
 import type { AgentEvent } from '../agent/types';
-import type { ProfileConfig } from '../config/profile-schema';
+import { runLarkCliIdentityEnv, type ProfileConfig } from '../config/profile-schema';
 import type { AccessDecision } from '../policy/access';
 import {
   evaluateRunPolicy,
@@ -177,6 +177,11 @@ export async function startRunFlow(input: StartRunFlowInput): Promise<StartRunFl
             Math.round((win * pct) / 100),
           );
         }
+        // f031-sec-#5: non-owner runs never get the owner's Feishu user identity.
+        Object.assign(
+          base,
+          runLarkCliIdentityEnv(input.profileConfig, input.access.reason === 'owner'),
+        );
         return base;
       })(),
       // aiduCAT: forward the stored reasoning effort (claude forwards as --effort,
