@@ -100,6 +100,7 @@ import { fetchKnownChats, type KnownChat } from '../bot/lark-info';
 import { describeMeetingError, type MeetingManager } from '../meeting/manager';
 import { isMeetingNo } from '../meeting/api';
 import { answerInMeeting, meetingScopeId } from '../meeting/orchestrator';
+import { fenceBlock } from '../card/sanitize';
 import type { MeetingSession } from '../meeting/session';
 import { hasStructuredLarkCliUserAuth } from '../lark-cli/identity-policy';
 
@@ -2502,9 +2503,8 @@ async function handleMeeting(args: string, ctx: CommandContext): Promise<void> {
         ctx,
         [
           `字幕缓冲共 ${lines.length} 条${tail.length < lines.length ? `，以下是最近 ${tail.length} 条` : ''}：`,
-          '```',
-          ...tail,
-          '```',
+          // f031-sec-L5: participants' words cannot close the fence or @all.
+          fenceBlock(tail.join('\n')),
         ].join('\n'),
       );
       return;

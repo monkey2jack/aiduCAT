@@ -18,6 +18,25 @@ const BR_RE = /<br\s*\/?>/gi;
 // A tag must start with a letter (or `/letter`), so `1 < 2 > 0` survives.
 const TAG_RE = /<\/?[a-zA-Z][a-zA-Z0-9-]*(?:\s[^<>]*)?\/?>/g;
 
+// f031-sec-L5: `<at id="all">` / `<at user_id="all">` would ping the whole group.
+const AT_ALL_RE = /<at\b[^>]*?\b(?:user_id|open_id|id)\s*=\s*["']?all["']?[^>]*>(?:[\s\S]*?<\/at>)?/gi;
+
+/** Replace every @all tag with inert text (code included). Person mentions stay. */
+export function defuseMentionAll(text: string): string {
+  return text.replace(AT_ALL_RE, '@所有人');
+}
+
+/**
+ * f031-sec-L5: fence untrusted text so it cannot close the block early — the
+ * fence is one backtick longer than the longest backtick run inside.
+ */
+export function fenceBlock(text: string, lang = ''): string {
+  const body = defuseMentionAll(text);
+  const longest = Math.max(0, ...(body.match(/`+/g) ?? []).map((run) => run.length));
+  const fence = '`'.repeat(Math.max(3, longest + 1));
+  return `${fence}${lang}\n${body}\n${fence}`;
+}
+
 export const TRUNCATION_NOTE = '\n\n…（已截断，全文见下方纯文本消息）';
 
 function isHttp(url: string): boolean {
@@ -50,7 +69,7 @@ function splitCode(md: string): Array<{ code: boolean; text: string }> {
 export function sanitizeCardMarkdown(md: string, opts: { withLinks?: boolean } = {}): string {
   const withLinks = opts.withLinks ?? true;
   // f031-sec-#4: credential-shaped strings never reach a card (code included).
-  return redactSecretShapes(splitCode(md)
+  return redactSecretShapes(splitCode(defuseMentionAll(md))
     .map((seg) => {
       // Images are converted everywhere, code included: it is unclear whether
       // Feishu's img_key check skips code, and an image is never load-bearing there.
@@ -68,7 +87,7 @@ export function sanitizeCardMarkdown(md: string, opts: { withLinks?: boolean } =
 
 /** Same cleaning for the plain-text fallback message: images become `alt (url)`. */
 export function sanitizePlainText(md: string): string {
-  const t = md
+  const t = defuseMentionAll(md)
     .replace(IMAGE_RE, (_m, alt: string, url: string) =>
       isHttp(url) ? `${alt.trim() || '图片'} (${url})` : alt.trim() || '图片',
     )
