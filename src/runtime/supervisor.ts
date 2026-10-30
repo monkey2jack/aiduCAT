@@ -66,6 +66,15 @@ class ManagedProfile {
   entry!: ProcessEntry;
   startedAt = '';
   private restarting = false;
+  /**
+   * f031-stab-#296: the ONE live config every Controls of this profile reads
+   * and writes. A reconnect builds a new Controls for the new channel while
+   * the old listener can still deliver events (until its socket really
+   * closes, or for good if its disconnect failed); with per-object state an
+   * /invite handled on one listener never reached the other, so group
+   * messages kept being denied until a restart (upstream #296).
+   */
+  private live!: { cfg: AppConfig; profileConfig: ProfileConfig; knownChats: Controls['knownChats'] };
 
   constructor(
     readonly profile: string,
@@ -110,7 +119,8 @@ class ManagedProfile {
         version: pkg.version,
         registryFile: this.appPaths.userRegistryFile,
       });
-      this.controls = this.makeControls(this.appPaths, this.cfg, this.profileConfig);
+      this.live = { cfg: this.cfg, profileConfig: this.profileConfig, knownChats: [] };
+      this.controls = this.makeControls(this.appPaths);
       this.bridge = await this.startChannelFn({
         cfg: this.cfg,
         agent: this.agent,
@@ -165,24 +175,35 @@ class ManagedProfile {
     };
   }
 
-  private makeControls(
-    currentPaths: AppPaths,
-    currentCfg: AppConfig,
-    currentProfileConfig: ProfileConfig,
-  ): Controls {
+  private makeControls(currentPaths: AppPaths): Controls {
     const self = this;
     const currentControls: Controls = {
       profile: currentPaths.profile,
-      profileConfig: currentProfileConfig,
+      get profileConfig() {
+        return self.live.profileConfig;
+      },
+      set profileConfig(next) {
+        self.live.profileConfig = next;
+      },
       ownerRefreshState: 'unknown',
-      knownChats: [],
+      get knownChats() {
+        return self.live.knownChats;
+      },
+      set knownChats(next) {
+        self.live.knownChats = next;
+      },
       async refreshOwner(channelOverride) {
         const target = channelOverride ?? self.bridge?.channel;
         if (!target) return;
         await refreshOwnerControls(currentControls, target, currentControls.cfg.accounts.app.id);
       },
       configPath: self.configPath,
-      cfg: currentCfg,
+      get cfg() {
+        return self.live.cfg;
+      },
+      set cfg(next) {
+        self.live.cfg = next;
+      },
       processId: self.entry.id,
       async exit() {
         // `/exit` from chat stops THIS profile's channel; the supervisor lives on.
@@ -201,6 +222,7 @@ class ManagedProfile {
     this.restarting = true;
     let nextAppLock: AcquiredRuntimeLock | undefined;
     try {
+      const liveBefore = { cfg: this.live.cfg, profileConfig: this.live.profileConfig };
       const nextRuntime = await resolveProfileRuntime({
         config: this.configPath,
         profile: this.appPaths.profile,
@@ -224,7 +246,13 @@ class ManagedProfile {
           nextRuntime.profileConfig.agentKind,
         );
       }
-      const nextControls = this.makeControls(nextRuntime.appPaths, next, nextRuntime.profileConfig);
+      // Refresh the shared live config from disk — unless a save landed while
+      // we were reading (then the in-memory value is already the newer one).
+      if (this.live.cfg === liveBefore.cfg) this.live.cfg = next;
+      if (this.live.profileConfig === liveBefore.profileConfig) {
+        this.live.profileConfig = nextRuntime.profileConfig;
+      }
+      const nextControls = this.makeControls(nextRuntime.appPaths);
       const nextBridge = await this.startChannelFn({
         cfg: next,
         agent: nextAgent,
