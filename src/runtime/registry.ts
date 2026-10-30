@@ -80,9 +80,13 @@ export function isAlive(pid: number): boolean {
   }
 }
 
-/** Read the registry without pruning or rewriting it. */
+/**
+ * Read the registry and drop entries whose process is gone (upstream #290:
+ * `ps` used to list crashed bots as running). Read-only: the file is not
+ * rewritten here; the next register/unregister/updateEntry prunes it.
+ */
 export function readAndPrune(path: string = paths.processesFile): ProcessEntry[] {
-  return readRaw(path).entries;
+  return readRaw(path).entries.filter((e) => isAlive(e.pid));
 }
 
 async function writeAtomic(entries: ProcessEntry[], path: string): Promise<void> {

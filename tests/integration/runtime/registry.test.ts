@@ -24,7 +24,7 @@ afterEach(async () => {
 });
 
 describe('process registry', () => {
-  it('read path does not prune or rewrite stale entries', async () => {
+  it('read path hides dead pids but does not rewrite the file (f031-stab-#290)', async () => {
     const root = await makeRoot();
     const registryFile = join(root, 'registry', 'processes.json');
     const body = {
@@ -38,7 +38,7 @@ describe('process registry', () => {
 
     const live = readAndPrune(registryFile);
 
-    expect(live.map((item) => item.id)).toEqual(['dead', 'self']);
+    expect(live.map((item) => item.id)).toEqual(['self']);
     expect(await readFile(registryFile, 'utf8')).toBe(before);
   });
 
