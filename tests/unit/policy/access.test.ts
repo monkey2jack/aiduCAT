@@ -74,12 +74,13 @@ describe('access policy', () => {
     expect(canUseDm(byAdmin, ownerControls, 'ou_other').ok).toBe(true);
   });
 
-  it('fails closed for groups unless owner, admin, or allowedChats includes the chat', () => {
+  it('fails closed for groups unless owner, admin, or allowedChats includes the chat and the sender is allowlisted (f031-sec-#3)', () => {
     const closed = profileWithAccess();
     expect(canUseGroup(closed, ownerControls, 'chat_allowed', 'ou_other').ok).toBe(false);
 
-    const allowed = profileWithAccess({ allowedChats: ['chat_allowed'] });
+    const allowed = profileWithAccess({ allowedChats: ['chat_allowed'], allowedUsers: ['ou_other'] });
     expect(canUseGroup(allowed, ownerControls, 'chat_allowed', 'ou_other').ok).toBe(true);
+    expect(canUseGroup(allowed, ownerControls, 'chat_allowed', 'ou_stranger').ok).toBe(false);
     expect(canUseGroup(allowed, ownerControls, 'chat_other', 'ou_other').ok).toBe(false);
   });
 
@@ -102,18 +103,21 @@ describe('access policy', () => {
     expect(canRunAdminCommand(withAdmin, ownerControls, 'ou_admin').ok).toBe(true);
   });
 
-  it('opens usage to everyone in team mode without touching admin gating', () => {
+  it('opens usage to the home tenant in team mode without touching admin gating (f031-sec-#3)', () => {
     const team = profileWithAccess({}, 'team');
+    const homeControls = { ...ownerControls, homeTenantKey: 't_home' };
+    const home = { senderType: 'user', tenantKey: 't_home' };
 
-    // Anyone can use DMs and groups — no allowlist needed.
-    expect(canUseDm(team, ownerControls, 'ou_stranger')).toEqual({
+    // Anyone of the bot's own tenant can use DMs and groups — no allowlist needed.
+    expect(canUseDm(team, homeControls, 'ou_stranger', home)).toEqual({
       ok: true,
       reason: 'allowed-team',
     });
-    expect(canUseGroup(team, ownerControls, 'chat_random', 'ou_stranger')).toEqual({
+    expect(canUseGroup(team, homeControls, 'chat_random', 'ou_stranger', home)).toEqual({
       ok: true,
       reason: 'allowed-team',
     });
+    expect(canUseDm(team, homeControls, 'ou_stranger', { tenantKey: 't_ext' }).ok).toBe(false);
 
     // Admin/sensitive commands are still owner/admin-gated.
     expect(canRunAdminCommand(team, ownerControls, 'ou_stranger').ok).toBe(false);

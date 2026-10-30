@@ -64,6 +64,7 @@ import {
   canRunAdminCommand,
   canUseDm,
   canUseGroup,
+  senderFactsOf,
   type OwnerRefreshState,
 } from '../policy/access';
 import { buildEncryptedAccountConfig } from '../config/store';
@@ -1368,12 +1369,13 @@ function buildDoctorReport(
   const runtimeAccess = runtimeAccessStatus(ctx.controls.profileConfig);
   const access =
     ctx.msg.chatType === 'p2p'
-      ? canUseDm(ctx.controls.profileConfig, ctx.controls, ctx.msg.senderId)
+      ? canUseDm(ctx.controls.profileConfig, ctx.controls, ctx.msg.senderId, senderFactsOf(ctx.msg))
       : canUseGroup(
           ctx.controls.profileConfig,
           ctx.controls,
           ctx.msg.chatId,
           ctx.msg.senderId,
+          senderFactsOf(ctx.msg),
         );
   return [
     'self-check: ok',

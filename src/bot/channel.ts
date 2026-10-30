@@ -47,7 +47,13 @@ import {
   toPolicyAttachment,
   toPromptAttachment,
 } from '../media/attachment';
-import { canUseDm, canUseGroup, requireMentionForChat } from '../policy/access';
+import {
+  canUseDm,
+  canUseGroup,
+  noteOwnerTenant,
+  requireMentionForChat,
+  senderFactsOf,
+} from '../policy/access';
 import { MeetingManager } from '../meeting/manager';
 import type { VcRequestClient } from '../meeting/api';
 import { attachMeetingAgent, summarizeEndedMeeting } from '../meeting/orchestrator';
@@ -716,10 +722,12 @@ async function intakeMessage(deps: IntakeDeps): Promise<void> {
     resources: msg.resources.length,
   });
 
+  const senderFacts = senderFactsOf(msg);
+  noteOwnerTenant(controls, msg.senderId, senderFacts);
   const accessDecision =
     msg.chatType === 'p2p'
-      ? canUseDm(controls.profileConfig, controls, msg.senderId)
-      : canUseGroup(controls.profileConfig, controls, msg.chatId, msg.senderId);
+      ? canUseDm(controls.profileConfig, controls, msg.senderId, senderFacts)
+      : canUseGroup(controls.profileConfig, controls, msg.chatId, msg.senderId, senderFacts);
   if (!accessDecision.ok) {
     log.info('intake', 'skip-not-allowed-user', {
       scope,
@@ -978,10 +986,11 @@ async function runAgentBatch(deps: RunBatchDeps): Promise<void> {
     replyInThread: sendOpts.replyInThread === true,
   });
 
+  const firstFacts = senderFactsOf(firstMsg);
   const accessDecision =
     firstMsg.chatType === 'p2p'
-      ? canUseDm(controls.profileConfig, controls, firstMsg.senderId)
-      : canUseGroup(controls.profileConfig, controls, firstMsg.chatId, firstMsg.senderId);
+      ? canUseDm(controls.profileConfig, controls, firstMsg.senderId, firstFacts)
+      : canUseGroup(controls.profileConfig, controls, firstMsg.chatId, firstMsg.senderId, firstFacts);
   const scopeContext: ScopeContext = {
     source: 'im',
     chatType: firstMsg.chatType,

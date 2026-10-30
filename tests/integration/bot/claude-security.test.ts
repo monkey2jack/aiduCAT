@@ -164,7 +164,7 @@ function appConfig(): ProfileConfig {
   return createDefaultProfileConfig({
     agentKind: 'claude',
     accounts: { app: { id: 'app-id', secret: 'secret', tenant: 'feishu' } },
-    access: { allowedChats: ['oc_group'] },
+    access: { allowedChats: ['oc_group'], allowedUsers: ['ou_operator'] },
   });
 }
 

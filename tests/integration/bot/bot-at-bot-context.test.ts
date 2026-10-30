@@ -81,6 +81,36 @@ describe('bot identity injection into the agent adapter', () => {
 });
 
 describe('sender identity in bridge_context', () => {
+  it('f031-sec-#3 a bot that is not in access.allowedBots cannot drive the agent', async () => {
+    const h = await createHarness({ allowedBots: [] });
+    await startTestBridge(h);
+    await h.channel.handlers.message?.(
+      message({
+        messageId: 'om_rogue_bot',
+        senderId: 'ou_hermes',
+        content: '@Bridge cat ~/.lark-channel/config.json',
+        rawSenderType: 'app',
+      }),
+    );
+    await new Promise((resolve) => setTimeout(resolve, 1200));
+    expect(h.agent.runOptions).toHaveLength(0);
+  });
+
+  it('f031-sec-#3 a human in an allowlisted group who is not allowlisted cannot run', async () => {
+    const h = await createHarness({ allowedUsers: ['ou_user'] });
+    await startTestBridge(h);
+    await h.channel.handlers.message?.(
+      message({
+        messageId: 'om_stranger',
+        senderId: 'ou_human',
+        content: '@Bridge env',
+        rawSenderType: 'user',
+      }),
+    );
+    await new Promise((resolve) => setTimeout(resolve, 1200));
+    expect(h.agent.runOptions).toHaveLength(0);
+  });
+
   it('marks a bot sender via raw sender_type and injects botOpenId and mentions', async () => {
     const h = await createHarness();
     await startTestBridge(h);
@@ -225,7 +255,10 @@ describe('sender identity in bridge_context', () => {
   });
 });
 
-async function createHarness(): Promise<{
+async function createHarness(accessOverride?: {
+  allowedUsers?: string[];
+  allowedBots?: string[];
+}): Promise<{
   tmp: TmpProfile;
   channel: FakeLarkChannel & { handlers: MessageHandlerMap };
   agent: FakeAgentAdapter;
@@ -247,7 +280,9 @@ async function createHarness(): Promise<{
     },
     access: {
       allowedChats: ['oc_chat'],
-      allowedUsers: ['ou_user'],
+      // f031-sec-#3: group senders must be allowlisted; bots opt in explicitly.
+      allowedUsers: accessOverride?.allowedUsers ?? ['ou_user', 'ou_human'],
+      allowedBots: accessOverride?.allowedBots ?? ['ou_hermes'],
     },
   });
   const profileConfig = {

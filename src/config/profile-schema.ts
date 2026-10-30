@@ -29,6 +29,12 @@ export interface ProfileAccess {
    * priority over `requireMentionInGroup` for the chats it lists.
    */
   chatRequireMention?: Record<string, boolean>;
+  /**
+   * f031-sec-#3: open_ids of other bots/apps allowed to drive this bot
+   * (bot-at-bot). Empty/absent = every non-human sender is rejected. A listed
+   * bot still has to be in an allowlisted group.
+   */
+  allowedBots?: string[];
 }
 
 export interface SandboxConfig {
@@ -361,6 +367,7 @@ function normalizeAccess(
   legacyRequireMentionInGroup: boolean | undefined,
 ): ProfileAccess {
   const chatRequireMention = normalizeChatMentionMap(access?.chatRequireMention);
+  const allowedBots = stringArray(access?.allowedBots);
   return {
     allowedUsers: stringArray(access?.allowedUsers),
     allowedChats: stringArray(access?.allowedChats),
@@ -368,6 +375,7 @@ function normalizeAccess(
     requireMentionInGroup: access?.requireMentionInGroup ?? legacyRequireMentionInGroup ?? true,
     // Omit when empty so configs without per-chat overrides stay clean.
     ...(Object.keys(chatRequireMention).length > 0 ? { chatRequireMention } : {}),
+    ...(allowedBots.length > 0 ? { allowedBots } : {}),
   };
 }
 

@@ -180,7 +180,7 @@ async function createHarness(
     profileConfig: createDefaultProfileConfig({
       agentKind: 'claude',
       accounts: { app: { id: 'app-id', secret: 'secret', tenant: 'feishu' } },
-      access: { allowedChats: ['oc_group'] },
+      access: { allowedChats: ['oc_group'], allowedUsers: ['ou_operator'] },
     }),
     botOwnerId: 'ou_owner',
     ownerRefreshState: 'ok',
@@ -191,7 +191,7 @@ async function createHarness(
     cfg: createDefaultProfileConfig({
       agentKind: 'claude',
       accounts: { app: { id: 'app-id', secret: 'secret', tenant: 'feishu' } },
-      access: { allowedChats: ['oc_group'] },
+      access: { allowedChats: ['oc_group'], allowedUsers: ['ou_operator'] },
     }),
     processId: 'proc-1',
   } satisfies Controls;
