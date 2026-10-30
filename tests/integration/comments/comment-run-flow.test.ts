@@ -477,7 +477,7 @@ async function seedCodexCatalog(
     prompt: '',
     requestedCwd: h.tmp.workspace,
     cwdRealpath,
-    access: { ok: true, reason: 'allowed-owner' },
+    access: { ok: true, reason: 'owner' },
     capability,
     profileConfig: h.profileConfig,
     now: Date.now(),

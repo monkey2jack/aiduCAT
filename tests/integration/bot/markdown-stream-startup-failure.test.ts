@@ -200,7 +200,8 @@ describe('markdown stream startup failures', () => {
     expect(visibleProgress.some((markdown) => markdown.includes('progress update'))).toBe(true);
     expect(h.channel.sent).toHaveLength(1);
     expect(lastMarkdown(h.channel)).toContain('FINAL_SENTINEL');
-    expect(h.channel.sent[0]?.options).toMatchObject({ replyTo: 'om_final' });
+    // aiduCAT: p2p replies are not quoted (no replyTo); only topic groups thread.
+    expect(h.channel.sent[0]?.options).toEqual({});
   });
 
   it('opens no progress stream for a final-only round', async () => {
@@ -389,7 +390,9 @@ describe('markdown stream startup failures', () => {
     ).toBe(false);
   });
 
-  it('sends one dedicated final reply card after progress completes in card mode', async () => {
+  it('renders progress and the final answer in one unified card in card mode', async () => {
+    // aiduCAT unified card: in card mode the streamed card carries both the
+    // progress text and Codex's final answer; no second card is sent.
     const progressCards: unknown[] = [];
     const h = await createHarness({
       messageReply: 'card',
@@ -412,20 +415,14 @@ describe('markdown stream startup failures', () => {
     await startTestBridge(h);
 
     await h.channel.handlers.message?.(message('om_card_final', 'run'));
-    await waitFor(() => h.channel.sent.length === 1);
+    await waitFor(() => JSON.stringify(progressCards.at(-1) ?? '').includes('FINAL_SENTINEL'));
+    await new Promise((resolve) => setTimeout(resolve, 80));
 
-    // Intermediate agent messages stream as progress; the final answer never
-    // leaks into the progress card (it is held back for the dedicated reply).
-    const progressJson = JSON.stringify(progressCards);
-    expect(progressJson).toContain('progress update');
-    expect(progressJson).not.toContain('FINAL_SENTINEL');
-
-    // The terminal answer arrives as exactly one non-streaming card send.
-    expect(h.channel.sent).toHaveLength(1);
-    const finalJson = JSON.stringify(h.channel.sent[0]?.content);
-    expect(finalJson).toContain('FINAL_SENTINEL');
-    expect(finalJson).not.toContain('progress update');
-    expect(h.channel.sent[0]?.options).toMatchObject({ replyTo: 'om_card_final' });
+    const finalCard = JSON.stringify(progressCards.at(-1));
+    expect(finalCard).toContain('progress update');
+    expect(finalCard).toContain('FINAL_SENTINEL');
+    expect(finalCard).toContain('✅Done');
+    expect(h.channel.sent).toHaveLength(0);
   });
 });
 
@@ -464,7 +461,10 @@ async function createHarness(options: {
     codex: {
       binaryPath: '/usr/local/bin/codex',
     },
-    ...(options.messageReply ? { preferences: { messageReply: options.messageReply } } : {}),
+    // These cases exercise markdown streaming unless a test opts into card;
+    // the profile default became 'card' in aiduCAT (card-mode coverage lives
+    // in card-stream-failure.test.ts).
+    preferences: { messageReply: options.messageReply ?? 'markdown' },
   });
   const profileConfig = {
     ...baseProfileConfig,
