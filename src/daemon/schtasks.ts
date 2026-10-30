@@ -67,7 +67,8 @@ async function writeLauncherCmd(profile: string, runArgs: string[] = ['run']): P
   });
   const cmdPath = windowsLauncherCmdPath(profile);
   await mkdir(dirname(cmdPath), { recursive: true });
-  await mkdir(daemonLogDir(profile), { recursive: true });
+  // f031-sec-M4: daemon stdout/stderr logs are owner-only.
+  await mkdir(daemonLogDir(profile), { recursive: true, mode: 0o700 });
   await writeFile(cmdPath, content, 'utf8');
 }
 

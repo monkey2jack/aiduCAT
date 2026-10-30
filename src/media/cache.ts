@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { createReadStream } from 'node:fs';
-import { mkdir, readdir, rename, rm, stat } from 'node:fs/promises';
+import { chmod, mkdir, readdir, rename, rm, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { LarkChannel, ResourceDescriptor } from '@larksuite/channel';
 import { paths } from '../config/paths';
@@ -39,7 +39,9 @@ export class MediaCache {
     options: MediaResolveOptions = {},
   ): Promise<LocalAttachment[]> {
     if (items.length === 0) return [];
-    await mkdir(this.rootDir, { recursive: true });
+    // f031-sec-L8: downloaded chat media is owner-only.
+    await mkdir(this.rootDir, { recursive: true, mode: 0o700 });
+    if (process.platform !== 'win32') await chmod(this.rootDir, 0o700).catch(() => {});
 
     const candidates: AttachmentCandidate[] = [];
     for (const item of items) {

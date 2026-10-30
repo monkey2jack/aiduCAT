@@ -86,7 +86,8 @@ export async function writePlist(profile: string, runArgs: string[] = ['run']): 
   });
   const plistPath = launchAgentPlistPath(profile);
   await mkdir(dirname(plistPath), { recursive: true });
-  await mkdir(daemonLogDir(profile), { recursive: true });
+  // f031-sec-M4: daemon stdout/stderr logs are owner-only.
+  await mkdir(daemonLogDir(profile), { recursive: true, mode: 0o700 });
   await writeFile(plistPath, content, 'utf8');
 }
 

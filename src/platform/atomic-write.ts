@@ -25,7 +25,9 @@ export async function writeFileAtomic(
   data: string | Buffer,
   opts: AtomicWriteOptions = {},
 ): Promise<void> {
-  await mkdir(dirname(path), { recursive: true });
+  // f031-sec-M4: directories this creates (the data root, profile dirs) are
+  // owner-only; existing directories keep their mode.
+  await mkdir(dirname(path), { recursive: true, mode: 0o700 });
   const tmp = join(
     dirname(path),
     `.${basename(path)}.tmp-${process.pid}-${Date.now()}-${randomBytes(3).toString('hex')}`,
