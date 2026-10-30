@@ -1,4 +1,5 @@
 import type { AgentEvent } from '../agent/types';
+import { stripLeakedThinking } from './thinking-leak';
 
 export type ToolStatus = 'running' | 'done' | 'error';
 
@@ -11,7 +12,9 @@ export interface ToolEntry {
 }
 
 export type Block =
-  | { kind: 'text'; content: string; streaming: boolean }
+  /** `raw`: f031-stab-#6 — the text as streamed, kept only when leaked
+   * thinking was stripped from `content` (needed to keep merging deltas). */
+  | { kind: 'text'; content: string; streaming: boolean; raw?: string }
   | { kind: 'tool'; tool: ToolEntry };
 
 export type FooterStatus = 'thinking' | 'tool_running' | 'streaming' | null;
@@ -103,8 +106,11 @@ export function reduce(state: RunState, evt: AgentEvent): RunState {
   switch (evt.type) {
     case 'text': {
       const last = state.blocks[state.blocks.length - 1];
-      const merged =
-        last && last.kind === 'text' && last.streaming ? last.content + evt.delta : evt.delta;
+      const rawMerged =
+        last && last.kind === 'text' && last.streaming ? (last.raw ?? last.content) + evt.delta : evt.delta;
+      // f031-stab-#6 (#148): leaked <think>…</think> never reaches the card.
+      const merged = stripLeakedThinking(rawMerged);
+      const raw = merged === rawMerged ? {} : { raw: rawMerged };
       const parsed = parseClarifyMarker(merged);
       if (parsed) {
         const block: Block = { kind: 'text', content: parsed.cleaned, streaming: false };
@@ -124,7 +130,7 @@ export function reduce(state: RunState, evt: AgentEvent): RunState {
         // anywhere). Keep the full merged text in the block so the sentinel
         // survives into the next delta — the renderer strips everything from
         // the sentinel on, so users never see marker fragments.
-        const block: Block = { kind: 'text', content: merged, streaming: true };
+        const block: Block = { kind: 'text', content: merged, streaming: true, ...raw };
         return {
           ...state,
           blocks:
@@ -135,7 +141,7 @@ export function reduce(state: RunState, evt: AgentEvent): RunState {
           footer: 'streaming',
         };
       }
-      const block: Block = { kind: 'text', content: merged, streaming: true };
+      const block: Block = { kind: 'text', content: merged, streaming: true, ...raw };
       return {
         ...state,
         blocks:
@@ -152,9 +158,10 @@ export function reduce(state: RunState, evt: AgentEvent): RunState {
       // runs emit final_text, not streamed text deltas) — parse the clarify
       // marker out of it exactly like the text path, or the buttons never
       // appear (2026-10-19 猴哥 clarify 测试失败根因).
-      const parsed = parseClarifyMarker(evt.content);
+      const content = stripLeakedThinking(evt.content);
+      const parsed = parseClarifyMarker(content);
       if (parsed) return { ...state, finalText: parsed.cleaned, clarify: parsed.clarify };
-      return { ...state, finalText: evt.content };
+      return { ...state, finalText: content };
     }
 
     case 'usage':
