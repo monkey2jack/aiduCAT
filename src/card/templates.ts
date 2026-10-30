@@ -133,12 +133,16 @@ export function statusCard(info: StatusInfo): object {
         hour: '2-digit', minute: '2-digit', hour12: false,
       })
     : '刚刚';
-  const cacheTotal = st ? st.cacheRead + st.cacheCreate : 0;
-  const cacheHitPct = cacheTotal > 0 ? Math.round(((st?.cacheRead ?? 0) / cacheTotal) * 100) : 0;
+  // f031-#10: 🎯 = cache_read share of all prompt tokens (tokensIn already
+  // includes input + cache_read + cache_creation).
+  const cacheHitPct = st && st.tokensIn > 0 ? Math.round((st.cacheRead / st.tokensIn) * 100) : 0;
+  // f031-#8: an unknown window stays unknown (no invented denominator).
   const ctxBits =
     ml?.ctxUsed !== undefined && ml?.ctxTotal
       ? `${fmtTok(ml.ctxUsed)}/${fmtTok(ml.ctxTotal)} (${Math.round((ml.ctxUsed / ml.ctxTotal) * 100)}%)`
-      : '—/— (—%)';
+      : ml?.ctxUsed !== undefined
+        ? `${fmtTok(ml.ctxUsed)}/— (—%)`
+        : '—/— (—%)';
   const tokenBits = `📥 ${st ? fmtTok(st.tokensIn) : 0} · 📤 ${st ? fmtTok(st.tokensOut) : 0} · 🎯 ${cacheHitPct}% · ⚡ ${st?.tpsAvg ?? 0} tok/s`;
   // f0.2+ 猴哥终版 (2026-10-21): six lines — runtime/identity middle rows come
   // back (they were missed after the cleanup pass), placed between the model

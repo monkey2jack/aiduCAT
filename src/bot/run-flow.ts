@@ -1,4 +1,5 @@
 import type { AgentCapability } from '../agent/capability';
+import { compactPct } from './context-window';
 import { resolveModelArg } from '../agent/models';
 import type { AgentEvent } from '../agent/types';
 import type { ProfileConfig } from '../config/profile-schema';
@@ -170,8 +171,8 @@ export async function startRunFlow(input: StartRunFlowInput): Promise<StartRunFl
           input.capability.agentId,
         )) ?? {};
         const win = input.modelWindow;
-        const pct = Number(process.env.AIDUCAT_COMPACT_PCT ?? 60);
-        if (win && pct > 0 && pct <= 100) {
+        const pct = compactPct();
+        if (win && pct) {
           base.CLAUDE_CODE_AUTO_COMPACT_WINDOW = String(
             Math.round((win * pct) / 100),
           );

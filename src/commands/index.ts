@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { compactPct, resolveModelWindow } from '../bot/context-window';
 import { readFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { dirname, isAbsolute } from 'node:path';
@@ -866,26 +867,27 @@ async function handleStatus(_args: string, ctx: CommandContext): Promise<void> {
     chatMode: ctx.chatMode,
     sessionStats: sess?.stats,
     sessionUpdatedAt: sess?.updatedAt,
-    modelLine: (() => {
-      // f0.2+ /status: mirror the panel's context readout. The latest run's
-      // state rides on the card renderer options normally; here we read the
-      // stored usage snapshot from the session store (recordUsage keeps the
-      // newest per-call totals) and the compaction window from settings env.
+    modelLine: await (async () => {
+      // f031-#8: context = latest main-line call's input + cache_read +
+      // cache_creation (SessionStore.recordUsage). Window + 🗜️ come from the
+      // SAME resolution run-flow uses to set CLAUDE_CODE_AUTO_COMPACT_WINDOW
+      // for the spawned CLI (the bot process itself never has that env, so
+      // the old read always fell back to a made-up 1M and hid 🗜️).
       const st = sess?.stats;
-      const ctxUsed = st ? st.tokensIn : undefined;
-      // 🗜️ = 压缩窗占模型声明窗口的百分比（60% 设定）。数据源与 spawn 时写
-      // 进 CLAUDE_CODE_AUTO_COMPACT_WINDOW 的同一来源（modelWindow×60%），
-      // 卡面与 CC 实际行为严格一致（2026-10-21 统一）。
-      const compactWindow = Number(process.env.CLAUDE_CODE_AUTO_COMPACT_WINDOW || 0);
-      const ctxTotal = compactWindow ? Math.round((compactWindow * 100) / 60) : 1_000_000;
-      const compactPct = compactWindow ? 60 : undefined;
-      const isCodex2 = ctx.controls.profileConfig.agentKind === "codex";
+      const prefs = ctx.controls.profileConfig.preferences;
+      const window = isCodex
+        ? undefined
+        : await resolveModelWindow(
+            ctx.controls.profileConfig,
+            normalizeModelSelection(ctx.controls.profileConfig.agentKind, prefs.model),
+          );
       return {
-        model: isCodex2 ? undefined : (ctx.controls.cfg.preferences?.model || undefined),
-        effort: (ctx.controls.cfg.preferences?.effort as string | undefined)?.replace(/^./, (c) => c.toUpperCase()),
-        ctxUsed,
-        ctxTotal,
-        compactPct,
+        // f031-#12: chosen model, else the one the CLI actually reported.
+        model: isCodex ? undefined : prefs.model || st?.model || undefined,
+        effort: (prefs.effort as string | undefined)?.replace(/^./, (c) => c.toUpperCase()),
+        ctxUsed: st?.contextTokens,
+        ctxTotal: window,
+        compactPct: window ? compactPct() : undefined,
       };
     })(),
   });

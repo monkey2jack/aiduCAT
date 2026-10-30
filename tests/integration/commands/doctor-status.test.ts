@@ -12,6 +12,8 @@ import { WorkspaceStore } from '../../../src/workspace/store.js';
 import { FakeAgentAdapter, type FakeAgentRun } from '../../helpers/fake-agent.js';
 import { createFakeChannel, type FakeChannel } from '../../helpers/fake-channel.js';
 import { createTmpProfile, type TmpProfile } from '../../helpers/tmp-profile.js';
+import { CLAUDE_USAGE_FIXTURE as F } from '../../helpers/claude-usage-fixture.js';
+import { translateEvent } from '../../../src/agent/claude/stream-json.js';
 
 interface Harness {
   tmp: TmpProfile;
@@ -119,6 +121,58 @@ describe('/status and /doctor diagnostics', () => {
     release();
     expect(h.agent.runOptions).toHaveLength(0);
     expect(lastMarkdownOrText(h.channel)).toContain('pool-full');
+  });
+});
+
+describe('f031-#8 /status shows the real context and window', () => {
+  afterEach(async () => {
+    await Promise.all(cleanups.splice(0).map((cleanup) => cleanup()));
+    delete process.env.CLAUDE_CODE_AUTO_COMPACT_WINDOW;
+  });
+
+  function feed(h: Harness, raws: unknown[]): void {
+    for (const raw of raws) {
+      for (const e of translateEvent(raw)) {
+        if (e.type === 'usage') h.sessions.recordUsage('chat-1', e);
+        if (e.type === 'system') h.sessions.recordModel('chat-1', e.model);
+      }
+    }
+  }
+
+  it('f031-#8 context = input + cache_read + cache_creation over the provider window, 🗜️ from the same source', async () => {
+    const h = await createHarness({ configuredWorkspace: true });
+    h.controls.profileConfig.modelProviders = {
+      gw: { label: 'gw', baseUrl: 'https://gw.invalid/v1', apiKey: 'x', wire: 'anthropic', contextWindow: 1_000_000 },
+    };
+    h.controls.profileConfig.preferences.provider = 'gw';
+    h.sessions.set('chat-1', 'sess-1', h.tmp.workspace);
+    feed(h, [F.mainAssistant(F.calls[1]!), F.sidechainAssistant(F.subagentCall), F.result()]);
+    await h.run('/status');
+    const status = JSON.stringify(lastContent(h.channel));
+    const c = F.calls[1]!;
+    const used = c.input_tokens + c.cache_read_input_tokens + c.cache_creation_input_tokens;
+    const k = (used / 1000).toFixed(1).replace(/\.0$/, '');
+    expect(status).toContain(`⏳ ${k}k/1M (${Math.round(used / 10_000)}%)`);
+    expect(status).toContain('🗜️ 60%');
+  });
+
+  it('f031-#8 unknown window is shown as unknown, not a made-up 1M', async () => {
+    const h = await createHarness({ configuredWorkspace: true });
+    h.sessions.set('chat-1', 'sess-1', h.tmp.workspace);
+    feed(h, [F.mainAssistant(F.calls[1]!)]);
+    await h.run('/status');
+    const status = JSON.stringify(lastContent(h.channel));
+    expect(status).not.toContain('/1M');
+    expect(status).not.toContain('🗜️');
+    expect(status).toMatch(/⏳ \d+(\.\d)?k\/— \(—%\)/);
+  });
+
+  it('f031-#12 model line falls back to the model the CLI reported', async () => {
+    const h = await createHarness({ configuredWorkspace: true });
+    h.sessions.set('chat-1', 'sess-1', h.tmp.workspace);
+    feed(h, [{ type: 'system', subtype: 'init', session_id: 'sess-1', model: F.model }]);
+    await h.run('/status');
+    expect(JSON.stringify(lastContent(h.channel))).toContain(F.model);
   });
 });
 
