@@ -280,12 +280,16 @@ export function markIdleTimeout(state: RunState, minutes: number): RunState {
  * usage). Surfaced as an error so the user sees a visible failure card
  * instead of a silent empty Done card.
  */
+export const EMPTY_RUN_MESSAGE = 'agent 没有产出任何内容（可能进程刚启动就退出了），请重发一次。';
+
 export function markEmptyRun(state: RunState): RunState {
   return {
     ...state,
     blocks: closeStreamingText(state.blocks),
     reasoning: { ...state.reasoning, active: false },
     terminal: 'error',
+    // f0.3.1 #4: keep a real error from the agent; otherwise say why it's red.
+    errorMsg: state.errorMsg || EMPTY_RUN_MESSAGE,
     footer: null,
   };
 }

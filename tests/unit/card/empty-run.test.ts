@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { initialState, markEmptyRun, reduce } from '../../../src/card/run-state.js';
+import { EMPTY_RUN_MESSAGE, initialState, markEmptyRun, reduce } from '../../../src/card/run-state.js';
 
 // fix(2026-10-30): empty-run regression - a claude process dying right after
 // spawn emits only system+done with zero substantive events. The channel
@@ -21,5 +21,12 @@ describe('empty-run guard (send-twice bug)', () => {
   it('markEmptyRun also closes out a running state', () => {
     const marked = markEmptyRun(initialState);
     expect(marked.terminal).toBe('error');
+  });
+
+  it('f031-#4 markEmptyRun carries a reason, keeping a real agent error if there is one', () => {
+    const done = reduce(initialState, { type: 'done', terminationReason: 'normal' } as never);
+    expect(markEmptyRun(done).errorMsg).toBe(EMPTY_RUN_MESSAGE);
+    const failed = reduce(initialState, { type: 'error', message: 'claude exited 1', terminationReason: 'failed' } as never);
+    expect(markEmptyRun(failed).errorMsg).toBe('claude exited 1');
   });
 });

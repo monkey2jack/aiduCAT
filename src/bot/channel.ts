@@ -1785,8 +1785,14 @@ async function processAgentStream(
       // empty round is surfaced as an explicit error terminal so the
       // user sees a visible failure card instead of a silent empty
       // Done card (the "send twice" bug).
+      const prevTerminal = state.terminal;
+      const prevFooter = state.footer;
+      state = reduce(state, evt);
+      // f0.3.1 #4: must run AFTER reduce — reduce('done') unconditionally sets
+      // terminal='done' and used to wipe the guard's error (f0.3 bug).
       if (
         agentId === 'claude' &&
+        (state.terminal === 'done' || state.terminal === 'error') &&
         (evt.type === 'done' || evt.type === 'error') &&
         substantiveEvents === 0 &&
         !handle.interrupted
@@ -1797,10 +1803,6 @@ async function processAgentStream(
         });
         state = markEmptyRun(state);
       }
-
-      const prevTerminal = state.terminal;
-      const prevFooter = state.footer;
-      state = reduce(state, evt);
       if (state.footer !== prevFooter || state.terminal !== prevTerminal) {
         log.info('card', 'transition', { footer: state.footer, terminal: state.terminal });
       }
