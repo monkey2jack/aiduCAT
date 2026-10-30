@@ -263,6 +263,11 @@ exports[`run card renderer snapshots > renders done, error, interrupted, and idl
   "body": {
     "elements": [
       {
+        "content": "⚠️ process failed",
+        "tag": "markdown",
+        "text_size": "notation",
+      },
+      {
         "border": {
           "color": "red",
           "corner_radius": "5px",

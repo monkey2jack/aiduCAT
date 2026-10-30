@@ -1,9 +1,23 @@
 import { deepMaskEmails } from './mask-email';
 import type { Block, FooterStatus, RunState, ToolEntry } from './run-state';
 import { logoImgKeyForModel } from './model-logo';
-import { toolBodyMd, toolHeaderPlain, toolHeaderText } from './tool-render';
+import { maskEmails } from './mask-email';
+import { sanitizeCardMarkdown, sanitizePlainText, truncateUtf8, utf8Bytes } from './sanitize';
+import { toolHeaderText } from './tool-render';
 const REASONING_MAX = 1500;
-const COLLAPSE_TOOL_THRESHOLD = 3;
+/** f0.3.1 #2: answer budget inside the card (UTF-8 bytes, before JSON escaping). */
+export const ANSWER_MAX_BYTES = 25_000;
+/** f0.3.1 #2: whole card JSON budget — Feishu rejects cards over 30KB (230025). */
+export const CARD_MAX_BYTES = 28_000;
+/** Strict (degrade-retry) render: smaller answer, no reasoning/tool list. */
+const STRICT_ANSWER_MAX_BYTES = 12_000;
+const ERROR_MSG_MAX_BYTES = 1_000;
+
+interface RenderBudget {
+  answerBytes: number;
+  reasoningMax: number;
+  toolLines: number;
+}
 
 interface ToolGroup {
   kind: 'tools';
@@ -29,12 +43,52 @@ export interface RunCardRenderOptions {
   /** f0.2: the clarify question the user just answered — buttons collapse
    * into a chosen-answer line so the same card can't be answered twice. */
   clarifyAnswered?: string;
+  /** f0.3.1 #1: degrade-retry render after Feishu rejected the normal card —
+   * image URLs dropped, answer capped at 12KB, no reasoning/tool list. */
+  strict?: boolean;
 }
 
 export function renderCard(state: RunState, options: RunCardRenderOptions = {}): object {
-  const elements: object[] = [];
+  return renderCardWithInfo(state, options).card;
+}
 
-  // aiduCAT: answer (text blocks or final_text) first, single aiduPOP panel below.
+/**
+ * f0.3.1 #2: render, then shrink until the card JSON fits `CARD_MAX_BYTES`
+ * (tool list and reasoning first, then the answer). `answerTruncated` tells the
+ * caller the full answer must also go out as a plain-text message.
+ */
+export function renderCardWithInfo(
+  state: RunState,
+  options: RunCardRenderOptions = {},
+): { card: object; answerTruncated: boolean; bytes: number } {
+  const budget: RenderBudget = options.strict
+    ? { answerBytes: STRICT_ANSWER_MAX_BYTES, reasoningMax: 0, toolLines: 0 }
+    : { answerBytes: ANSWER_MAX_BYTES, reasoningMax: REASONING_MAX, toolLines: Number.POSITIVE_INFINITY };
+  let r = buildCard(state, options, budget);
+  if (r.bytes > CARD_MAX_BYTES) {
+    budget.reasoningMax = Math.min(budget.reasoningMax, 500);
+    budget.toolLines = Math.min(budget.toolLines, 40);
+    r = buildCard(state, options, budget);
+  }
+  for (let i = 0; i < 6 && r.bytes > CARD_MAX_BYTES; i++) {
+    budget.answerBytes = Math.max(1_000, budget.answerBytes - (r.bytes - CARD_MAX_BYTES) - 1_000);
+    r = buildCard(state, options, budget);
+  }
+  if (r.bytes > CARD_MAX_BYTES) {
+    budget.reasoningMax = 0;
+    budget.toolLines = 0;
+    r = buildCard(state, options, budget);
+  }
+  return r;
+}
+
+/** Was the answer cut to fit the card? Then a plain-text copy must follow. */
+export function answerTruncatedInCard(state: RunState, options: RunCardRenderOptions = {}): boolean {
+  return renderCardWithInfo(state, options).answerTruncated;
+}
+
+/** The raw answer as the card shows it (text blocks, or Codex finalText). */
+function rawAnswerBlocks(state: RunState): string[] {
   const answerBlocks: string[] = [];
   for (const group of groupBlocks(state.blocks)) {
     if (group.kind === 'text') {
@@ -55,10 +109,47 @@ export function renderCard(state: RunState, options: RunCardRenderOptions = {}):
       answerBlocks.push(stripped);
     }
   }
-  for (const text of answerBlocks) {
-    if (text.trim()) {
-      elements.push(markdown(text));
+  return answerBlocks.filter((b) => b.trim());
+}
+
+/**
+ * f0.3.1 #1: the whole answer as plain text for the IM fallback message —
+ * images become `alt (url)`, HTML dropped, emails masked, never truncated.
+ * Falls back to the error notice when the run produced no answer.
+ */
+export function answerPlainText(state: RunState): string {
+  const text = sanitizePlainText(rawAnswerBlocks(state).join('\n\n')).trim();
+  if (text) return maskEmails(text);
+  if (state.terminal === 'error' && state.errorMsg) return maskEmails(`⚠️ ${sanitizePlainText(state.errorMsg)}`);
+  return '';
+}
+
+function buildCard(
+  state: RunState,
+  options: RunCardRenderOptions,
+  budget: RenderBudget,
+): { card: object; answerTruncated: boolean; bytes: number } {
+  const elements: object[] = [];
+  const withLinks = !options.strict;
+
+  // aiduCAT: answer (text blocks or final_text) first, single aiduPOP panel below.
+  let remaining = budget.answerBytes;
+  let answerTruncated = false;
+  for (const raw of rawAnswerBlocks(state)) {
+    if (remaining <= 0) {
+      answerTruncated = true;
+      break;
     }
+    const clean = sanitizeCardMarkdown(raw, { withLinks });
+    const text = truncateUtf8(clean, remaining);
+    if (text !== clean) answerTruncated = true;
+    remaining -= utf8Bytes(text);
+    if (text.trim()) elements.push(markdown(text));
+  }
+  // f0.3.1 #4: an error with no answer (e.g. the empty-run guard) must be
+  // visible without expanding the collapsed panel.
+  if (elements.length === 0 && state.terminal === 'error' && state.errorMsg) {
+    elements.push(noteMd(`⚠️ ${errorText(state.errorMsg)}`));
   }
 
   // f0.2 猴哥点单: the live status word (☤Reasoning... / ☤Tooling... /
@@ -79,7 +170,7 @@ export function renderCard(state: RunState, options: RunCardRenderOptions = {}):
 
   // aiduCAT: one collapsed panel carrying reasoning + every tool call + the
   // run meta header (aiduPOP layout). Hidden when there is nothing to show.
-  const popPanel = aiduPopPanel(state, options, '');
+  const popPanel = aiduPopPanel(state, options, budget);
   // f0.2+ 猴哥点单: notation size so the status line reads as a caption,
   // matching the panel body size instead of full answer text.
   if (statusWord) elements.push(noteMd(`☤${statusWord}`));
@@ -94,7 +185,9 @@ export function renderCard(state: RunState, options: RunCardRenderOptions = {}):
     // naturally single-choice (repeat clicks just re-open the same form) and
     // routes through the SAME cardAction submit path /model uses, which is
     // known-good; the old button array's callbacks never reached the bot.
-    elements.push(markdown(`⁉️ **TBC**：${state.clarify.question}\n_下拉选择后点确认_`));
+    elements.push(
+      markdown(`⁉️ **TBC**：${sanitizeCardMarkdown(state.clarify.question, { withLinks })}\n_下拉选择后点确认_`),
+    );
     elements.push({
       tag: 'form',
       name: 'clarify_form',
@@ -157,7 +250,7 @@ export function renderCard(state: RunState, options: RunCardRenderOptions = {}):
 
   // Mask raw emails across every text field so the Feishu tenant audit doesn't
   // reject the (streamed) card with a 400 EMAIL_ADDRESS — see mask-email.ts.
-  return deepMaskEmails({
+  const card = deepMaskEmails({
     schema: '2.0',
     config: {
       streaming_mode: state.terminal === 'running',
@@ -165,6 +258,11 @@ export function renderCard(state: RunState, options: RunCardRenderOptions = {}):
     },
     body: { elements },
   });
+  return { card, answerTruncated, bytes: utf8Bytes(JSON.stringify(card)) };
+}
+
+function errorText(msg: string): string {
+  return truncateUtf8(sanitizeCardMarkdown(msg, { withLinks: false }), ERROR_MSG_MAX_BYTES, '…');
 }
 
 /**
@@ -177,7 +275,7 @@ export function renderCard(state: RunState, options: RunCardRenderOptions = {}):
  * collapsed header stays pure meta (counts + elapsed); on completion the
  * counts/values are final.
  */
-function aiduPopPanel(state: RunState, options: RunCardRenderOptions, statusWord = ''): object | null {
+function aiduPopPanel(state: RunState, options: RunCardRenderOptions, budget: RenderBudget): object | null {
   const tools = state.blocks.filter((b): b is Extract<Block, { kind: 'tool' }> => b.kind === 'tool');
   const hasReasoning = state.reasoning.content.trim().length > 0;
   const hasError = state.terminal === 'error' && !!state.errorMsg;
@@ -188,18 +286,17 @@ function aiduPopPanel(state: RunState, options: RunCardRenderOptions, statusWord
   const title = meta;
 
   const bodyParts: string[] = [];
-  if (hasError) bodyParts.push(`⚠️ ${state.errorMsg}`);
-  if (hasReasoning) {
+  if (hasError) bodyParts.push(`⚠️ ${errorText(state.errorMsg!)}`);
+  if (hasReasoning && budget.reasoningMax > 0) {
     // aiduCAT: 💭 marks a thinking burst — same emoji as the collapsed header.
-    bodyParts.push(`💭 ${truncate(state.reasoning.content, REASONING_MAX)}`);
+    bodyParts.push(`💭 ${truncate(state.reasoning.content, budget.reasoningMax)}`);
   }
-  if (tools.length > 0) {
+  if (tools.length > 0 && budget.toolLines > 0) {
     // Latest tool on top so the freshest activity is what you see on expand.
     // 猴哥点菜单：每个工具用自己的专属 emoji（👩🏻‍💻Bash 等），不再加统一的 🫧。
-    const lines = tools
-      .slice()
-      .reverse()
-      .map((b) => `- ${toolHeaderText(b.tool)}`);
+    const shown = tools.slice().reverse().slice(0, budget.toolLines);
+    const lines = shown.map((b) => `- ${toolHeaderText(b.tool)}`);
+    if (tools.length > shown.length) lines.push(`- …另有 ${tools.length - shown.length} 个更早的工具调用`);
     bodyParts.push(lines.join('\n'));
   }
 
@@ -209,7 +306,7 @@ function aiduPopPanel(state: RunState, options: RunCardRenderOptions, statusWord
     // aiduCAT: border color carries the terminal state (aiduPOP style) —
     // running/none grey, done green, stopped/timeout yellow, error red.
     border: panelBorderColor(state),
-    body: bodyParts.join('\n\n') || '_（无过程记录）_',
+    body: sanitizeCardMarkdown(bodyParts.join('\n\n'), { withLinks: !options.strict }) || '_（无过程记录）_',
     // f0.2 猴哥点单: the panel header icon slot shows the current model's
     // vendor logo; un-mapped models keep the default chevron.
     ...(options.model && logoImgKeyForModel(options.model)
@@ -251,44 +348,6 @@ function metaHeader(state: RunState, options: RunCardRenderOptions): string {
   return parts.join(" · ");
 }
 
-/**
- * aiduCAT: effort reads as a proper noun in the header — `Max`, `High`,
- * `XHigh`, `Ultra` (首字母大写, per 猴哥). Unknown values pass through as-is.
- */
-function effortLabel(effort: string): string {
-  return effort.charAt(0).toUpperCase() + effort.slice(1);
-}
-
-/**
- * aiduCAT: `***k/1M (xx%)` — how full the model's context window is right now.
- * Used tokens = prompt tokens (accounting for cached subsets) + output tokens.
- * Always scales against the real 1M context window deployed on 10router.
- */
-function contextUsageText(state: RunState, options: RunCardRenderOptions): string {
-  const u = state.usage;
-  if (!u) return '';
-  const inTokens = u.inputTokens ?? 0;
-  const cachedTokens = u.cachedInputTokens ?? 0;
-  // If inTokens >= cachedTokens, cached is already counted inside input_tokens (OpenAI/Codex standard).
-  // Otherwise, cached tokens are complementary to prompt tokens (Anthropic standard).
-  const effectiveInput = inTokens >= cachedTokens ? inTokens : inTokens + cachedTokens;
-  const used = effectiveInput + (u.cacheCreationInputTokens ?? 0) + (u.outputTokens ?? 0);
-  if (used === 0) return '';
-
-  // 猴哥点单: 10router 上模型全量开放 1M (1,000,000) 上下文，分母基准统一保底 1M，彻底杜绝 '(累计)' 字样
-  const windowSize = Math.max(options.contextWindow ?? 1_000_000, 1_000_000);
-  const pct = Math.min(100, Math.round((used / windowSize) * 100));
-  return `${formatTokens(used)}/${formatTokens(windowSize)} (${pct}%)`;
-}
-
-/** aiduCAT: 25046 -> `25k`, 1048576 -> `1M`, 500100 -> `500.1k`, 950 -> `950`. */
-function formatTokens(n: number): string {
-  const trim = (x: number) => x.toFixed(1).replace(/\.0$/, '');
-  if (n >= 1_000_000) return `${trim(n / 1_000_000)}M`;
-  if (n >= 1_000) return `${trim(n / 1_000)}k`;
-  return String(n);
-}
-
 function* groupBlocks(blocks: Block[]): Generator<Group> {
   let toolBuf: ToolEntry[] = [];
   for (const b of blocks) {
@@ -303,15 +362,6 @@ function* groupBlocks(blocks: Block[]): Generator<Group> {
     }
   }
   if (toolBuf.length > 0) yield { kind: 'tools', tools: toolBuf };
-}
-
-function toolPanel(tool: ToolEntry, expanded: boolean): object {
-  return collapsiblePanel({
-    title: toolHeaderText(tool),
-    expanded,
-    border: tool.status === 'error' ? 'red' : 'grey',
-    body: toolBodyMd(tool) || '_无输出_',
-  });
 }
 
 interface PanelOpts {
