@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { compactPct, resolveModelWindow } from '../bot/context-window';
+import { claudeCliWindow, compactPct, resolveModelWindow } from '../bot/context-window';
 import { readFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { dirname, isAbsolute } from 'node:path';
@@ -882,19 +882,28 @@ async function handleStatus(_args: string, ctx: CommandContext): Promise<void> {
       // the old read always fell back to a made-up 1M and hid 🗜️).
       const st = sess?.stats;
       const prefs = ctx.controls.profileConfig.preferences;
-      const window = isCodex
+      // aiduCAT override first (it sets the spawn env); otherwise the window
+      // and compact trigger the CLI takes from its own settings.json.
+      const aiduWindow = isCodex
         ? undefined
         : await resolveModelWindow(
             ctx.controls.profileConfig,
             normalizeModelSelection(ctx.controls.profileConfig.agentKind, prefs.model),
           );
+      const cli = isCodex || aiduWindow ? undefined : await claudeCliWindow();
+      const window = aiduWindow ?? cli?.window;
+      const pct = aiduWindow
+        ? compactPct()
+        : cli?.window && cli.compactWindow
+          ? Math.round((Math.min(cli.compactWindow, cli.window) / cli.window) * 100)
+          : undefined;
       return {
         // f031-#12: chosen model, else the one the CLI actually reported.
         model: isCodex ? undefined : prefs.model || st?.model || undefined,
         effort: (prefs.effort as string | undefined)?.replace(/^./, (c) => c.toUpperCase()),
         ctxUsed: st?.contextTokens,
         ctxTotal: window,
-        compactPct: window ? compactPct() : undefined,
+        compactPct: pct,
       };
     })(),
   });

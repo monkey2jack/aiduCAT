@@ -1,6 +1,9 @@
 /**
- * f031-#8: claude stream-json usage shapes. Numbers are copied from usage
- * fields only (no conversation text) — see notes/f031-taskbook.md 「功能审查」.
+ * f031-#8: claude stream-json usage shapes with REAL numbers taken (usage
+ * fields only, no conversation text) from 嘟嘟's production transcripts on
+ * 2026-10-31: the last two main-line calls of a 3210-call session (10router
+ * gateway: input_tokens excludes the cache, cache_creation is 0) and one
+ * sub-agent call. Turn total / API time are derived, not observed.
  */
 export interface CallUsage {
   input_tokens: number;
@@ -9,14 +12,14 @@ export interface CallUsage {
   output_tokens: number;
 }
 
-const model = 'claude-opus-4-1';
+const model = 'Claude-Opus-4.6';
 
 const calls: CallUsage[] = [
-  { input_tokens: 4210, cache_read_input_tokens: 148_000, cache_creation_input_tokens: 1_900, output_tokens: 600 },
-  { input_tokens: 4386, cache_read_input_tokens: 151_200, cache_creation_input_tokens: 1_200, output_tokens: 900 },
+  { input_tokens: 4585, cache_read_input_tokens: 543_763, cache_creation_input_tokens: 0, output_tokens: 291 },
+  { input_tokens: 4387, cache_read_input_tokens: 544_304, cache_creation_input_tokens: 0, output_tokens: 903 },
 ];
 const subagentCall: CallUsage = {
-  input_tokens: 3, cache_read_input_tokens: 11_000, cache_creation_input_tokens: 2_500, output_tokens: 300,
+  input_tokens: 8436, cache_read_input_tokens: 30_532, cache_creation_input_tokens: 0, output_tokens: 930,
 };
 const turn: CallUsage = {
   input_tokens: calls[0]!.input_tokens + calls[1]!.input_tokens,

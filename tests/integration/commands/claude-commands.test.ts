@@ -137,9 +137,9 @@ describe('Claude slash command visible behavior', () => {
     const h = await createHarness();
     h.workspaces.setCwd('chat-1', h.tmp.workspace);
     h.sessions.set('chat-1', 'sess-old', h.tmp.workspace);
-    h.sessions.recordUsage('chat-1', { inputTokens: 4386, cachedInputTokens: 151_200, cacheCreationInputTokens: 1_200 });
+    h.sessions.recordUsage('chat-1', { inputTokens: 4387, cachedInputTokens: 544_304, cacheCreationInputTokens: 0 });
     h.sessions.recordModel('chat-1', 'old-model');
-    expect(h.sessions.getRaw('chat-1')?.stats?.contextTokens).toBe(156_786);
+    expect(h.sessions.getRaw('chat-1')?.stats?.contextTokens).toBe(548_691);
 
     await expect(h.run('/resume use sess-1234567890')).resolves.toBe(true);
 

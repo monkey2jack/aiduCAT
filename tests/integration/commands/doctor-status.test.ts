@@ -1,6 +1,8 @@
 import { realpath } from 'node:fs/promises';
 import { join } from 'node:path';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import type { NormalizedMessage } from '@larksuite/channel';
 import { ActiveRuns } from '../../../src/bot/active-runs.js';
 import { ProcessPool } from '../../../src/bot/process-pool.js';
@@ -125,9 +127,32 @@ describe('/status and /doctor diagnostics', () => {
 });
 
 describe('f031-#8 /status shows the real context and window', () => {
+  const savedConfigDir = process.env.CLAUDE_CONFIG_DIR;
+  beforeEach(async () => {
+    // isolate from any real ~/.claude/settings.json on the test host
+    process.env.CLAUDE_CONFIG_DIR = await mkdtemp(join(tmpdir(), 'f031-claude-cfg-'));
+  });
   afterEach(async () => {
     await Promise.all(cleanups.splice(0).map((cleanup) => cleanup()));
-    delete process.env.CLAUDE_CODE_AUTO_COMPACT_WINDOW;
+    await rm(process.env.CLAUDE_CONFIG_DIR!, { recursive: true, force: true });
+    if (savedConfigDir === undefined) delete process.env.CLAUDE_CONFIG_DIR;
+    else process.env.CLAUDE_CONFIG_DIR = savedConfigDir;
+  });
+
+  it('f031-#8 no aiduCAT window → the CLI\'s own settings.json window/compact (嘟嘟 production: 900k / 600k)', async () => {
+    await writeFile(
+      join(process.env.CLAUDE_CONFIG_DIR!, 'settings.json'),
+      JSON.stringify({ env: { CLAUDE_CODE_MAX_CONTEXT_TOKENS: '900000', CLAUDE_CODE_AUTO_COMPACT_WINDOW: '600000', ANTHROPIC_API_KEY: 'fake' } }),
+    );
+    const h = await createHarness({ configuredWorkspace: true });
+    h.sessions.set('chat-1', 'sess-1', h.tmp.workspace);
+    feed(h, [F.mainAssistant(F.calls[1]!)]);
+    await h.run('/status');
+    const status = JSON.stringify(lastContent(h.channel));
+    // real: 4387 input + 544304 cache_read = 548691 (old /status showed 4.4k/1M)
+    expect(status).toContain('⏳ 548.7k/900k (61%)');
+    expect(status).toContain('🗜️ 67%');
+    expect(status).not.toContain('fake');
   });
 
   function feed(h: Harness, raws: unknown[]): void {
