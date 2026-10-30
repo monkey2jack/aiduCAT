@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { AgentEvent } from '../../../src/agent/types.js';
-import { setupStabChannel, stabSdkMock, type StabHarness } from '../../helpers/stab-channel-harness.js';
+import { log } from '../../../src/core/logger.js';
+import { dmMessage, setupStabChannel, waitFor, stabSdkMock, type StabHarness } from '../../helpers/stab-channel-harness.js';
 
 vi.mock('@larksuite/channel', async (orig) => ({
   ...(await orig<typeof import('@larksuite/channel')>()),
@@ -44,5 +45,16 @@ describe('f031-stab channel connection options', () => {
     await start({ events: doneOnly });
     const ws = sdkOpts().wsConfig as { pingTimeout: number };
     expect(ws.pingTimeout).toBe(20);
+  });
+});
+
+describe('f031-stab-#4 watchdog defaults reach the run', () => {
+  it('f031-stab-#4 a run with no timeout configured gets idle 15min + tool cap 30min', async () => {
+    const info = vi.spyOn(log, 'info');
+    const h = await start({ events: doneOnly });
+    await h.handlers.message?.(dmMessage('om_wd', 'hi'));
+    await waitFor(() => info.mock.calls.some((c) => c[0] === 'flush' && c[1] === 'idle-watchdog'));
+    const call = info.mock.calls.find((c) => c[0] === 'flush' && c[1] === 'idle-watchdog')!;
+    expect(call[2]).toMatchObject({ idleTimeoutMs: 15 * 60_000, toolTimeoutMs: 30 * 60_000 });
   });
 });

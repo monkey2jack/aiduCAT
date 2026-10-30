@@ -38,6 +38,7 @@ import {
   getMaxConcurrentRuns,
   getMessageReplyMode,
   getRunIdleTimeoutMs,
+  getRunToolTimeoutMs,
   getShowToolCalls,
 } from '../config/schema';
 import { resolveAppSecret } from '../config/secret-resolver';
@@ -54,6 +55,7 @@ import { attachMeetingAgent, summarizeEndedMeeting } from '../meeting/orchestrat
 import type { ScopeContext } from '../policy/run-policy';
 import { createOwnerRefreshController } from '../policy/owner';
 import { RunExecutor } from '../runtime/run-executor';
+import { RunWatchdog, type RunTimeouts } from './run-watchdog';
 import type { SessionCatalog } from '../session/catalog';
 import type { SessionStore } from '../session/store';
 import type { WorkspaceStore } from '../workspace/store';
@@ -1077,8 +1079,10 @@ async function runAgentBatch(deps: RunBatchDeps): Promise<void> {
         ? scopeOverride * 60_000
         : undefined
       : getRunIdleTimeoutMs(controls.cfg);
-  if (idleTimeoutMs) {
-    log.info('flush', 'idle-watchdog', { idleTimeoutMs });
+  // f031-stab-#4: plus a hard cap per tool call (idle pauses while tools run).
+  const runTimeouts: RunTimeouts = { idleMs: idleTimeoutMs, toolMs: getRunToolTimeoutMs(controls.cfg) };
+  if (idleTimeoutMs || runTimeouts.toolMs) {
+    log.info('flush', 'idle-watchdog', { idleTimeoutMs, toolTimeoutMs: runTimeouts.toolMs });
   }
 
   // Group replies use rich text (post) so `<at user_id>` becomes a real
@@ -1158,7 +1162,7 @@ async function runAgentBatch(deps: RunBatchDeps): Promise<void> {
           handle,
           eventStream,
           scope,
-          idleTimeoutMs,
+          runTimeouts,
           recordSession,
           async () => {},
           sessions,
@@ -1250,7 +1254,7 @@ async function runAgentBatch(deps: RunBatchDeps): Promise<void> {
         handle,
         eventStream,
         scope,
-        idleTimeoutMs,
+        runTimeouts,
         recordSession,
         async (state) => {
           latestState = state;
@@ -1367,7 +1371,7 @@ async function runAgentBatch(deps: RunBatchDeps): Promise<void> {
         handle,
         eventStream,
         scope,
-        idleTimeoutMs,
+        runTimeouts,
         recordSession,
         async (state) => {
           latestState = state;
@@ -1416,7 +1420,7 @@ async function runAgentBatch(deps: RunBatchDeps): Promise<void> {
         handle,
         eventStream,
         scope,
-        idleTimeoutMs,
+        runTimeouts,
         recordSession,
         async () => {},
         sessions,
@@ -1703,7 +1707,7 @@ async function processAgentStream(
   handle: RunHandle,
   events: AsyncIterable<AgentEvent>,
   scope: string,
-  idleTimeoutMs: number | undefined,
+  timeouts: RunTimeouts,
   recordSession: (event: AgentEvent) => void,
   flush: (state: RunState) => Promise<void>,
   stats: Pick<SessionStore, 'recordUsage' | 'recordMessage' | 'recordModel'>,
@@ -1726,24 +1730,22 @@ async function processAgentStream(
   // The watchdog re-arms when:
   //  - a tool_result drains the in-flight set to zero, OR
   //  - any non-tool event arrives while the set is empty.
-  let idleFired = false;
-  let timer: NodeJS.Timeout | undefined;
-  const inFlightTools = new Set<string>();
-  const armOrPauseIdle = (): void => {
-    if (!idleTimeoutMs) return;
-    if (timer) clearTimeout(timer);
-    timer = undefined;
-    if (inFlightTools.size > 0) return;
-    timer = setTimeout(() => {
-      idleFired = true;
+  //
+  // f031-stab-#4: RunWatchdog adds a hard cap per tool call on top, so a
+  // wedged tool can no longer keep the scope blocked until a manual /stop.
+  const watchdog = new RunWatchdog({
+    idleMs: timeouts.idleMs,
+    toolMs: timeouts.toolMs,
+    onFire: (fire) => {
       handle.interrupted = true;
-      log.warn('agent', 'idle-timeout', { scope, idleTimeoutMs });
+      if (fire.kind === 'idle') log.warn('agent', 'idle-timeout', { scope, idleTimeoutMs: fire.ms });
+      else log.warn('agent', 'tool-timeout', { scope, tool: fire.toolName, toolTimeoutMs: fire.ms });
       void handle.run.stop().catch(() => {
         /* stop errors are non-fatal */
       });
-    }, idleTimeoutMs);
-  };
-  armOrPauseIdle();
+    },
+  });
+  watchdog.start();
 
   // fix(2026-10-30): empty-run guard - count events that prove the agent
   // genuinely produced something (text/thinking/final_text/tool/usage).
@@ -1761,16 +1763,17 @@ async function processAgentStream(
       // sees the correct set size. tool_use opens a window; tool_result
       // closes it. Other event types are bookkept after the if/else.
       if (evt.type === 'tool_use') {
-        inFlightTools.add(evt.id);
+        watchdog.toolStarted(evt.id, evt.name);
         log.info('agent', 'tool-in-flight', {
           tool: evt.name,
-          inFlight: inFlightTools.size,
+          inFlight: watchdog.inFlight,
         });
       } else if (evt.type === 'tool_result') {
-        inFlightTools.delete(evt.id);
-        log.info('agent', 'tool-done', { inFlight: inFlightTools.size });
+        watchdog.toolFinished(evt.id);
+        log.info('agent', 'tool-done', { inFlight: watchdog.inFlight });
+      } else {
+        watchdog.activity();
       }
-      armOrPauseIdle();
 
       if (evt.type === 'system') {
         recordSession(evt);
@@ -1866,7 +1869,7 @@ async function processAgentStream(
       if (state.terminal !== 'running') break;
     }
   } finally {
-    if (timer) clearTimeout(timer);
+    watchdog.dispose();
   }
 
   // If state already reached a terminal event (done/error/etc.) before the
@@ -1874,8 +1877,13 @@ async function processAgentStream(
   // wins. This avoids "claude finished but flush was slow → timer fired
   // mid-flush → user sees 'idle_timeout' on a successful run".
   if (state.terminal === 'running') {
-    if (idleFired) {
-      state = markIdleTimeout(state, Math.round(idleTimeoutMs! / 60_000));
+    const fired = watchdog.firedWith;
+    if (fired) {
+      state = markIdleTimeout(
+        state,
+        Math.round(fired.ms / 60_000),
+        fired.kind === 'tool' ? fired.toolName : undefined,
+      );
     } else if (handle.interrupted) {
       state = markInterrupted(state);
     } else {

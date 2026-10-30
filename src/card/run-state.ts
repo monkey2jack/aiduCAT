@@ -35,6 +35,8 @@ export interface RunState {
   /** Set when terminal === 'idle_timeout' — how long claude was idle before
    * the watchdog gave up (so the message can say "N 分钟无响应"). */
   idleTimeoutMinutes?: number;
+  /** f031-stab-#4: set when the per-tool hard cap (not plain idle) fired. */
+  timeoutTool?: string;
   /** aiduCAT clarify: last parsed question marker (rendered as option buttons
    * under the answer when the run ends waiting on user input). */
   clarify?: ClarifyQuestion;
@@ -263,7 +265,7 @@ export function markInterrupted(state: RunState): RunState {
   };
 }
 
-export function markIdleTimeout(state: RunState, minutes: number): RunState {
+export function markIdleTimeout(state: RunState, minutes: number, toolName?: string): RunState {
   return {
     ...state,
     blocks: closeStreamingText(state.blocks),
@@ -271,7 +273,17 @@ export function markIdleTimeout(state: RunState, minutes: number): RunState {
     terminal: 'idle_timeout',
     footer: null,
     idleTimeoutMinutes: minutes,
+    ...(toolName ? { timeoutTool: toolName } : {}),
   };
+}
+
+/** f031-stab-#4: the one-line, user-facing reason for a timeout terminal. */
+export function timeoutNotice(state: RunState): string {
+  const mins = state.idleTimeoutMinutes ?? 0;
+  if (state.timeoutTool) {
+    return `⏱ 工具「${state.timeoutTool}」运行超过 ${mins} 分钟没有结果，已自动停止本轮。可以直接重发，或换个做法再试。`;
+  }
+  return `⏱ ${mins} 分钟没有任何进展，已自动停止本轮。可以直接重发，或换个说法再试。`;
 }
 
 /**
