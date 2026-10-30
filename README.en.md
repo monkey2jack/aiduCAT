@@ -191,6 +191,44 @@ Notes:
 - `contextWindow`: denominator of the ctx % meter
 
 Takes effect next turn; no restart needed.
+### Not on 10router? Plug in your own gateway in three steps
+
+aiduCAT's examples default to a [10router](https://github.com/techysy/10router)-style gateway (curated combos, `/api/combos`), but **nothing in aiduCAT hard-depends on it** — any service speaking the Anthropic Messages API (Claude Code family) or the OpenAI Chat Completions API (Codex family) works as a backend. Three typical setups:
+
+**A. Direct official API (simplest)**
+
+Configure no provider at all; set the official endpoint in the service environment:
+
+```bash
+export ANTHROPIC_BASE_URL="https://api.anthropic.com"
+export ANTHROPIC_API_KEY="sk-ant-..."
+```
+
+The `/model` dropdown falls back to Claude Code's native model list; `/model default` restores it anytime.
+
+**B. Third-party aggregation gateways (one-api / new-api / CLIProxyAPI, etc.)**
+
+Add a provider under `profiles.<name>.modelProviders` (see the JSON example above):
+
+- `wire`: use `anthropic` if the gateway speaks the Anthropic protocol, `openai` for OpenAI-compatible
+- `baseUrl`: up to the **port root** (no trailing `/v1` — Claude Code appends it, doubling it trips gateway WAFs)
+- `apiKey`: prefer the `${MY_GATEWAY_KEY}` env template; keep secrets out of config files
+- `models`: list the model ids your gateway actually serves; omit it and aiduCAT discovers via `<baseUrl>/v1/models` at startup
+- `contextWindow`: **declared it if you can** — it is the denominator of the panel's context-usage readout and the 60% auto-compact trigger. Without it, aiduCAT tries the gateway's `/v1/models`, then the provider's declared value; if none is found the percentage is simply hidden (conversation itself is unaffected)
+
+**C. Local inference (Ollama / llama.cpp / vLLM)**
+
+Same as B: point `baseUrl` at `http://127.0.0.1:11434` (Ollama: enable its OpenAI-compatible endpoint), pick `wire` per protocol, and declare `contextWindow` to match the loaded model (e.g. `40960` for `qwen3:32b`).
+
+**How 10router users differ (two enhancements, not dependencies):**
+
+| Capability | 10router users | Your gateway |
+|------|--------------|----------|
+| `/model` dropdown | pulls 10router's **curated combos** (`/api/combos`, management token) | pulls `<baseUrl>/v1/models` or uses the static `models` list |
+| Model logos | shipped (29 vendor icons) | upload your own tenant img_keys once (next section); without them the panel simply shows no icon |
+
+**Compliance note**: before pointing aiduCAT at any third-party gateway or free pool, make sure its terms of service allow programmatic access. aiduCAT does not and will not bypass upstream anti-abuse controls.
+
 ### Model logos (panel header icon)
 
 The panel header shows a vendor icon (OpenAI/Claude/Gemini, 29 vendors). Feishu cards reject external image URLs for `custom_icon` — they only render `img_key` values from images uploaded **to your own tenant** via `POST /open-apis/im/v1/images`. The shipped `assets/lark-logo-keys.json` is only valid for the tenant that uploaded them. For your own deployment:

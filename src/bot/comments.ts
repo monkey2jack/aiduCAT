@@ -8,7 +8,10 @@ import { getAgentStopGraceMs } from '../config/schema';
 import type { Controls } from '../commands';
 import { resolveAppPaths } from '../config/app-paths';
 import { log } from '../core/logger';
+import { canUseDm } from '../policy/access';
 import { evaluateRunPolicy } from '../policy/run-policy';
+import { resolveModelArg } from '../agent/models';
+import { runProviderEnvOverrides } from './run-flow';
 import { resolveWorkingDirectory } from '../policy/workspace';
 import { RunRejected } from '../runtime/errors';
 import type { ActiveRuns } from './active-runs';
@@ -103,6 +106,17 @@ export async function handleCommentMention(deps: CommentDeps): Promise<void> {
   });
   if (!evt.mentionedBot) {
     log.info('comment', 'skip', { reason: 'not-mentioned' });
+    return;
+  }
+  // Comments must pass the same allowlist as DMs: otherwise anyone who can
+  // comment on a shared doc can drive the agent by @-mentioning the bot.
+  const access = canUseDm(controls.profileConfig, controls, evt.operator.openId);
+  if (!access.ok) {
+    log.warn('comment', 'denied', {
+      reason: access.reason,
+      sender: evt.operator.openId,
+      commentScopeId: eventCommentScopeId,
+    });
     return;
   }
   if (!SUPPORTED_FILE_TYPES.has(evt.fileType)) {
@@ -207,7 +221,7 @@ export async function handleCommentMention(deps: CommentDeps): Promise<void> {
       prompt,
       requestedCwd,
       cwdRealpath,
-      access: { ok: true, reason: 'comment-mention' },
+      access,
       capability,
       profileConfig: controls.profileConfig,
       now: Date.now(),
@@ -256,11 +270,21 @@ export async function handleCommentMention(deps: CommentDeps): Promise<void> {
         cwd: cwdRealpath,
       });
 
+      const prefs = controls.profileConfig.preferences;
       const execution = await deps.executor.submit({
         scopeId: runScopeId,
         policy,
         sessionId,
         threadId,
+        // Same model / effort / provider routing as the DM path, so `/model`
+        // also applies to comment runs.
+        model: resolveModelArg(controls.profileConfig.agentKind, prefs.model),
+        effort: capability.agentId === 'claude' && prefs.effort === 'ultra' ? 'max' : prefs.effort,
+        envOverrides: await runProviderEnvOverrides(
+          controls.profileConfig.modelProviders,
+          prefs.provider,
+          capability.agentId,
+        ),
         stopGraceMs: getAgentStopGraceMs(controls.cfg),
         observability: {
           profile: controls.profile,

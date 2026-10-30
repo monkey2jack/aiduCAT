@@ -69,7 +69,7 @@ describe('unified access gates', () => {
     expect(lastMarkdown(channel)).toContain('仅管理员可用');
   });
 
-  it('does not apply IM access gates to cloud-doc comment mentions', async () => {
+  it('owner comment mentions skip IM access gates (PR#3 allowlist still enforced)', async () => {
     const root = await makeRoot();
     const calls: string[] = [];
     const rawClient = {
@@ -113,7 +113,7 @@ describe('unified access gates', () => {
 
     await handleCommentMention({
       channel: channel as Parameters<typeof handleCommentMention>[0]['channel'],
-      evt: commentEvent('ou_other'),
+      evt: commentEvent('ou_owner'),
       agent,
       sessions: new SessionStore(join(root, 'sessions.json')),
       workspaces: new WorkspaceStore(join(root, 'workspaces.json')),

@@ -469,7 +469,7 @@ async function seedCodexCatalog(
   const policy = evaluateRunPolicy({
     scope: {
       source: 'comment',
-      actorId: 'ou-user',
+      actorId: 'ou-owner',
       commentScopeId: docSessionScope('doc-token'),
       resourceBindings: [{ kind: 'doc', id: commentDocumentScopeId('doc-token'), verified: true }],
     },
@@ -477,7 +477,7 @@ async function seedCodexCatalog(
     prompt: '',
     requestedCwd: h.tmp.workspace,
     cwdRealpath,
-    access: { ok: true, reason: 'comment-mention' },
+    access: { ok: true, reason: 'allowed-owner' },
     capability,
     profileConfig: h.profileConfig,
     now: Date.now(),
@@ -597,7 +597,7 @@ function event(overrides: Partial<CommentEvent> = {}): CommentEvent {
     commentId: 'comment-1',
     replyId: 'reply-1',
     mentionedBot: true,
-    operator: { openId: 'ou-user' },
+    operator: { openId: 'ou-owner' },
     ...overrides,
   } as CommentEvent;
 }

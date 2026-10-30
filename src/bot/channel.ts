@@ -22,6 +22,7 @@ import { renderCard } from '../card/run-renderer';
 import {
   finalizeIfRunning,
   initialState,
+  markEmptyRun,
   markIdleTimeout,
   markInterrupted,
   reduce,
@@ -79,6 +80,17 @@ async function contextWindowForModel(model: string | undefined): Promise<number 
   if (!url || !model) return undefined;
   const windows = await fetchContextWindows(url);
   return windows.get(model);
+}
+
+/** Fallback when the router lookup has no answer (no AIDU_10ROUTER_URL, or a
+ * gateway like CLIProxyAPI whose /v1/models carries no context size): use the
+ * active provider's declared `contextWindow`, so the 60% auto-compact still
+ * applies on non-10router providers. */
+function providerContextWindow(profile: Controls['profileConfig']): number | undefined {
+  const id = profile.preferences.provider;
+  if (!id || id === 'default') return undefined;
+  const win = profile.modelProviders?.[id]?.contextWindow;
+  return typeof win === 'number' && win > 0 ? win : undefined;
 }
 import type { AppPaths } from '../config/app-paths';
 import {
@@ -255,6 +267,9 @@ export async function startChannel(deps: StartChannelDeps): Promise<BridgeChanne
       dmMode: 'open',
       requireMention: false,
       respondToMentionAll: false,
+      // Two bridged bots in the same group can @ each other forever. Drop the
+      // 5th bot @-mention within an hour per chat; any human message resets it.
+      botLoopGuard: { enabled: true, maxBotMentions: 5, windowMs: 3_600_000, scope: 'chat', onTrip: 'drop' },
     },
     // Disable per-chat serialization so we can implement our own
     // debounce + run-chain policy (see pending-queue + runChain below).
@@ -1001,7 +1016,8 @@ async function runAgentBatch(deps: RunBatchDeps): Promise<void> {
   const flow = await startRunFlow({
     scopeId: scope,
     // f0.2+: the selected model's declared window drives the 60% compact env.
-    modelWindow: await contextWindowForModel(modelSelection),
+    modelWindow:
+      (await contextWindowForModel(modelSelection)) ?? providerContextWindow(controls.profileConfig),
     scope: scopeContext,
     prompt,
     attachments: attachments.map(toPolicyAttachment),
@@ -1081,7 +1097,9 @@ async function runAgentBatch(deps: RunBatchDeps): Promise<void> {
     log.info('flush', 'idle-watchdog', { idleTimeoutMs });
   }
 
-  const replyMode = getMessageReplyMode(controls.cfg);
+  // Group replies use rich text (post) so `<at user_id>` becomes a real
+  // mention; DMs keep the configured mode.
+  const replyMode = firstMsg.chatType !== 'p2p' ? 'markdown' : getMessageReplyMode(controls.cfg);
   log.info('flush', 'reply-mode', { mode: replyMode });
   const cotMessages = getCotMessages(controls.cfg);
   const cotEnabled = cotMessages !== 'off';
@@ -1160,7 +1178,7 @@ async function runAgentBatch(deps: RunBatchDeps): Promise<void> {
           recordSession,
           async () => {},
           sessions,
-        );
+        capability.agentId);
         await cotDone;
         if (cotPublisher.degradedReason) {
           await sendCotDegradedNotice({
@@ -1236,7 +1254,7 @@ async function runAgentBatch(deps: RunBatchDeps): Promise<void> {
         },
         sessions,
         // (diagnostics)
-      );
+        capability.agentId);
       try {
         await awaitRenderAwareStream({
           mode: replyMode,
@@ -1316,7 +1334,7 @@ async function runAgentBatch(deps: RunBatchDeps): Promise<void> {
           }
         },
         sessions,
-      );
+      capability.agentId);
       try {
         await awaitRenderAwareStream({
           mode: replyMode,
@@ -1359,7 +1377,7 @@ async function runAgentBatch(deps: RunBatchDeps): Promise<void> {
         recordSession,
         async () => {},
         sessions,
-      );
+      capability.agentId);
       await sendFinalReply({
         channel,
         chatId,
@@ -1647,6 +1665,7 @@ async function processAgentStream(
   flush: (state: RunState) => Promise<void>,
   stats: { recordUsage: (chatId: string, u: { inputTokens?: number; outputTokens?: number; cachedInputTokens?: number; cacheCreationInputTokens?: number }) => void;
            recordMessage: (chatId: string, who: "user" | "agent") => void },
+  agentId: string,
 ): Promise<RunState> {
   const runStart = Date.now();
   let state: RunState = initialState;
@@ -1684,6 +1703,14 @@ async function processAgentStream(
   };
   armOrPauseIdle();
 
+  // fix(2026-10-30): empty-run guard - count events that prove the agent
+  // genuinely produced something (text/thinking/final_text/tool/usage).
+  // A claude process that dies instantly after spawn (seen after /stop or
+  // right after a long run: process-pool residue) emits only system+done,
+  // so the old code rendered an empty Done card the user never saw -
+  // manifesting as "must send the message twice".
+  let substantiveEvents = 0;
+
   try {
     for await (const evt of events) {
       if (handle.interrupted) break;
@@ -1706,6 +1733,16 @@ async function processAgentStream(
       if (evt.type === 'system') {
         recordSession(evt);
         continue;
+      }
+      // fix(2026-10-30): any of these proves the agent really ran.
+      if (
+        evt.type === 'text' ||
+        evt.type === 'thinking' ||
+        evt.type === 'final_text' ||
+        evt.type === 'tool_use' ||
+        evt.type === 'usage'
+      ) {
+        substantiveEvents++;
       }
       // f0.2+ /status: count the agent's answer as one assistant message.
       // NOTE: 'final_text' is Codex-only — the claude adapter ends a run with
@@ -1741,6 +1778,23 @@ async function processAgentStream(
         }
         // aiduCAT: fall through to reduce() so the panel header can show the
         // context-window percentage — usage rides on the state now.
+      }
+
+      // fix(2026-10-30): empty-run detection at terminal events. An
+      // empty round is surfaced as an explicit error terminal so the
+      // user sees a visible failure card instead of a silent empty
+      // Done card (the "send twice" bug).
+      if (
+        agentId === 'claude' &&
+        (evt.type === 'done' || evt.type === 'error') &&
+        substantiveEvents === 0 &&
+        !handle.interrupted
+      ) {
+        log.warn('run', 'empty-no-output', {
+          scope,
+          terminal: evt.type,
+        });
+        state = markEmptyRun(state);
       }
 
       const prevTerminal = state.terminal;

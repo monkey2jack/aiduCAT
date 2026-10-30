@@ -45,7 +45,7 @@ describe('comment guard', () => {
       allowedUsers: [],
     });
 
-    await handleCommentMention(h.deps(event({ operator: { openId: 'ou-outsider' } })));
+    await handleCommentMention(h.deps(event({ operator: { openId: 'ou-owner' } })));
 
     expect(h.channel.calls).toContain('fileComment.get');
     expect(h.agent.runOptions).toHaveLength(1);
@@ -193,7 +193,7 @@ async function createHarness(options: {
       controls: {
         profile: 'claude',
         profileConfig,
-        botOwnerId: 'ou-owner',
+        botOwnerId: 'ou-owner', botIdentity: { openId: 'ou-bot' },
         ownerRefreshState: 'ok',
         async refreshOwner() {},
         configPath: join(tmp.profile, 'config.json'),
@@ -229,7 +229,7 @@ function event(overrides: Partial<CommentEvent> = {}): CommentEvent {
     commentId: 'comment-1',
     replyId: 'reply-1',
     mentionedBot: true,
-    operator: { openId: 'ou-user' },
+    operator: { openId: 'ou-owner' },
     ...overrides,
   } as CommentEvent;
 }

@@ -45,7 +45,10 @@ export interface RunExecution {
   stop(): Promise<void>;
 }
 
-const DEFAULT_POST_DONE_EXIT_GRACE_MS = 2000;
+// fix(2026-10-30): 2s was too tight - claude often needs >2s to flush the
+// session transcript on exit, and force-killing it mid-flush left pool
+// residue that made the NEXT run die instantly (the send-twice bug).
+const DEFAULT_POST_DONE_EXIT_GRACE_MS = 15000;
 
 export class RunExecutor {
   private readonly agent: AgentAdapter;

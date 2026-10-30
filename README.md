@@ -195,6 +195,46 @@ Cloud-doc comments are document-scoped: 云文档评论按文档权限生效（d
 - `contextWindow`: 上下文占用百分比表的分母
 
 保存后无需重启，下一轮对话生效。
+### 不用 10router？三步接入你自己的网关
+
+aiduCAT 的默认示例以 [10router](https://github.com/techysy/10router) 系网关（combo 目录、`/api/combos` 策展清单）为例，但**它对网关没有任何硬依赖**——任何兼容 Anthropic Messages API（Claude Code 系）或 OpenAI Chat Completions API（Codex 系）的服务都能当后端。三类典型接法：
+
+**A. 直连官方 API（最简）**
+
+不配置任何 provider，直接给服务环境设官方端点：
+
+```bash
+export ANTHROPIC_BASE_URL="https://api.anthropic.com"
+export ANTHROPIC_API_KEY="sk-ant-..."
+```
+
+`/model` 下拉会走 Claude Code 原生模型列表；`/model default` 随时还原。
+
+**B. 第三方聚合网关（one-api / new-api / CLIProxyAPI 等）**
+
+在 `profiles.<name>.modelProviders` 加一个 provider（见上节 JSON 示例）：
+
+- `wire`: 网关吐 Anthropic 协议填 `anthropic`，吐 OpenAI 协议填 `openai`
+- `baseUrl`: 填到**端口根**（不带 `/v1`，Claude Code 自动补）
+- `apiKey`: 建议用 `${MY_GATEWAY_KEY}` 环境变量模板，密钥不进配置文件
+- `models`: 写你的网关实际提供的模型 id 清单；不写则启动时拉 `<baseUrl>/v1/models` 动态发现
+- `contextWindow`: **建议声明**。这是面板头「已用/总量 (x%)」占比与 60% 自动压缩触发的分母；不声明时 aiduCAT 会尝试从网关 `/v1/models` 读，仍拿不到则回落到 provider 声明值，都无效才不显示百分比（不影响对话本身）
+
+**C. 本地推理（Ollama / llama.cpp / vLLM）**
+
+同 B：网关地址填 `http://127.0.0.1:11434`（Ollama 需开 `OLLAMA_ORIGINS=*` 或用其 OpenAI 兼容层），`wire` 按协议填，`contextWindow` 按模型实际窗口声明（如 `qwen3:32b` 填 `40960`）。
+
+**10router 用户与你的差异（仅两点，均为增强而非依赖）：**
+
+| 能力 | 10router 用户 | 你的网关 |
+|------|--------------|----------|
+| `/model` 的 Model 下拉 | 自动拉 10router **策展 combo**（`/api/combos`，需管理 token） | 拉 `<baseUrl>/v1/models` 或用 `models` 静态清单 |
+| 模型 logo | 有（29 家厂商图标） | 需自行上传一次 img_key（见下节），不传则面板头无图标，不影响对话
+
+**合规提醒**：接任何第三方网关/免费池前，先确认其服务条款允许程序化调用；aiduCAT 不做也不支持绕过上游风控的接入。
+
+### 模型 logo（面板头图标）
+
 ### 模型 logo（面板头图标）
 
 面板头会显示模型厂商图标（OpenAI/Claude/Gemini 等 29 家）。飞书卡片 `custom_icon` 只认**本租户**上传图片的 `img_key`，外部 URL 会被飞书拒绝，因此仓库里的 `assets/lark-logo-keys.json` 只对上传过它们的那套飞书环境有效——**外部部署者需要自行上传一次并替换 key**：

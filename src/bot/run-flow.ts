@@ -259,7 +259,7 @@ export function recordRunSessionEvent(input: RecordRunSessionEventInput): void {
  * model-providers.resolveProviderKey; a failure logs and returns no override
  * so the run continues on the service env instead of erroring.
  */
-async function runProviderEnvOverrides(
+export async function runProviderEnvOverrides(
   providers: ProfileConfig['modelProviders'],
   providerId: string | undefined,
   agentId: 'claude' | 'codex' | string,

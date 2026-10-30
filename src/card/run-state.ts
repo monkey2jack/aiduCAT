@@ -274,6 +274,22 @@ export function markIdleTimeout(state: RunState, minutes: number): RunState {
   };
 }
 
+/**
+ * fix(2026-10-30): terminal marker for an empty run - the agent process
+ * exited without producing any substantive event (text/thinking/tool/
+ * usage). Surfaced as an error so the user sees a visible failure card
+ * instead of a silent empty Done card.
+ */
+export function markEmptyRun(state: RunState): RunState {
+  return {
+    ...state,
+    blocks: closeStreamingText(state.blocks),
+    reasoning: { ...state.reasoning, active: false },
+    terminal: 'error',
+    footer: null,
+  };
+}
+
 export function finalizeIfRunning(state: RunState): RunState {
   if (state.terminal !== 'running') return state;
   return {
