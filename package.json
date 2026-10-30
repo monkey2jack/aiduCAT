@@ -89,6 +89,13 @@
     "node": ">=20.12.0"
   },
   "pnpm": {
+    "overrides": {
+      "protobufjs": "^7.6.5",
+      "ws": "^8.21.0",
+      "follow-redirects": "^1.16.1",
+      "qs": "^6.16.1",
+      "@protobufjs/utf8": "^1.1.1"
+    },
     "onlyBuiltDependencies": [
       "esbuild",
       "protobufjs"
