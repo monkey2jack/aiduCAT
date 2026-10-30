@@ -18,7 +18,8 @@ import type { AgentAdapter, AgentEvent } from '../agent/types';
 import { handleCardAction } from '../card/dispatcher';
 import { CallbackAuth } from '../card/callback-auth';
 import { CallbackNonceStore } from '../card/callback-store';
-import { renderCard } from '../card/run-renderer';
+import { answerTruncatedInCard, renderCard } from '../card/run-renderer';
+import { deliverAfterCardFailure, larkErrorCode, sendFullAnswerText } from './card-degrade';
 import {
   finalizeIfRunning,
   initialState,
@@ -1207,9 +1208,44 @@ async function runAgentBatch(deps: RunBatchDeps): Promise<void> {
     if (replyMode === 'card') {
       let latestState: RunState = initialState;
       let producerStarted = false;
+      // f0.3.1 #3: `lastPatchError` comes from our pnpm patch of the SDK — a
+      // throttled patch that failed in the SDK's timer lands here instead of
+      // becoming an unhandledRejection.
       let cardCtrl:
-        | { update(next: object | ((current: object) => object)): Promise<void> }
+        | {
+            update(next: object | ((current: object) => object)): Promise<void>;
+            readonly messageId?: string;
+            readonly lastPatchError?: unknown;
+          }
         | undefined;
+      const loggedPatchCodes = new Set<string>();
+      const notePatchError = () => {
+        const err = cardCtrl?.lastPatchError;
+        if (!err) return;
+        const code = larkErrorCode(err);
+        if (loggedPatchCodes.has(String(code))) return;
+        loggedPatchCodes.add(String(code));
+        log.warn('card', 'patch-failed', {
+          scope,
+          code,
+          err: err instanceof Error ? err.message : String(err),
+        });
+      };
+      const degrade = async (err: unknown, state: RunState, step: string) => {
+        const shown = filterForPrefs(state);
+        await deliverAfterCardFailure({
+          channel,
+          chatId,
+          scope,
+          state: shown,
+          sendOpts,
+          renderOptions: cardRenderOptions,
+          messageId: producerStarted ? cardCtrl?.messageId || undefined : undefined,
+          err,
+          rejectedCard: renderCard(shown, cardRenderOptions),
+          step,
+        });
+      };
       const progress = createLazyProgressStream(scope, replyMode, () =>
         channel.stream(
           chatId,
@@ -1251,41 +1287,65 @@ async function runAgentBatch(deps: RunBatchDeps): Promise<void> {
           if (shouldOpenProgressStream(filterForPrefs(state))) progress.ensureOpen();
           if (cardCtrl) {
             await cardCtrl.update(renderCard(filterForPrefs(state), cardRenderOptions));
+            notePatchError();
           }
         },
         sessions,
         // (diagnostics)
         capability.agentId);
+      let degraded = false;
       try {
         await awaitRenderAwareStream({
           mode: replyMode,
           progress,
           renderDone,
           producerStarted: () => producerStarted,
-          fallback: async (state) => {
+          fallback: async (state, streamErr) => {
             if (controls.profileConfig.agentKind === 'codex') return;
             if (renderText(filterForPrefs(state)).trim() === '') return;
-            await channel.send(
-              chatId,
-              { card: renderCard(filterForPrefs(state), cardRenderOptions) },
-              sendOpts,
-            );
+            // f0.3.1 #1: the card is there but the stream died — fix it in place.
+            if (producerStarted && cardCtrl?.messageId) {
+              degraded = true;
+              await degrade(streamErr, state, 'stream-failed');
+              return;
+            }
+            try {
+              const result = await channel.send(
+                chatId,
+                { card: renderCard(filterForPrefs(state), cardRenderOptions) },
+                sendOpts,
+              );
+              requireMessageReceipt(result, 'card');
+              if (answerTruncatedInCard(filterForPrefs(state), cardRenderOptions)) {
+                await sendFullAnswerText({ channel, chatId, scope, state: filterForPrefs(state), sendOpts });
+              }
+            } catch (err) {
+              degraded = true;
+              await degrade(err, state, 'fallback-card');
+            }
           },
+          // f0.3.1 #1: the final patch was rejected (or failed late).
+          onProducerFailure:
+            controls.profileConfig.agentKind === 'codex'
+              ? undefined
+              : async (err, state) => {
+                  degraded = true;
+                  await degrade(err, state, 'final-patch');
+                },
         });
       } catch (err) {
-        if (controls.profileConfig.agentKind !== 'codex') {
-          // f0.2 diagnostics: dump the rejected final card so CardKit 200621
-          // (2026-10-19 跑完断卡) is attributable from logs alone.
-          try {
-            const spec = renderCard(filterForPrefs(latestState), cardRenderOptions);
-            const { appendFileSync } = await import('node:fs');
-            appendFileSync('/tmp/aiduCAT-rejected-card.json', JSON.stringify(spec) + '\n');
-          } catch {
-            /* dump must never mask the real error */
-          }
-        }
         if (controls.profileConfig.agentKind !== 'codex') throw err;
         log.fail('stream', err, { mode: replyMode, step: 'progress-stream' });
+      }
+      // f0.3.1 #2: the card had to cut the answer — send the whole thing as text.
+      if (
+        !degraded &&
+        controls.profileConfig.agentKind !== 'codex' &&
+        progress.opened() &&
+        !progress.abandoned() &&
+        answerTruncatedInCard(filterForPrefs(latestState), cardRenderOptions)
+      ) {
+        await sendFullAnswerText({ channel, chatId, scope, state: filterForPrefs(latestState), sendOpts });
       }
       await recallIfEmptyStreamedReply(channel, progress, filterForPrefs(latestState), scope);
       // aiduCAT: In card mode, if the progress stream card successfully opened, it already
@@ -1843,7 +1903,13 @@ async function awaitRenderAwareStream(input: {
   progress: LazyProgressStream;
   renderDone: Promise<RunState>;
   producerStarted: () => boolean;
-  fallback: (state: RunState) => Promise<void>;
+  fallback: (state: RunState, streamErr?: unknown) => Promise<void>;
+  /**
+   * f0.3.1 #1: a stream whose producer already ran failed at (or after) the
+   * terminal flush — i.e. the final card patch was rejected. When set, this
+   * handles it instead of throwing / only logging.
+   */
+  onProducerFailure?: (err: unknown, state: RunState) => Promise<void>;
 }): Promise<void> {
   const streamResult = input.progress.settled.then(
     () => ({ kind: 'stream' as const, ok: true as const }),
@@ -1859,7 +1925,7 @@ async function awaitRenderAwareStream(input: {
       log.fail('stream', first.err, { mode: input.mode, step: 'stream' });
       const rendered = await renderResult;
       if (!rendered.ok) throw rendered.err;
-      await runFallbackReply(input.mode, rendered.state, input.fallback);
+      await runFallbackReply(input.mode, rendered.state, input.fallback, first.err);
       return;
     }
     throw first.err;
@@ -1895,9 +1961,14 @@ async function awaitRenderAwareStream(input: {
         mode: input.mode,
         graceMs: STREAM_TERMINAL_GRACE_MS,
       });
-      void streamResult.then((result) => {
+      void streamResult.then(async (result) => {
         if (!result.ok) {
           log.fail('stream', result.err, { mode: input.mode, step: 'stream-terminal-late' });
+          if (input.onProducerFailure) {
+            await input.onProducerFailure(result.err, first.state).catch((err) => {
+              log.fail('stream', err, { mode: input.mode, step: 'degrade-late' });
+            });
+          }
         }
       });
       return;
@@ -1915,19 +1986,25 @@ async function awaitRenderAwareStream(input: {
     // A stream that failed before producing anything delivered nothing, so the
     // reply still has to go out; one that failed later already showed its
     // content and the error is the caller's to handle.
-    if (input.producerStarted()) throw terminal.err;
+    if (input.producerStarted()) {
+      if (!input.onProducerFailure) throw terminal.err;
+      log.fail('stream', terminal.err, { mode: input.mode, step: 'final-patch' });
+      await input.onProducerFailure(terminal.err, first.state);
+      return;
+    }
     log.fail('stream', terminal.err, { mode: input.mode, step: 'stream' });
-    await runFallbackReply(input.mode, first.state, input.fallback);
+    await runFallbackReply(input.mode, first.state, input.fallback, terminal.err);
   }
 }
 
 async function runFallbackReply(
   mode: 'card' | 'markdown',
   state: RunState,
-  fallback: (state: RunState) => Promise<void>,
+  fallback: (state: RunState, streamErr?: unknown) => Promise<void>,
+  streamErr?: unknown,
 ): Promise<void> {
   try {
-    await fallback(state);
+    await fallback(state, streamErr);
   } catch (err) {
     log.fail('stream', err, { mode, step: 'fallback' });
   }
