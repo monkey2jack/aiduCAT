@@ -123,13 +123,13 @@ describe('Claude slash command visible behavior', () => {
     expect(lastMarkdown(h.channel)).toContain(h.tmp.workspace);
   });
 
-  it('handles /resume use by pinning the requested session', async () => {
+  it('handles /resume use by pinning the requested session (UUID, f031-sec-L1)', async () => {
     const h = await createHarness();
     h.workspaces.setCwd('chat-1', h.tmp.workspace);
 
-    await expect(h.run('/resume use sess-1234567890')).resolves.toBe(true);
+    await expect(h.run('/resume use 0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d')).resolves.toBe(true);
 
-    expect(h.sessions.resumeFor('chat-1', h.tmp.workspace)).toBe('sess-1234567890');
+    expect(h.sessions.resumeFor('chat-1', h.tmp.workspace)).toBe('0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d');
     expect(lastMarkdown(h.channel)).toContain('已完成');
   });
 
@@ -141,12 +141,12 @@ describe('Claude slash command visible behavior', () => {
     h.sessions.recordModel('chat-1', 'old-model');
     expect(h.sessions.getRaw('chat-1')?.stats?.contextTokens).toBe(548_691);
 
-    await expect(h.run('/resume use sess-1234567890')).resolves.toBe(true);
+    await expect(h.run('/resume use 0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d')).resolves.toBe(true);
 
     const st = h.sessions.getRaw('chat-1')?.stats;
     expect(st?.contextTokens).toBeUndefined();
     expect(st?.model).toBeUndefined();
-    expect(h.sessions.resumeFor('chat-1', h.tmp.workspace)).toBe('sess-1234567890');
+    expect(h.sessions.resumeFor('chat-1', h.tmp.workspace)).toBe('0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d');
   });
 
   it('f031-#14 /stop with nothing running says so instead of staying silent', async () => {

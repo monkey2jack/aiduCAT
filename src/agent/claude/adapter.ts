@@ -90,7 +90,11 @@ export class ClaudeAdapter implements AgentAdapter {
       '--append-system-prompt-file',
       systemPromptFile.path,
     ];
-    if (opts.sessionId) args.push('--resume', opts.sessionId);
+    // f031-sec-L1: belt and braces — a session id is never passed if the CLI
+    // could parse it as an option.
+    if (opts.sessionId && /^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(opts.sessionId)) {
+      args.push('--resume', opts.sessionId);
+    }
     if (opts.model) args.push('--model', opts.model);
     if (opts.effort) {
       // Claude Code validates low/medium/high/xhigh/max. If ultra was selected (e.g. from codex profile), fallback to max.

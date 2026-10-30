@@ -74,8 +74,7 @@ export interface StatusInfo {
   };
   larkCliStatus?: 'app' | 'user-ready' | 'user-missing' | 'check-failed';
   activeRun: boolean;
-  activeScopes?: string[];
-  activeCommentScopes?: string[];
+  /** Global queue — admins only (f031-sec-L3); absent → `🚦 —`. */
   queue?: { active: number; waiting: number; cap: number };
   ownerState: string;
   /** Session scope (= chatId or chatId:threadId in topic groups). */
@@ -153,7 +152,7 @@ export function statusCard(info: StatusInfo): object {
   ].join(' · ');
   const queueLine = info.queue
     ? `🚦 ${info.queue.active}/${info.queue.cap} active, ${info.queue.waiting} waiting`
-    : '🚦 0/0 active, 0 waiting';
+    : '🚦 —';
   const larkBit = info.larkCliStatus ? `🔐 ${info.larkCliStatus}` : '🔐 0';
   const runBit = info.activeRun ? '🏃 1' : '🏃 0';
   const lines = [
