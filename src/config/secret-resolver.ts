@@ -110,7 +110,7 @@ async function resolveFileRef(ref: SecretRef, pc: ProviderConfig | undefined): P
  * users can write one resolver script and reuse it.
  *
  * If the configured command IS this same bridge binary (a.k.a. bridge is
- * self-hosting via `lark-channel-bridge secrets get`), short-circuit and
+ * self-hosting via `aiduCAT secrets get`), short-circuit and
  * read the AES keystore directly. Keeps `bridge start` working even when
  * the bridge symlink isn't on $PATH, and avoids spawning ourselves on
  * every reconnect.

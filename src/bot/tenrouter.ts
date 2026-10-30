@@ -162,23 +162,40 @@ export function invalidateComboCache(): void {
 
 /**
  * aiduCAT: model name -> context window size, from 10router's /v1/models
- * (each combo entry carries `capabilities.contextWindow`). Used to render the
- * context-usage percentage in the run panel header. Fetched with the runtime
- * API key (ANTHROPIC_API_KEY), cached 10 min; failures yield an empty map so
- * the panel simply omits the percentage.
+ * (each entry carries `capabilities.contextWindow`). Drives the 60%
+ * auto-compact (run-flow) and the /status denominator. Cached 10 min;
+ * failures yield an empty map and the caller falls back.
+ *
+ * f031-func-#1: auth prefers the management token AIDU_10ROUTER_TOKEN (sent
+ * as `x-10r-cli-token`, which 10router accepts on /v1/models) — the bot env
+ * has it, but not ANTHROPIC_API_KEY (that only lives in the CLI's
+ * settings.json), so the old key-only lookup always came back empty and the
+ * 60% compact never applied. ANTHROPIC_API_KEY (Bearer) stays as a fallback.
  */
 const MODELS_TTL_MS = 10 * 60_000;
 let contextWindows: { map: Map<string, number>; fetchedAt: number } | undefined;
 
-export async function fetchContextWindows(baseUrl: string): Promise<Map<string, number>> {
+export type ContextWindowFetch =
+  | { ok: true; map: Map<string, number> }
+  | { ok: false; reason: 'no-credentials' | 'fetch-failed'; map: Map<string, number> };
+
+export async function fetchContextWindowsDetailed(baseUrl: string): Promise<ContextWindowFetch> {
   if (contextWindows && Date.now() - contextWindows.fetchedAt < MODELS_TTL_MS) {
-    return contextWindows.map;
+    return { ok: true, map: contextWindows.map };
   }
+  const routerToken = (process.env.AIDU_10ROUTER_TOKEN ?? '').trim();
   const apiKey = (process.env.ANTHROPIC_API_KEY ?? '').trim();
-  if (!apiKey) return contextWindows?.map ?? new Map();
+  const headers: Record<string, string> | undefined = routerToken
+    ? { 'x-10r-cli-token': routerToken }
+    : apiKey
+      ? { Authorization: `Bearer ${apiKey}` }
+      : undefined;
+  if (!headers) {
+    return { ok: false, reason: 'no-credentials', map: contextWindows?.map ?? new Map() };
+  }
   try {
     const res = await fetchWithRetry(`${baseUrl.replace(/\/+$/, '')}/v1/models`, {
-      headers: { Authorization: `Bearer ${apiKey}` },
+      headers,
       signal: AbortSignal.timeout(MODELS_TIMEOUT_MS),
     });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -191,11 +208,12 @@ export async function fetchContextWindows(baseUrl: string): Promise<Map<string, 
       if (m.id && typeof cw === 'number' && cw > 0) map.set(m.id, cw);
     }
     if (map.size > 0) contextWindows = { map, fetchedAt: Date.now() };
-    return map;
+    return { ok: true, map };
   } catch (err) {
     log.warn('tenrouter', 'models-fetch-failed', {
+      auth: routerToken ? 'x-10r-cli-token' : 'bearer',
       err: err instanceof Error ? err.message : String(err),
     });
-    return contextWindows?.map ?? new Map();
+    return { ok: false, reason: 'fetch-failed', map: contextWindows?.map ?? new Map() };
   }
 }

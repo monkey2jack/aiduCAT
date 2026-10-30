@@ -1998,11 +1998,8 @@ async function processAgentStream(
         substantiveEvents++;
       }
       // f0.2+ /status: count the agent's answer as one assistant message.
-      // NOTE: 'final_text' is Codex-only — the claude adapter ends a run with
-      // the 'done' (result) event, so counting there would make Agent stay 0.
-      if (evt.type === 'final_text' && evt.content?.trim()) {
-        stats.recordMessage(scope, 'agent');
-      }
+      // f031-func-#8: only on 'done' — both adapters end every turn with it;
+      // counting codex's 'final_text' too made each codex turn count twice.
       if (evt.type === 'done') {
         stats.recordMessage(scope, 'agent');
       }

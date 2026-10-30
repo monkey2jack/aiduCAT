@@ -2,13 +2,6 @@ import type { ToolEntry } from './run-state';
 
 const HEADER_SUMMARY_MAX = 80;
 
-/** aiduCAT: header without any category emoji (used inside the aiduPOP panel body). */
-export function toolHeaderPlain(tool: ToolEntry): string {
-  const summary = summarizeInput(tool.name, tool.input);
-  const base = summary ? `**${tool.name}** — ${summary}` : `**${tool.name}**`;
-  return tool.status === 'error' ? `${base} ❌` : tool.status === 'stopped' ? `${base} ⏹` : base;
-}
-
 export function toolHeaderText(tool: ToolEntry): string {
   // aiduCAT: per-tool emoji aligned with Hangzhou aiduPOP layout.
   const emoji = toolEmoji(tool.name);

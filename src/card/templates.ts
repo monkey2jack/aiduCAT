@@ -94,6 +94,8 @@ export interface StatusInfo {
   };
   /** f0.2+: session start fallback for entries created pre-stats. */
   sessionUpdatedAt?: number;
+  /** f031-func-#2: real session start (first transcript timestamp). */
+  sessionStartedAt?: number;
   /** f0.2+ /status: current model/effort/ctx readout. */
   modelLine?: {
     model?: string;
@@ -122,7 +124,7 @@ export function statusCard(info: StatusInfo): object {
     // 🗜️ = auto-compact trigger as a % of the model window (setting display)
     ml?.compactPct !== undefined ? `🗜️ ${ml.compactPct}%` : undefined,
   ].filter(Boolean) as string[];
-  const startedAtMs = st?.startedAt ?? info.sessionUpdatedAt;
+  const startedAtMs = info.sessionStartedAt ?? st?.startedAt ?? info.sessionUpdatedAt;
   const dur = startedAtMs ? Date.now() - startedAtMs : 0;
   const durMin = Math.floor(dur / 60_000);
   const durTxt = durMin >= 60 ? `${Math.floor(durMin / 60)}h${durMin % 60}m` : durMin >= 1 ? `${durMin}m` : '刚刚';
@@ -215,9 +217,12 @@ export function resumeCard(cwd: string, entries: ResumeEntry[]): object {
  * aiduCAT /help (猴哥点单): plain "command — 中文注解" lines (no bullet or
  * backtick noise), no bottom buttons, plus a dropdown that executes the
  * picked command immediately (select callback → dispatcher `help.run`).
+ * f031-func-#4: must list every command in the commands/index.ts registry
+ * (guarded by tests/unit/card/f031-func-help-registry.test.ts).
  */
 export const HELP_COMMANDS: Array<{ cmd: string; note: string }> = [
   { cmd: 'new', note: '新建会话，重新开始' },
+  { cmd: 'reset', note: '同 /new（别名）' },
   { cmd: 'resume', note: '列出并恢复历史会话' },
   { cmd: 'cd', note: '切换工作目录' },
   { cmd: 'ws', note: '工作目录管理' },
@@ -231,6 +236,10 @@ export const HELP_COMMANDS: Array<{ cmd: string; note: string }> = [
   { cmd: 'exit', note: '关掉指定 bot' },
   { cmd: 'reconnect', note: '强制重连 WebSocket' },
   { cmd: 'doctor', note: '把日志交给 Agent 自助诊断' },
+  { cmd: 'invite', note: '加入白名单：user/admin @某人、group、all group' },
+  { cmd: 'remove', note: '移出白名单：user/admin @某人、group' },
+  { cmd: 'doc', note: '云文档评论说明（在文档评论里 @bot 即可）' },
+  { cmd: 'meeting', note: '视频会议：join <会议号> / leave / status / ask' },
   { cmd: 'help', note: '本帮助' },
 ];
 

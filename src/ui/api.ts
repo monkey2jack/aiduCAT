@@ -123,18 +123,6 @@ export async function loadProfileState(
   };
 }
 
-export function buildStatus(rt: UiRuntime, channel: LarkChannel | undefined, version: string) {
-  return {
-    profile: rt.profile,
-    agentKind: rt.profileConfig.agentKind,
-    mode: rt.profileConfig.mode,
-    version,
-    connected: Boolean(channel?.botIdentity?.name),
-    botName: channel?.botIdentity?.name,
-    botOwnerId: rt.botOwnerId,
-  };
-}
-
 function asRecord(body: unknown): Record<string, unknown> {
   if (!body || typeof body !== 'object' || Array.isArray(body)) {
     throw new ApiError(400, 'expected a JSON object body');

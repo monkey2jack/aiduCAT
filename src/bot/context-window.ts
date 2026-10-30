@@ -2,18 +2,46 @@ import { readFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import type { ProfileConfig } from '../config/profile-schema';
-import { fetchContextWindows } from './tenrouter';
+import { log } from '../core/logger';
+import { fetchContextWindowsDetailed } from './tenrouter';
 
 /**
  * aiduCAT: context window for the run's model, from 10router's /v1/models
  * (cached 10 min). Returns undefined when 10router isn't configured or the
  * model isn't listed.
+ *
+ * f031-func-#1: a configured router that can't answer is no longer silent —
+ * it logs a warn (throttled per reason+model) saying the run falls back to
+ * the Claude CLI's own settings.json window / CLAUDE_CODE_AUTO_COMPACT_WINDOW.
  */
 export async function contextWindowForModel(model: string | undefined): Promise<number | undefined> {
   const url = (process.env.AIDU_10ROUTER_URL ?? '').trim();
   if (!url || !model) return undefined;
-  const windows = await fetchContextWindows(url);
-  return windows.get(model);
+  const res = await fetchContextWindowsDetailed(url);
+  const win = res.map.get(model);
+  if (win) return win;
+  warnUnresolved(res.ok ? 'model-not-listed' : res.reason, model);
+  return undefined;
+}
+
+const WARN_EVERY_MS = 10 * 60_000;
+const lastWarn = new Map<string, number>();
+
+function warnUnresolved(reason: string, model: string): void {
+  const key = `${reason}:${model}`;
+  const now = Date.now();
+  const prev = lastWarn.get(key);
+  if (prev !== undefined && now - prev < WARN_EVERY_MS) return;
+  lastWarn.set(key, now);
+  log.warn('context-window', 'unresolved', {
+    reason,
+    model,
+    hint:
+      reason === 'no-credentials'
+        ? 'set AIDU_10ROUTER_TOKEN (or ANTHROPIC_API_KEY) in the bot env'
+        : undefined,
+    fallback: 'claude-cli settings.json (CLAUDE_CODE_AUTO_COMPACT_WINDOW / MAX_CONTEXT_TOKENS)',
+  });
 }
 
 /** Fallback when the router lookup has no answer (no AIDU_10ROUTER_URL, or a

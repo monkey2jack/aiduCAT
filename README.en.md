@@ -10,7 +10,7 @@
 >
 > Dress your Claude Code / Codex CLI in a Bubble-Wave Feishu card: deep-blue veins on paper white, one cat, zero noise.
 
-[![Version](https://img.shields.io/badge/version-f0.2%2B%2B-blue.svg)](https://github.com/monkey2jack/aiduCAT)
+[![Version](https://img.shields.io/badge/version-f0.3.1-blue.svg)](https://github.com/monkey2jack/aiduCAT)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Node 20+](https://img.shields.io/badge/node-20.12%2B-brightgreen.svg)](https://nodejs.org/)
 [![Claude Code](https://img.shields.io/badge/agent-Claude%20Code%20%7C%20Codex-orange.svg)](https://docs.anthropic.com/en/docs/claude-code/quickstart)
@@ -19,41 +19,53 @@
 **[📖 中文](./README.md)** | **English**
 
 <!-- distribution-policy: github-source-only -->
-> **Distribution note**: aiduCAT is not published to npm / PyPI. Run it from this repository source (`npm install && npm run build`). The local `bin` entry is for development and testing only.
+> **Distribution note**: aiduCAT is not published to npm / PyPI. Run it from this repository source (`pnpm install --frozen-lockfile`, see Quick start).
 
 ---
 
 ## What is aiduCAT?
 
-**aiduCAT** = **Claude-code Agent Texting** — aiduCAT dresses **Claude Code / Codex CLI** as a Feishu cat — streaming your local coding agent's thinking, tool calls, and final answer into one Feishu card styled after the [aiduPOP](https://github.com/monkey2jack/aiduPOP) Bubble Wave look.
+**aiduCAT☤爱嘟可爱糖** — **Claude-code Agent Texting** — is a Feishu cat for **Claude Code / Codex CLI**: it streams your local coding agent's thinking, tool calls and final answer into a single Feishu card styled after [aiduPOP](https://github.com/monkey2jack/aiduPOP)'s Bubble Wave.
 
 aiduCAT originates from and credits the upstream [zarazhangrui/lark-coding-agent-bridge](https://github.com/zarazhangrui/lark-coding-agent-bridge) (npm package `lark-channel-bridge`), an MIT-licensed project. On top of that code, aiduCAT adds a complete **Bubble Wave transformation**:
 
-| Feature | Description |
-|---------|-------------|
-| 🫧 **Single Bubble panel** | The answer streams on top; thinking and all tool calls fold into one collapsible panel (aiduPOP layout) |
-| ☤ **Two-line counter header** | Collapsed, the header reads `🌊 thinking · 🫧 tools · ✨ elapsed` over `model · effort · 25k/1M (2%)` — no caption text |
-| 👩🏻‍💻 **Per-tool emoji** | Bash👩🏻‍💻 Read👩🏻‍🏫 Edit👩🏻‍🔧 Write👩🏻‍🎨 Grep🕵🏻 Glob🥷🏻 Web👩🏻‍🚀 Agent👯🏻 — one face per tool family |
-| 🚦 **Border = status** | done green / stopped yellow / error red — read the result at a glance, no trailing notes |
-| 🎹 **Typing reaction** | A Typing emoji lands on your message the moment it arrives, and vanishes as soon as real work starts |
-| 🗣 **`/model` free switching** | Pass through any gateway combo id (e.g. `Gemini-3.8-Flash`) with no whitelist clamping |
-| 📝 **Copywriting menu** | Every visible string is cataloged in a wiki table for à-la-carte customization |
+| Feature | What it does |
+|------|------|
+| 🫧 **Single Bubble-Wave panel** | The answer streams on top; thinking and every tool call fold into one collapsible panel (aiduPOP layout) |
+| ☤ **One-line counter header** | Panel header: `model · 💭 thinking segments · 🛠️ tools · ⏱️ elapsed`; the live status word (☤Thinking… / ☤Processing… / ☤aiduCATing…) sits above the panel and disappears on completion |
+| 🏷 **Model logos** | 30 vendor marks (OpenAI/Gemini/Claude/Grok/DeepSeek/Qwen/Kimi/Doubao/Zhipu…) follow `/model` and show in the panel header |
+| 🔌 **Multi-provider** | `/model` card with Provider → Model → Effort dropdowns; provider keys resolve from env/secret refs, never plaintext; takes effect next turn without restart; 10router gateways only offer curated combos |
+| 🗜️ **Window-based auto-compact** | Compacts at 60% of the model window (`AIDUCAT_COMPACT_PCT`); the window comes from 10router `/v1/models` or the provider's `contextWindow`; when neither is available the Claude Code `settings.json` value is kept and a warn is logged |
+| 🚦 **Border = status** | done green / stopped yellow / error red / running grey — no trailing notes |
+| 🛟 **Rejected cards never hang** | Image markdown becomes links, HTML is stripped, answers over 25KB are truncated in the card and sent in full as plain text; if Feishu rejects the card it degrades (strict card → plain text → failure notice) instead of sticking on "Thinking" |
+| 🎹 **Typing reaction** | A keyboard reaction lands on your message and disappears as soon as output starts |
+| 🗣 **Free-form `/model`** | Passes any gateway combo id through (e.g. `Gemini-3.8-Flash`), no allow-list |
 
-## Quick start
+## Quick start (from scratch)
+
+Prerequisites: Node.js >= 20.12.0, and a working [Claude Code](https://docs.anthropic.com/en/docs/claude-code/quickstart) (or [Codex CLI](https://developers.openai.com/codex/cli)) whose model gateway is already configured in its env or `~/.claude/settings.json` (e.g. `ANTHROPIC_BASE_URL` / `ANTHROPIC_API_KEY`).
 
 ```bash
 git clone https://github.com/monkey2jack/aiduCAT.git
 cd aiduCAT
-npm install
-npm run build
+corepack enable                    # enables pnpm (or npm i -g pnpm@10; or use npx --yes pnpm@10 instead of pnpm)
+pnpm install --frozen-lockfile     # installs deps (incl. the SDK patch); the prepare hook also builds dist/
+pnpm build                         # rebuild after code changes
 
 # Run in foreground (first run opens a QR binding wizard)
-npm run dev -- run
+node bin/lark-channel-bridge.mjs run
 ```
 
-Requires Node.js >= 20.12.0 and one local agent installed and logged in: [Claude Code](https://docs.anthropic.com/en/docs/claude-code/quickstart) or [Codex CLI](https://developers.openai.com/codex/cli).
+The first run renders a binding QR code, lets you scan and pick/create a PersonalAgent app, then writes `~/.lark-channel/config.json`.
 
-The first run: renders a binding QR code → you scan and pick/create a PersonalAgent app → config is written to `~/.lark-channel/config.json`.
+To type `aiduCAT …` directly: run `pnpm setup`, then `pnpm link --global` (or `alias aiduCAT="node $PWD/bin/lark-channel-bridge.mjs"`). The entry file `bin/lark-channel-bridge.mjs` and the data dir `~/.lark-channel` keep the upstream names for now (renaming needs a migration, see CHANGELOG).
+
+Optional environment variables (in the bot's service environment):
+
+| Variable | Purpose |
+|---|---|
+| `AIDU_10ROUTER_URL` / `AIDU_10ROUTER_TOKEN` | 10router URL + management token: `/model` combo list and model-window lookup (auto-compact and the `/status` denominator) |
+| `AIDUCAT_COMPACT_PCT` | Auto-compact trigger as % of the window, default `60` |
 
 ## Commands
 
@@ -61,57 +73,72 @@ The first run: renders a binding QR code → you scan and pick/create a Personal
 
 | Command | Effect |
 |---|---|
-| `/help` | List all commands |
-| `/model` | Show / switch the model (any gateway combo id; `/model default` restores) |
-| `/new` | Interrupt the current run and start a fresh session |
-| `/stop` | Stop the current running task |
-| `/timeout [N\|off]` | Set the session idle watchdog |
-| `/cd <path>` | Switch the working directory |
-| `/ws` | Manage named workspaces |
-| `/resume` | Resume the same session history |
-| `/status` | Show run state |
-| `/config` | Adjust presentation preferences and access policy |
+| `/help` | List every command (the dropdown runs one directly) |
+| `/new` | Stop the current task and start a new session (keeps model/effort) |
+| `/reset` | Same as `/new` |
+| `/stop` | Stop the running task; says so when nothing is running |
+| `/status` | Six-line status card: session id, model · effort · 🗜️ compact point, permissions/owner, lark-cli/run/queue, 🚩 session start · age · message counts, ⏳ context and token stats |
+| `/model` | Show / switch model and reasoning effort (any gateway combo id; `/model default` restores) |
+| `/resume` | List and resume past sessions for this working directory |
+| `/cd <path>` | Switch working directory (admin) |
+| `/ws` | Named workspaces: `list` / `save <name>` / `use <name>` / `remove <name>` (admin) |
+| `/config` | Preferences, access control and identity policy (admin) |
+| `/timeout [N\|off]` | Session idle timeout |
+| `/account` | Show / replace the Feishu app credentials (admin) |
+| `/ps` | List every bot on this machine (admin) |
+| `/exit` | Stop a given bot (admin) |
+| `/reconnect` | Force a WebSocket reconnect (admin) |
+| `/doctor` | Hand the logs to the agent for self-diagnosis (admin) |
+| `/invite` | Allow-list: `user @name` / `admin @name` / `group` / `all group` (admin) |
+| `/remove` | Remove from allow-list: `user @name` / `admin @name` / `group` (admin) |
+| `/doc` | Cloud-doc comment help (just @bot in a doc comment, no binding) |
+| `/meeting` | Video meetings: `join <9-digit no.>` / `leave` / `status` / `ask` (admin) |
 
 ### Host CLI
 
 ```bash
-aiduCAT run      # foreground
-aiduCAT start    # background daemon (launchd/systemd)
+aiduCAT run              # foreground
+aiduCAT start            # install + start the background service (launchd / systemd / Windows Task Scheduler)
 aiduCAT status
 aiduCAT stop
+aiduCAT restart
 aiduCAT ps
 aiduCAT kill <id|#>
+aiduCAT ui               # local web console
+aiduCAT secrets set --app-id <id>
 ```
+
+(Without a global link, replace `aiduCAT` with `node bin/lark-channel-bridge.mjs`.)
 
 ## Card anatomy
 
-One card, three parts:
+One card, top to bottom:
 
 ```
-[final answer, streamed]
+[the model's answer, streaming]
 
-🫧Poping…                                    ← live status line (above panel)
-┌─────────────────────────────────────┐
-│  2 · 🫧 4 · ✨ 38s                  │  ← header line 1: counters
-│ Gemini-3.8-Flash · max · 25k/1M (2%) │  ← header line 2: model · effort · context
-└─────────────────────────────────────┘
+☤Thinking…                                       ← live status word (Thinking / Processing / aiduCATing), gone on completion
+┌─ [logo] Claude-Opus-4.6 · 💭 2 · 🛠️ 4 · ⏱️ 38s ─┐  ← collapsed panel header: model · thinking segments · tools · elapsed
+│ 💭 thinking text (up to 1500 chars)               │  ← when expanded
+│ - 🖥️ **Bash** — pnpm test                         │
+│ - 📖 **Read** — src/bot/channel.ts                │
+└──────────────────────────────────────────────────┘
 ```
 
-- **While running**: a live status word (🌊Waving… / 🫧Poping… / ☤aiduCATing…) rides on its own line above the panel; the two-line header shows thinking segments / tool count / elapsed time on top, model · effort · live context usage (`25k/1M (2%)`, refreshed per API call) below
-- **Expanded panel**: thinking text is prefixed 🌊; each tool line carries its own emoji (👩🏻‍💻Bash 👩🏻‍🏫Read 👩🏻‍🔧Edit 👩🏻‍🎨Write 🕵🏻Grep 🥷🏻Glob 👩🏻‍🚀Web 👯🏻agent 🤵🏻other)
-- **On completion**: the status word disappears; the **panel border carries the result** — done green / stopped yellow / error red
+- **Tool emoji**: 🖥️Bash 📖Read ⌨️Edit 📝Write 🔍Grep 🗂️Glob 🌐Web 🤖Agent/sub-agent 💻other; with many tools only the latest are listed, the rest fold into "…N more"
+- **On completion**: the status word disappears; the **border carries the result** — done green / stopped yellow / error red; the Feishu chat-list preview shows ✅Done / ⭕️Stop / ❌Error / ⚠️Timeout
+- **Empty run** (the agent exits without output): a red error card with the reason, asking you to resend
+- **Too long / rejected**: answers over 25KB are truncated in the card and sent in full as plain text; if Feishu rejects the card, a strict card (no image links, 12KB answer) is retried, then plain text, then a one-line "card failed" notice
 
+## Changelog (f0.3.1)
 
-## Changelog (f0.2+, 2026-10-20)
-
-- **Fix: /model provider switching never reached the gateway** — provider `ANTHROPIC_BASE_URL`/KEY broke at two layers (run-flow → executor → adapter); now wired through (community PR [#1](https://github.com/monkey2jack/aiduCAT/pull/1), thanks @hermesai8888-creator)
-- **Fix: picking the default provider in the /model dropdown was silently dropped** — form sentinel normalized before validation
-- **New: static provider model lists + union dropdown across providers** (PR #1); optional per-provider `env` overrides for haiku/subagents (PR #1)
-- **New: model ids accept `/` and `@`** (e.g. `cu/claude-opus-5-5`, PR #1)
-- **New: vendor logos in the panel header** (29 vendors; external deployments upload their own tenant keys — see the "Model logos" section)
-- **Docs: added README.zh.md, container deployment notes (issue [#2](https://github.com/monkey2jack/aiduCAT/issues/2)), logo upload guide**
+- Rejected cards degrade automatically, answers are sanitized and kept under 30KB, SDK throttled updates no longer raise unhandledRejection, the empty-run guard really works, patch throttle 250ms
+- `/status` numbers are real (context = input + cache, stats survive restarts, 🚩 from the Claude transcript's first entry)
+- 60% auto-compact fixed: the 10router window lookup uses `AIDU_10ROUTER_TOKEN`; when unresolved it logs a warn and keeps the CLI `settings.json`
+- `/help` lists all 20 commands; hints say `aiduCAT …`; ~300 lines of dead code removed
 
 Full details in [CHANGELOG.md](./CHANGELOG.md).
+
 ## Sessions and queueing
 
 - Each DM / group / topic / doc-comment thread keeps its own session
@@ -188,7 +215,7 @@ Notes:
 - `wire`: `anthropic` (Claude Code) or `openai` (Codex)
 - `models`: static list (declared = the Model dropdown becomes a cross-provider union and the provider follows the model); omitted = live `/v1/models` pull (10router-family hosts automatically return only the curated combos)
 - `env`: extra environment overrides applied when this provider is selected (e.g. haiku-model vars)
-- `contextWindow`: denominator of the ctx % meter
+- `contextWindow`: this provider's model window — denominator of the `/status` context readout and the 60% auto-compact
 
 Takes effect next turn; no restart needed.
 ### Not on 10router? Plug in your own gateway in three steps
@@ -214,7 +241,7 @@ Add a provider under `profiles.<name>.modelProviders` (see the JSON example abov
 - `baseUrl`: up to the **port root** (no trailing `/v1` — Claude Code appends it, doubling it trips gateway WAFs)
 - `apiKey`: prefer the `${MY_GATEWAY_KEY}` env template; keep secrets out of config files
 - `models`: list the model ids your gateway actually serves; omit it and aiduCAT discovers via `<baseUrl>/v1/models` at startup
-- `contextWindow`: **declared it if you can** — it is the denominator of the panel's context-usage readout and the 60% auto-compact trigger. Without it, aiduCAT tries the gateway's `/v1/models`, then the provider's declared value; if none is found the percentage is simply hidden (conversation itself is unaffected)
+- `contextWindow`: **declare it if you can** — it is the denominator of the `/status` context readout and the 60% auto-compact trigger. Without it (and without 10router) aiduCAT does not override the compact point: Claude Code keeps `CLAUDE_CODE_AUTO_COMPACT_WINDOW` from its own `settings.json`, and a warn is logged (conversation itself is unaffected)
 
 **C. Local inference (Ollama / llama.cpp / vLLM)**
 
@@ -225,15 +252,15 @@ Same as B: point `baseUrl` at `http://127.0.0.1:11434` (Ollama: enable its OpenA
 | Capability | 10router users | Your gateway |
 |------|--------------|----------|
 | `/model` dropdown | pulls 10router's **curated combos** (`/api/combos`, management token) | pulls `<baseUrl>/v1/models` or uses the static `models` list |
-| Model logos | shipped (29 vendor icons) | upload your own tenant img_keys once (next section); without them the panel simply shows no icon |
+| Model logos | shipped (30 vendor icons) | upload your own tenant img_keys once (next section); without them the panel simply shows no icon |
 
 **Compliance note**: before pointing aiduCAT at any third-party gateway or free pool, make sure its terms of service allow programmatic access. aiduCAT does not and will not bypass upstream anti-abuse controls.
 
 ### Model logos (panel header icon)
 
-The panel header shows a vendor icon (OpenAI/Claude/Gemini, 29 vendors). Feishu cards reject external image URLs for `custom_icon` — they only render `img_key` values from images uploaded **to your own tenant** via `POST /open-apis/im/v1/images`. The shipped `assets/lark-logo-keys.json` is only valid for the tenant that uploaded them. For your own deployment:
+The panel header shows a vendor icon (OpenAI/Claude/Gemini, 30 vendors). Feishu cards reject external image URLs for `custom_icon` — they only render `img_key` values from images uploaded **to your own tenant** via `POST /open-apis/im/v1/images`. The shipped `assets/lark-logo-keys.json` is only valid for the tenant that uploaded them. For your own deployment:
 
-1. Prepare 29 vendor PNGs at 128px (icons: [lobehub icons-static-png](https://github.com/lobehub/lobe-icons), ~1.97.x), named after the `VendorLogo` union in `src/card/model-logo.ts` (`openai.png`, `claude.png`, ...).
+1. Prepare 30 vendor PNGs at 128px (icons: [lobehub icons-static-png](https://github.com/lobehub/lobe-icons), ~1.97.x), named after the `VendorLogo` union in `src/card/model-logo.ts` (`openai.png`, `claude.png`, ...).
 2. Upload each via the im/v1/images API with your app credentials and collect the returned `img_key`s.
 3. Overwrite `assets/lark-logo-keys.json` with your key map and rebuild (`pnpm build`).
 4. Without an upload the feature degrades gracefully: the header simply renders without an icon; no core functionality is affected.

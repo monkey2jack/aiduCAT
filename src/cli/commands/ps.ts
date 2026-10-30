@@ -35,13 +35,13 @@ export function runPs(): void {
 
 export async function runKillCli(target: string | undefined): Promise<void> {
   if (!target) {
-    console.error('用法: lark-channel-bridge kill <bot id 或序号>');
+    console.error('用法: aiduCAT kill <bot id 或序号>');
     process.exit(1);
   }
   const entry = resolveTarget(target);
   if (!entry) {
     console.error(`✗ 没找到匹配的 bot:${target}`);
-    console.error('  用 `lark-channel-bridge ps` 看可选目标。');
+    console.error('  用 `aiduCAT ps` 看可选目标。');
     process.exit(1);
   }
   const owner = findOwningService(entry);
@@ -94,8 +94,8 @@ function findOwningService(
     if (!pid || Number(pid) !== entry.pid) continue;
     return {
       platformName: adapter.platformName,
-      stopHint: `lark-channel-bridge stop ${flag}`,
-      restartHint: `lark-channel-bridge restart ${flag}`,
+      stopHint: `aiduCAT stop ${flag}`,
+      restartHint: `aiduCAT restart ${flag}`,
     };
   }
   return undefined;

@@ -5,7 +5,7 @@ import { homedir } from 'node:os';
 import { dirname, isAbsolute } from 'node:path';
 import type { LarkChannel, NormalizedMessage } from '@larksuite/channel';
 import { claudeCapability, codexCapability } from '../agent/capability';
-import { DEFAULT_MODEL, isDefaultModel, normalizeModelSelection, resolveModelArg, supportedModels } from '../agent/models';
+import { DEFAULT_MODEL, normalizeModelSelection, resolveModelArg, supportedModels } from '../agent/models';
 import type { AgentAdapter } from '../agent/types';
 import type { ActiveRuns } from '../bot/active-runs';
 import {
@@ -78,7 +78,7 @@ import {
   reduce,
   type RunState,
 } from '../card/run-state';
-import { formatRelTime, listRecentSessions, type SessionSummary } from '../session/history';
+import { formatRelTime, listRecentSessions, transcriptStartedAt, type SessionSummary } from '../session/history';
 import {
   listCodexThreadHistory,
   type CodexThreadHistoryEntry,
@@ -206,6 +206,9 @@ const handlers: Record<string, Handler> = {
   '/remove': handleRemove,
   '/meeting': handleMeeting,
 };
+
+/** f031-func-#4: every registered slash command (/help must list them all). */
+export const REGISTERED_COMMANDS: readonly string[] = Object.freeze(Object.keys(handlers));
 
 /**
  * Commands that can mutate credentials, lifecycle, filesystem reach, or
@@ -895,6 +898,9 @@ async function handleStatus(_args: string, ctx: CommandContext): Promise<void> {
     chatMode: ctx.chatMode,
     sessionStats: sess?.stats,
     sessionUpdatedAt: sess?.updatedAt,
+    // f031-func-#2: 🚩 from the Claude transcript's first line; falls back
+    // to the stored stats start when there is no transcript.
+    sessionStartedAt: isCodex ? undefined : await transcriptStartedAt(sess?.sessionId, sess?.cwd),
     modelLine: await (async () => {
       // f031-#8: context = latest main-line call's input + cache_read +
       // cache_creation (SessionStore.recordUsage). Window + 🗜️ come from the
@@ -1471,7 +1477,6 @@ async function showModelCard(ctx: CommandContext): Promise<void> {
   const currentProvider = normalizeProvider(providers, ctx.controls.cfg.preferences?.provider);
 
   let combos: Array<{ id: string; name: string; label?: string }> = [];
-  let totalModels: number | undefined;
   let source: 'live' | 'cached' | 'unavailable' = 'unavailable';
   if (currentProvider === DEFAULT_PROVIDER) {
     if (tr) {

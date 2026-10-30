@@ -77,11 +77,13 @@ async function setup(opts: {
   midStreamPatchError?: Error;
   updateCard?: (messageId: string, card: Card, n: number) => Promise<void>;
   send?: (content: Record<string, unknown>, n: number) => Promise<{ messageId: string }>;
+  agentKind?: 'claude' | 'codex';
 }): Promise<Harness> {
   const tmp = await createTmpProfile('card-stream-failure-');
   const workspace = await realpath(tmp.workspace);
   const base = createDefaultProfileConfig({
-    agentKind: 'claude',
+    agentKind: opts.agentKind ?? 'claude',
+    ...(opts.agentKind === 'codex' ? { codex: { binaryPath: 'codex' } } : {}),
     accounts: { app: { id: 'cli_test', secret: 'secret', tenant: 'feishu' } },
     access: { allowedUsers: ['ou_user'] },
     preferences: { messageReply: 'card' },
@@ -89,7 +91,11 @@ async function setup(opts: {
   const profileConfig = { ...base, workspaces: { ...base.workspaces, default: workspace } };
   const sessions = new SessionStore(join(tmp.profile, 'sessions.json'));
   const workspaces = new WorkspaceStore(join(tmp.profile, 'workspaces.json'));
-  const agent = new FakeAgentAdapter({ id: 'claude', displayName: 'Claude', events: opts.events });
+  const agent = new FakeAgentAdapter(
+    opts.agentKind === 'codex'
+      ? { id: 'codex', displayName: 'Codex', events: opts.events }
+      : { id: 'claude', displayName: 'Claude', events: opts.events },
+  );
 
   const h: Harness = { sent: [], updates: [], updateCardCalls: [], handlers: {}, agent, sessions };
   let sendN = 0;
@@ -382,6 +388,24 @@ describe('f031-#8 /status numbers flow from the real claude stream through chann
     expect(st.contextTokens).toBe(c.input_tokens + c.cache_read_input_tokens + c.cache_creation_input_tokens);
     expect(st.tokensOut).toBe(F.turn.output_tokens);
     expect(st.model).toBe(F.model);
+    expect(st.userMessages).toBe(1);
+    expect(st.agentMessages).toBe(1);
+  });
+});
+
+describe('f031-func-#8 codex: one Agent message per turn', () => {
+  it('f031-func-#8 final_text + done count as ONE agent message', async () => {
+    const events: AgentEvent[] = [
+      { type: 'text', delta: 'hello' },
+      { type: 'final_text', content: 'hello' },
+      { type: 'done', terminationReason: 'normal' },
+    ];
+    const h = await setup({ events, agentKind: 'codex' });
+    h.sessions.set('oc_dm', 'thread-x', '/tmp');
+    await h.handlers.message?.(message('om_codex', 'hi'));
+    await waitFor(() => (h.sessions.getRaw('oc_dm')?.stats?.agentMessages ?? 0) > 0);
+    await settle();
+    const st = h.sessions.getRaw('oc_dm')!.stats!;
     expect(st.userMessages).toBe(1);
     expect(st.agentMessages).toBe(1);
   });
