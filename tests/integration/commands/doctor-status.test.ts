@@ -1,7 +1,7 @@
 import { realpath } from 'node:fs/promises';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import type { NormalizedMessage } from '@larksuite/channel';
 import { ActiveRuns } from '../../../src/bot/active-runs.js';
@@ -190,6 +190,35 @@ describe('f031-#8 /status shows the real context and window', () => {
     expect(status).not.toContain('/1M');
     expect(status).not.toContain('🗜️');
     expect(status).toMatch(/⏳ \d+(\.\d)?k\/— \(—%\)/);
+  });
+
+  it('f031-func-#2 🚩 = first timestamp of the Claude transcript, else the stored start', async () => {
+    const h = await createHarness({ configuredWorkspace: true });
+    h.sessions.set('chat-1', 'sess-1', h.tmp.workspace);
+    feed(h, [F.mainAssistant(F.calls[1]!)]);
+    const fmt = (ms: number): string =>
+      new Date(ms).toLocaleString('zh-CN', {
+        year: 'numeric', month: '2-digit', day: '2-digit',
+        hour: '2-digit', minute: '2-digit', hour12: false,
+      });
+    // no transcript yet → stored stats start (fallback)
+    await h.run('/status');
+    const storedStart = h.sessions.getRaw('chat-1')!.stats!.startedAt;
+    expect(JSON.stringify(lastContent(h.channel))).toContain(`🚩 ${fmt(storedStart)}`);
+    // transcript under any project dir: first line without timestamp is skipped
+    const dir = join(process.env.CLAUDE_CONFIG_DIR!, 'projects', '-some-other-cwd');
+    await mkdir(dir, { recursive: true });
+    const first = Date.parse('2026-10-28T10:15:00.000Z');
+    await writeFile(
+      join(dir, 'sess-1.jsonl'),
+      [
+        JSON.stringify({ type: 'summary', summary: 'x' }),
+        JSON.stringify({ type: 'user', timestamp: '2026-10-28T10:15:00.000Z' }),
+        JSON.stringify({ type: 'assistant', timestamp: '2026-10-30T13:09:00.000Z' }),
+      ].join('\n') + '\n',
+    );
+    await h.run('/status');
+    expect(JSON.stringify(lastContent(h.channel))).toContain(`🚩 ${fmt(first)}`);
   });
 
   it('f031-#12 model line falls back to the model the CLI reported', async () => {

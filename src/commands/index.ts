@@ -77,7 +77,7 @@ import {
   reduce,
   type RunState,
 } from '../card/run-state';
-import { formatRelTime, listRecentSessions, type SessionSummary } from '../session/history';
+import { formatRelTime, listRecentSessions, transcriptStartedAt, type SessionSummary } from '../session/history';
 import {
   listCodexThreadHistory,
   type CodexThreadHistoryEntry,
@@ -874,6 +874,9 @@ async function handleStatus(_args: string, ctx: CommandContext): Promise<void> {
     chatMode: ctx.chatMode,
     sessionStats: sess?.stats,
     sessionUpdatedAt: sess?.updatedAt,
+    // f031-func-#2: 🚩 from the Claude transcript's first line; falls back
+    // to the stored stats start when there is no transcript.
+    sessionStartedAt: isCodex ? undefined : await transcriptStartedAt(sess?.sessionId, sess?.cwd),
     modelLine: await (async () => {
       // f031-#8: context = latest main-line call's input + cache_read +
       // cache_creation (SessionStore.recordUsage). Window + 🗜️ come from the

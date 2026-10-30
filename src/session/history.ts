@@ -20,6 +20,70 @@ function claudeProjectDir(cwd: string): string {
   return join(homedir(), '.claude', 'projects', encodeCwd(cwd));
 }
 
+/** f031-func-#2: Claude config root ($CLAUDE_CONFIG_DIR or ~/.claude). */
+function claudeConfigDir(): string {
+  return process.env.CLAUDE_CONFIG_DIR?.trim() || join(homedir(), '.claude');
+}
+
+/**
+ * f031-func-#2: when the Claude session really started — the first
+ * `timestamp` in its transcript (<config>/projects/<cwd>/<session>.jsonl;
+ * any project dir if the cwd one has no such file). Only the first 50 lines
+ * are scanned and only the timestamp field is kept. undefined when there is
+ * no transcript, no timestamp, or the id isn't a plain session id.
+ */
+export async function transcriptStartedAt(
+  sessionId: string | undefined,
+  cwd?: string,
+): Promise<number | undefined> {
+  if (!sessionId || !/^[A-Za-z0-9_-]{1,128}$/.test(sessionId)) return undefined;
+  const root = join(claudeConfigDir(), 'projects');
+  const file = `${sessionId}.jsonl`;
+  const candidates: string[] = [];
+  if (cwd) candidates.push(join(root, encodeCwd(cwd), file));
+  try {
+    for (const d of await readdir(root)) candidates.push(join(root, d, file));
+  } catch {
+    /* no projects dir */
+  }
+  for (const path of candidates) {
+    const ts = await firstTimestamp(path);
+    if (ts !== undefined) return ts;
+  }
+  return undefined;
+}
+
+async function firstTimestamp(path: string): Promise<number | undefined> {
+  let stream: ReturnType<typeof createReadStream>;
+  try {
+    await stat(path);
+    stream = createReadStream(path, { encoding: 'utf8' });
+  } catch {
+    return undefined;
+  }
+  const rl = createInterface({ input: stream });
+  let n = 0;
+  try {
+    for await (const line of rl) {
+      if (++n > 50) break;
+      if (!line.includes('"timestamp"')) continue;
+      try {
+        const ts = (JSON.parse(line) as { timestamp?: unknown }).timestamp;
+        const ms = typeof ts === 'string' ? Date.parse(ts) : typeof ts === 'number' ? ts : NaN;
+        if (Number.isFinite(ms) && ms > 0) return ms;
+      } catch {
+        /* malformed line */
+      }
+    }
+  } catch {
+    return undefined;
+  } finally {
+    rl.close();
+    stream.destroy();
+  }
+  return undefined;
+}
+
 /** Return the most recent `limit` jsonl sessions for the given cwd, newest first. */
 export async function listRecentSessions(cwd: string, limit = 5): Promise<SessionSummary[]> {
   const dir = claudeProjectDir(cwd);

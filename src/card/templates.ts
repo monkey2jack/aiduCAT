@@ -95,6 +95,8 @@ export interface StatusInfo {
   };
   /** f0.2+: session start fallback for entries created pre-stats. */
   sessionUpdatedAt?: number;
+  /** f031-func-#2: real session start (first transcript timestamp). */
+  sessionStartedAt?: number;
   /** f0.2+ /status: current model/effort/ctx readout. */
   modelLine?: {
     model?: string;
@@ -123,7 +125,7 @@ export function statusCard(info: StatusInfo): object {
     // 🗜️ = auto-compact trigger as a % of the model window (setting display)
     ml?.compactPct !== undefined ? `🗜️ ${ml.compactPct}%` : undefined,
   ].filter(Boolean) as string[];
-  const startedAtMs = st?.startedAt ?? info.sessionUpdatedAt;
+  const startedAtMs = info.sessionStartedAt ?? st?.startedAt ?? info.sessionUpdatedAt;
   const dur = startedAtMs ? Date.now() - startedAtMs : 0;
   const durMin = Math.floor(dur / 60_000);
   const durTxt = durMin >= 60 ? `${Math.floor(durMin / 60)}h${durMin % 60}m` : durMin >= 1 ? `${durMin}m` : '刚刚';
