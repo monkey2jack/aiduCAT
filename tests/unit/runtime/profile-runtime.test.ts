@@ -1,8 +1,8 @@
 import { mkdir, readFile, realpath, writeFile } from 'node:fs/promises';
 import { delimiter, join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { mkdtemp } from 'node:fs/promises';
-import { describe, expect, it, vi } from 'vitest';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { afterAll, describe, expect, it, vi } from 'vitest';
 import {
   materializeEnvSecretForService,
   resolveProfileRuntime,
@@ -1151,8 +1151,18 @@ describe('profile runtime resolver', () => {
   });
 });
 
+// f031 merge: these roots (and their `<root>-workspaces` siblings) used to be left in /tmp.
+const tmpRoots: string[] = [];
+afterAll(async () => {
+  await Promise.all(
+    tmpRoots.splice(0).flatMap((r) => [r, `${r}-workspaces`].map((d) => rm(d, { recursive: true, force: true }))),
+  );
+});
+
 async function tmpRoot(): Promise<string> {
-  return mkdtemp(join(tmpdir(), 'bridge-profile-runtime-'));
+  const root = await mkdtemp(join(tmpdir(), 'bridge-profile-runtime-'));
+  tmpRoots.push(root);
+  return root;
 }
 
 async function writeExecutable(root: string, name: string): Promise<string> {

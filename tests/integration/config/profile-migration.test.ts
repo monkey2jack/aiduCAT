@@ -26,7 +26,10 @@ async function makeRoot(): Promise<string> {
 
 afterEach(async () => {
   await Promise.all(childProcesses.splice(0).map(killChild));
-  await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
+  // f031 merge: app paths put the default workspace in a sibling `<root>-workspaces` dir; remove it too.
+  await Promise.all(
+    roots.splice(0).flatMap((root) => [root, `${root}-workspaces`].map((d) => rm(d, { recursive: true, force: true }))),
+  );
 });
 
 describe('profile v2 migration', () => {

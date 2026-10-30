@@ -59,6 +59,8 @@ describe('ClaudeAdapter system prompt wiring', () => {
     expect(systemPromptFileContent()).toBe(
       buildBridgeSystemPrompt({ openId: 'ou_bot_self', name: 'Bridge' }),
     );
+    // f031 merge: finish the child's lifecycle so the temp prompt dir is removed (was left in /tmp).
+    child.emit('exit', 0, null);
   });
 
   it('falls back to the base system prompt when no identity was set', async () => {
@@ -70,6 +72,8 @@ describe('ClaudeAdapter system prompt wiring', () => {
 
     expect(await readAll(child.stdin)).toBe('hi');
     expect(systemPromptFileContent()).toBe(buildBridgeSystemPrompt(undefined));
+    // f031 merge: finish the child's lifecycle so the temp prompt dir is removed (was left in /tmp).
+    child.emit('exit', 0, null);
   });
 
   function systemPromptFileContent(): string {

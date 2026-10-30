@@ -32,8 +32,11 @@ function fakeChild() {
 
 function argsFor(opts: { model?: string; effort?: string; envOverrides?: Record<string, string> }): string[] {
   spawnMock.spawnProcess.mockReset();
-  spawnMock.spawnProcess.mockReturnValue(fakeChild());
+  const child = fakeChild();
+  spawnMock.spawnProcess.mockReturnValue(child);
   new ClaudeAdapter().run({ runId: 'r', prompt: 'hi', cwd: '/tmp', ...opts } as never);
+  // f031 merge: end the fake child's lifecycle so the temp system-prompt dir is removed.
+  child.emit('exit', 0, null);
   return spawnMock.spawnProcess.mock.calls[0]?.[1] as string[];
 }
 

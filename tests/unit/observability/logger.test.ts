@@ -20,7 +20,8 @@ const cleanups: Array<() => Promise<void>> = [];
 describe('profile logger observability', () => {
   afterEach(async () => {
     await closeLogger();
-    configureLogger({ maxFileBytes: 128 * 1024 * 1024 });
+    // f031 merge: drop the file sink too, or later log calls re-create the removed tmp logs dir.
+    configureLogger({ logsDir: '', maxFileBytes: 128 * 1024 * 1024 });
     await Promise.all(cleanups.splice(0).map((cleanup) => cleanup()));
   });
 

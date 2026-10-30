@@ -64,7 +64,10 @@ beforeEach(async () => {
 
 afterEach(async () => {
   await sup.shutdown();
-  await Promise.all(roots.splice(0).map((r) => rm(r, { recursive: true, force: true })));
+  // f031 merge: app paths put the default workspace in a sibling `<root>-workspaces` dir; remove it too.
+  await Promise.all(
+    roots.splice(0).flatMap((r) => [r, `${r}-workspaces`].map((d) => rm(d, { recursive: true, force: true }))),
+  );
 });
 
 const allowed = (c: { profileConfig: Parameters<typeof canUseGroup>[0] }) =>
