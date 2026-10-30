@@ -90,7 +90,7 @@ describe('keystore', () => {
     expect(await getSecret('app-missing', paths)).toBeUndefined();
   });
 
-  it('keeps entries readable after the machine hostname changes', async () => {
+  it('f031-stab-#6-242 keeps entries readable after the machine hostname changes', async () => {
     const paths = await tempPaths();
     await setSecret('app-cli_x', 'super-secret', paths);
 
@@ -101,7 +101,7 @@ describe('keystore', () => {
     expect(await getSecret('app-cli_x', paths)).toBe('super-secret');
   });
 
-  it('reads a legacy hostname-encrypted entry and migrates it off the hostname', async () => {
+  it('f031-stab-#6-242 reads a legacy hostname-encrypted entry and migrates it off the hostname', async () => {
     const paths = await tempPaths();
     await writeLegacyEntry(paths, 'app-cli_x', 'legacy-secret', 'machine-a.local');
     expect(await readEntry(paths.secretsFile, 'app-cli_x')).not.toHaveProperty('kdf', 'keyfile');
