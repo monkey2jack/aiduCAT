@@ -46,7 +46,7 @@ import {
 import type { KeystorePaths } from '../config/keystore';
 import { resolveAppSecret } from '../config/secret-resolver';
 import { log, reportMetric, withTrace } from '../core/logger';
-import { MediaCache, type LocalAttachment } from '../media/cache';
+import { DOWNLOAD_FAILED, MediaCache, type LocalAttachment } from '../media/cache';
 import {
   toPolicyAttachment,
   toPromptAttachment,
@@ -2288,6 +2288,11 @@ function buildPrompt(
 
   const senderType = senderTypeOf(first);
   const mentions = mergeMentions(batch);
+  const instructions = [
+    ...BRIDGE_AGENT_INSTRUCTIONS,
+    ...downloadFailedInstructions(attachments),
+    ...(extraInstructions ?? []),
+  ];
 
   return buildAgentPrompt({
     context: {
@@ -2302,16 +2307,29 @@ function buildPrompt(
       messageIds: batch.map((m) => m.messageId),
       source: 'im',
     },
-    instructions:
-      extraInstructions && extraInstructions.length > 0
-        ? [...BRIDGE_AGENT_INSTRUCTIONS, ...extraInstructions]
-        : BRIDGE_AGENT_INSTRUCTIONS,
+    instructions,
     userInput: userPart,
     ...(topicContext.length > 0 ? { topicContext: topicContext.map(toPromptTopicMessage) } : {}),
     quotedMessages: quotes.map(toPromptQuote),
     interactiveCards: batch.map(toPromptInteractiveCard).filter(isDefined),
     attachments: attachments.map(toPromptAttachment),
   });
+}
+
+/**
+ * f031-fix-#1: name every attachment whose download failed, so the agent still
+ * answers but tells the user which file it never saw.
+ */
+function downloadFailedInstructions(attachments: readonly LocalAttachment[]): string[] {
+  const failed = attachments.filter((a) => a.rejectionReason === DOWNLOAD_FAILED);
+  if (failed.length === 0) return [];
+  const names = failed.map((a) => {
+    const kind = a.kind === 'image' ? '图片' : '文件';
+    return a.originalName ? `${kind}「${a.originalName}」` : `${kind}（消息 ${a.sourceMessageId}）`;
+  });
+  return [
+    `有 ${failed.length} 个附件没下载下来：${names.join('、')}（见 user_input.attachments 里 rejectionReason=download-failed 的条目）。其余内容照常处理，但回答里要明确告诉用户这些附件你没看到，需要的话请对方重发。`,
+  ];
 }
 
 /**

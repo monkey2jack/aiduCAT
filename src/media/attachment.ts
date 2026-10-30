@@ -117,6 +117,11 @@ export function toPromptAttachment(attachment: NormalizedAttachment): BridgeProm
     requiredness: attachment.requiredness,
     decision: attachment.decision,
     ...(attachment.rejectionReason ? { rejectionReason: attachment.rejectionReason } : {}),
+    // f031-fix-#1: a failed download has no file — its name is the only way to
+    // tell which attachment is missing.
+    ...(attachment.rejectionReason === 'download-failed' && attachment.originalName
+      ? { originalName: attachment.originalName }
+      : {}),
   };
 }
 

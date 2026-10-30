@@ -16,6 +16,9 @@ import {
 
 export type LocalAttachment = NormalizedAttachment;
 
+/** f031-fix-#1: rejectionReason of an attachment whose download failed. */
+export const DOWNLOAD_FAILED = 'download-failed';
+
 export interface MediaResolveOptions extends Partial<AttachmentPolicyOptions> {
   cacheMaxBytes?: number;
 }
@@ -44,12 +47,17 @@ export class MediaCache {
     if (process.platform !== 'win32') await chmod(this.rootDir, 0o700).catch(() => {});
 
     const candidates: AttachmentCandidate[] = [];
+    const failed: LocalAttachment[] = [];
     for (const item of items) {
       try {
         const file = await this.resolveOne(item);
         if (file) candidates.push(file);
       } catch (err) {
         log.fail('media', err, { fileKey: item.resource.fileKey });
+        // f031-fix-#1: a failed download is not dropped silently — it stays in
+        // the list as rejected/download-failed so the prompt can tell the agent
+        // (and through it Dudu) which attachment is missing.
+        failed.push(downloadFailedAttachment(item));
       }
     }
     const normalized = normalizeAttachments(candidates, options);
@@ -65,7 +73,7 @@ export class MediaCache {
         ),
       );
     }
-    return normalized;
+    return [...normalized, ...failed];
   }
 
   private async resolveOne(item: ResourceRequest): Promise<AttachmentCandidate | null> {
@@ -124,6 +132,26 @@ export class MediaCache {
     });
     return candidate;
   }
+}
+
+function downloadFailedAttachment(item: ResourceRequest): LocalAttachment {
+  const r = item.resource;
+  const kind: AttachmentKind = r.type;
+  return {
+    absPath: '',
+    path: '',
+    kind,
+    size: 0,
+    mime: '',
+    hash: '',
+    source: 'lark',
+    sourceMessageId: item.messageId,
+    sourceFileKey: r.fileKey,
+    ...(r.fileName ? { originalName: r.fileName } : {}),
+    requiredness: 'optional',
+    decision: 'rejected',
+    rejectionReason: DOWNLOAD_FAILED,
+  };
 }
 
 /** Delete files under the media cache whose mtime is older than maxAgeMs. */
@@ -213,7 +241,7 @@ async function enforceCacheMaxBytes(
 async function removeRejectedResolvedFiles(attachments: readonly NormalizedAttachment[]): Promise<void> {
   await Promise.all(
     attachments
-      .filter((attachment) => attachment.decision !== 'accepted')
+      .filter((attachment) => attachment.decision !== 'accepted' && attachment.absPath)
       .map((attachment) => rm(attachment.absPath, { force: true })),
   );
 }

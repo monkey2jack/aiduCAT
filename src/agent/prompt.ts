@@ -70,6 +70,8 @@ export interface BridgePromptAttachment {
   requiredness?: 'required' | 'optional';
   decision?: 'accepted' | 'rejected' | 'skipped';
   rejectionReason?: string;
+  /** f031-fix-#1: only set for a failed download (it has no file to point at). */
+  originalName?: string;
 }
 
 export interface BuildAgentPromptInput {
