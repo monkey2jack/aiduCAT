@@ -52,6 +52,17 @@ describe('comment guard', () => {
     expect(h.channel.replies).toEqual(['answer']);
   });
 
+  it('f031-sec-#2 a commenter who is not owner/allowlisted cannot run (personal and team mode)', async () => {
+    const personal = await createHarness({ comments: {}, allowedUsers: [] });
+    await handleCommentMention(personal.deps(event({ operator: { openId: 'ou-stranger' } })));
+    expect(personal.agent.runOptions).toHaveLength(0);
+
+    const team = await createHarness({ comments: {}, allowedUsers: [], mode: 'team' });
+    await handleCommentMention(team.deps(event({ operator: { openId: 'ou-stranger' } })));
+    expect(team.agent.runOptions).toHaveLength(0);
+    expect(team.channel.calls).toEqual([]);
+  });
+
   it('skips unmentioned, unsupported, and self-reply comments before remote fetch', async () => {
     const h = await createHarness({
       botOpenId: 'ou-bot',
@@ -94,6 +105,7 @@ describe('comment guard', () => {
 async function createHarness(options: {
   comments: unknown;
   allowedUsers: string[];
+  mode?: 'personal' | 'team';
   botOpenId?: string;
   wikiNode?: { objToken: string; objType: string; spaceId?: string };
 }): Promise<{
@@ -169,7 +181,10 @@ async function createHarness(options: {
     await Promise.all([sessions.flush(), workspaces.flush()]);
     await tmp.cleanup();
   });
-  const profileConfig = profile(options.allowedUsers, tmp.workspace, options.comments);
+  const profileConfig = {
+    ...profile(options.allowedUsers, tmp.workspace, options.comments),
+    ...(options.mode ? { mode: options.mode } : {}),
+  };
   const activeRuns = new ActiveRuns();
   const executor = new RunExecutor({
     agent,
