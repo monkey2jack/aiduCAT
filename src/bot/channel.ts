@@ -69,30 +69,7 @@ import { fetchQuotedContext, fetchTopicContext, type QuotedContext } from './quo
 import { lookupMessageThreadId } from './thread-id';
 import { addWorkingReaction, removeReaction } from './reaction';
 import { fetchKnownChats } from './lark-info';
-import { fetchContextWindows } from './tenrouter';
-
-/**
- * aiduCAT: context window for the run's model, from 10router's /v1/models
- * (cached 10 min). Returns undefined when 10router isn't configured or the
- * model isn't listed — the panel then omits the context percentage.
- */
-async function contextWindowForModel(model: string | undefined): Promise<number | undefined> {
-  const url = (process.env.AIDU_10ROUTER_URL ?? '').trim();
-  if (!url || !model) return undefined;
-  const windows = await fetchContextWindows(url);
-  return windows.get(model);
-}
-
-/** Fallback when the router lookup has no answer (no AIDU_10ROUTER_URL, or a
- * gateway like CLIProxyAPI whose /v1/models carries no context size): use the
- * active provider's declared `contextWindow`, so the 60% auto-compact still
- * applies on non-10router providers. */
-function providerContextWindow(profile: Controls['profileConfig']): number | undefined {
-  const id = profile.preferences.provider;
-  if (!id || id === 'default') return undefined;
-  const win = profile.modelProviders?.[id]?.contextWindow;
-  return typeof win === 'number' && win > 0 ? win : undefined;
-}
+import { contextWindowForModel, resolveModelWindow } from './context-window';
 import type { AppPaths } from '../config/app-paths';
 import {
   consumeCotEvents,
@@ -1018,8 +995,7 @@ async function runAgentBatch(deps: RunBatchDeps): Promise<void> {
   const flow = await startRunFlow({
     scopeId: scope,
     // f0.2+: the selected model's declared window drives the 60% compact env.
-    modelWindow:
-      (await contextWindowForModel(modelSelection)) ?? providerContextWindow(controls.profileConfig),
+    modelWindow: await resolveModelWindow(controls.profileConfig, modelSelection),
     scope: scopeContext,
     prompt,
     attachments: attachments.map(toPolicyAttachment),
@@ -1724,8 +1700,7 @@ async function processAgentStream(
   idleTimeoutMs: number | undefined,
   recordSession: (event: AgentEvent) => void,
   flush: (state: RunState) => Promise<void>,
-  stats: { recordUsage: (chatId: string, u: { inputTokens?: number; outputTokens?: number; cachedInputTokens?: number; cacheCreationInputTokens?: number }) => void;
-           recordMessage: (chatId: string, who: "user" | "agent") => void },
+  stats: Pick<SessionStore, 'recordUsage' | 'recordMessage' | 'recordModel'>,
   agentId: string,
 ): Promise<RunState> {
   const runStart = Date.now();
@@ -1793,6 +1768,8 @@ async function processAgentStream(
 
       if (evt.type === 'system') {
         recordSession(evt);
+        // f031-#12: /status shows the model the CLI really ran.
+        stats.recordModel(scope, evt.model);
         continue;
       }
       // fix(2026-10-30): any of these proves the agent really ran.
@@ -1815,23 +1792,33 @@ async function processAgentStream(
         stats.recordMessage(scope, 'agent');
       }
       if (evt.type === 'usage') {
-        // f0.2+ /status: session-lifetime counters (/new resets). Per-call
-        // snapshots only — the terminal result event's cumulative total would
-        // double-count every tool round.
-        if (!evt.cumulative) {
-          stats.recordUsage(scope, {
-            inputTokens: evt.inputTokens,
-            outputTokens: evt.outputTokens,
-            cachedInputTokens: evt.cachedInputTokens,
-            cacheCreationInputTokens: evt.cacheCreationInputTokens,
-          });
-        }
+        // f031-#8/#10: per-call main-line snapshots drive the /status context
+        // readout; the once-per-turn cumulative result drives session totals.
+        stats.recordUsage(scope, {
+          // Codex (OpenAI semantics) counts cached tokens INSIDE input_tokens;
+          // claude reports them separately. Normalise to the claude shape.
+          inputTokens:
+            agentId === 'codex' && evt.inputTokens !== undefined
+              ? Math.max(0, evt.inputTokens - (evt.cachedInputTokens ?? 0))
+              : evt.inputTokens,
+          outputTokens: evt.outputTokens,
+          cachedInputTokens: evt.cachedInputTokens,
+          cacheCreationInputTokens: evt.cacheCreationInputTokens,
+          cumulative: evt.cumulative,
+          sidechain: evt.sidechain,
+          durationMs: evt.durationMs,
+        });
         const { costUsd, inputTokens, outputTokens } = evt;
         if (costUsd !== undefined || inputTokens !== undefined || outputTokens !== undefined) {
           log.info('agent', 'usage', {
             ...(costUsd !== undefined ? { costUsd: Number(costUsd.toFixed(4)) } : {}),
             ...(inputTokens !== undefined ? { inputTokens } : {}),
             ...(outputTokens !== undefined ? { outputTokens } : {}),
+            // f031-#8: cache fields + kind, so the journal can explain /status.
+            ...(evt.cachedInputTokens !== undefined ? { cacheRead: evt.cachedInputTokens } : {}),
+            ...(evt.cacheCreationInputTokens !== undefined ? { cacheCreate: evt.cacheCreationInputTokens } : {}),
+            ...(evt.cumulative ? { cumulative: true } : {}),
+            ...(evt.sidechain ? { sidechain: true } : {}),
           });
           if (costUsd !== undefined) reportMetric('cost_usd', costUsd);
           if (inputTokens !== undefined) reportMetric('tokens_in', inputTokens);

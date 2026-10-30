@@ -161,7 +161,7 @@ export function reduce(state: RunState, evt: AgentEvent): RunState {
       // billing total (summed across every tool round) — using it would show a
       // wildly inflated, capped 100%. Only per-message snapshots reflect the
       // live context-window fill, so cumulative ones are ignored here.
-      if (evt.cumulative) return state;
+      if (evt.cumulative || evt.sidechain) return state;
       return {
         ...state,
         usage: {

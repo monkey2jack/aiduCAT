@@ -5,24 +5,40 @@ import { writeFileAtomic } from '../platform/atomic-write';
 
 /** f0.2+ 猴哥点单: session-lifetime counters for /status. /new resets. */
 export interface SessionStats {
+  /** f031: stats schema. Pre-f031 files carry old meanings (tokensIn = last
+   * call's bare input) and are discarded on load rather than mixed in. */
+  v: 2;
   startedAt: number;
-  /** Last per-API-call usage snapshot (tokens + when it arrived). */
-  lastUsageAt?: number;
-  lastOutputTokens?: number;
-  /** Cumulative across every API call since session creation. */
+  /** f031-#8: prompt size of the latest MAIN-LINE API call
+   * (input + cache_read + cache_creation) = what the model actually loaded.
+   * Sub-agent calls and whole-turn result totals never touch it. */
+  contextTokens?: number;
+  contextAt?: number;
+  /** f031-#12: model the CLI reported at init for the latest run. */
+  model?: string;
+  /** f031-#10: cumulative over every finished turn (claude `result` usage). */
   tokensIn: number;
   tokensOut: number;
   cacheRead: number;
   cacheCreate: number;
   userMessages: number;
   agentMessages: number;
-  /** Agent ACTIVE milliseconds (sum of run segments; idle gaps excluded —
-   * 猴哥点单 2026-10-21: TPS denominator is execution time, not wall clock). */
+  /** Sum of API time of finished turns (TPS denominator, 猴哥点单 2026-10-21:
+   * execution time, not wall clock). */
   activeMs: number;
-  /** Last usage arrival — used to close the active segment lazily. */
-  activeFrom?: number;
-  /** Output tokens / active seconds (avg tps over execution time). */
+  /** Output tokens / active seconds. */
   tpsAvg?: number;
+}
+
+/** f031-#10: usage as it arrives from the agent stream. */
+export interface UsageSample {
+  inputTokens?: number;
+  outputTokens?: number;
+  cachedInputTokens?: number;
+  cacheCreationInputTokens?: number;
+  cumulative?: boolean;
+  sidechain?: boolean;
+  durationMs?: number;
 }
 
 export interface SessionEntry {
@@ -42,9 +58,33 @@ export interface SessionEntry {
 
 type SessionMap = Record<string, SessionEntry>;
 
+function validStats(raw: unknown): SessionStats | undefined {
+  if (!raw || typeof raw !== 'object') return undefined;
+  const r = raw as Partial<SessionStats>;
+  const num = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
+  if (r.v !== 2 || !num(r.startedAt)) return undefined;
+  return {
+    v: 2,
+    startedAt: r.startedAt,
+    ...(num(r.contextTokens) ? { contextTokens: r.contextTokens } : {}),
+    ...(num(r.contextAt) ? { contextAt: r.contextAt } : {}),
+    ...(typeof r.model === 'string' ? { model: r.model } : {}),
+    tokensIn: num(r.tokensIn) ? r.tokensIn : 0,
+    tokensOut: num(r.tokensOut) ? r.tokensOut : 0,
+    cacheRead: num(r.cacheRead) ? r.cacheRead : 0,
+    cacheCreate: num(r.cacheCreate) ? r.cacheCreate : 0,
+    userMessages: num(r.userMessages) ? r.userMessages : 0,
+    agentMessages: num(r.agentMessages) ? r.agentMessages : 0,
+    activeMs: num(r.activeMs) ? r.activeMs : 0,
+    ...(num(r.tpsAvg) ? { tpsAvg: r.tpsAvg } : {}),
+  };
+}
+
 export class SessionStore {
   private data: SessionMap = {};
   private saving: Promise<void> = Promise.resolve();
+  /** f031-#11: user messages seen before the scope has an entry. */
+  private readonly pendingUserMessages = new Map<string, number>();
   private readonly path: string;
 
   constructor(path: string = paths.sessionsFile) {
@@ -67,13 +107,17 @@ export class SessionStore {
         const cwd = typeof entry.cwd === 'string' ? entry.cwd : undefined;
         const idleTimeoutMinutes =
           typeof entry.idleTimeoutMinutes === 'number' ? entry.idleTimeoutMinutes : undefined;
+        // f031-#9: stats must survive a restart (they used to be dropped
+        // here, so every bot restart silently reset /status counters).
+        const stats = validStats(entry.stats);
         const hasSession = sessionId !== undefined && cwd !== undefined;
-        if (!hasSession && idleTimeoutMinutes === undefined) continue;
+        if (!hasSession && idleTimeoutMinutes === undefined && !stats) continue;
         this.data[chatId] = {
           ...(sessionId !== undefined ? { sessionId } : {}),
           ...(cwd !== undefined ? { cwd } : {}),
           updatedAt: entry.updatedAt,
           ...(idleTimeoutMinutes !== undefined ? { idleTimeoutMinutes } : {}),
+          ...(stats ? { stats } : {}),
         };
       }
     } catch (err) {
@@ -102,6 +146,9 @@ export class SessionStore {
     // Preserve idleTimeoutMinutes across run starts — it's a per-scope
     // preference, not per-run-instance state. /new (clear) wipes it.
     const prev = this.data[chatId];
+    const pendingUser = this.pendingUserMessages.get(chatId);
+    this.pendingUserMessages.delete(chatId);
+    const stats = prev?.stats ?? (pendingUser ? { ...this.#freshStats(), userMessages: pendingUser } : undefined);
     this.data[chatId] = {
       sessionId,
       cwd,
@@ -109,13 +156,14 @@ export class SessionStore {
       ...(prev?.idleTimeoutMinutes !== undefined
         ? { idleTimeoutMinutes: prev.idleTimeoutMinutes }
         : {}),
-      ...(prev?.stats ? { stats: prev.stats } : {}),
+      ...(stats ? { stats } : {}),
     };
     this.schedulePersist();
   }
 
-  #freshStats() {
+  #freshStats(): SessionStats {
     return {
+      v: 2,
       startedAt: Date.now(),
       tokensIn: 0,
       tokensOut: 0,
@@ -127,36 +175,45 @@ export class SessionStore {
     };
   }
 
-  /** f0.2+: accumulate one usage snapshot into the session's stats. */
-  recordUsage(
-    chatId: string,
-    u: { inputTokens?: number; outputTokens?: number; cachedInputTokens?: number; cacheCreationInputTokens?: number },
-  ): void {
+  /**
+   * f031-#8/#10: one usage event from the agent stream.
+   * - per-call, main-line → context = input + cache_read + cache_creation
+   *   (only when the event carries input-side fields; output-only deltas and
+   *   sub-agent calls leave it alone).
+   * - cumulative (claude `result`, once per turn) → session totals + TPS.
+   *   Per-call snapshots repeat several times per call, so summing them would
+   *   over-count; the turn total is exact.
+   */
+  recordUsage(chatId: string, u: UsageSample): void {
     const entry = this.data[chatId];
     if (!entry) return;
-    const now = Date.now();
     const st: SessionStats = entry.stats ?? this.#freshStats();
-    // ── active-time accounting (猴哥点单 2026-10-21) ──
-    // TPS denominator = agent execution time only. Each usage snapshot closes
-    // the previous active segment (lastUsageAt → now) and reopens one; the
-    // idle gap in between simply never gets counted.
-    const segFrom = st.activeFrom ?? st.lastUsageAt;
-    if (segFrom) st.activeMs += Math.max(0, now - segFrom);
-    st.activeFrom = now;
-    // ── token accumulation ──
-    // Usage snapshots are per-API-call totals (not deltas) for the context
-    // meter, but lifetime accumulation needs output DELTAS (a true counter —
-    // each call generates fresh tokens); input totals stay "latest" because
-    // the context meter reads them directly.
-    const outDelta = Math.max(0, (u.outputTokens ?? 0) - (st.lastOutputTokens ?? 0));
-    st.tokensOut += outDelta;
-    st.lastOutputTokens = u.outputTokens;
-    st.tokensIn = u.inputTokens ?? st.tokensIn;
-    st.cacheRead = Math.max(st.cacheRead, u.cachedInputTokens ?? 0);
-    st.cacheCreate += u.cacheCreationInputTokens ?? 0;
-    st.lastUsageAt = now;
-    const activeSec = Math.max(1, st.activeMs / 1000);
-    st.tpsAvg = Math.round(st.tokensOut / activeSec);
+    const prompt =
+      (u.inputTokens ?? 0) + (u.cachedInputTokens ?? 0) + (u.cacheCreationInputTokens ?? 0);
+    if (u.cumulative) {
+      st.tokensIn += prompt;
+      st.tokensOut += u.outputTokens ?? 0;
+      st.cacheRead += u.cachedInputTokens ?? 0;
+      st.cacheCreate += u.cacheCreationInputTokens ?? 0;
+      st.activeMs += Math.max(0, u.durationMs ?? 0);
+      if (st.activeMs > 0) st.tpsAvg = Math.round(st.tokensOut / (st.activeMs / 1000));
+    } else if (!u.sidechain && prompt > 0) {
+      st.contextTokens = prompt;
+      st.contextAt = Date.now();
+    } else {
+      return;
+    }
+    entry.stats = st;
+    this.schedulePersist();
+  }
+
+  /** f031-#12: the model the CLI actually ran (system init). */
+  recordModel(chatId: string, model: string | undefined): void {
+    const entry = this.data[chatId];
+    if (!entry || !model) return;
+    const st: SessionStats = entry.stats ?? this.#freshStats();
+    if (st.model === model) return;
+    st.model = model;
     entry.stats = st;
     this.schedulePersist();
   }
@@ -164,28 +221,22 @@ export class SessionStore {
   /** f0.2+: count one user/agent message into session stats. */
   recordMessage(chatId: string, who: "user" | "agent"): void {
     const entry = this.data[chatId];
-    if (!entry) return;
-    const st: SessionStats = entry.stats ?? this.#freshStats();
-    if (who === "user") {
-      // A user message STARTS an active segment (agent begins working).
-      if (!st.activeFrom) st.activeFrom = Date.now();
-      st.userMessages += 1;
-    } else {
-      // A final answer ENDS it — close the segment so idle-after-answer
-      // doesn't leak into the denominator on a later lazy close.
-      const segFrom = st.activeFrom ?? st.lastUsageAt;
-      if (segFrom) st.activeMs += Math.max(0, Date.now() - segFrom);
-      st.activeFrom = undefined;
-      st.agentMessages += 1;
+    if (!entry) {
+      // f031-#11: a brand-new scope has no entry when its first message
+      // arrives. Don't create one (channel uses "no entry" to mean "first
+      // engagement" for topic context) — hold the count until set().
+      if (who === "user") this.pendingUserMessages.set(chatId, (this.pendingUserMessages.get(chatId) ?? 0) + 1);
+      return;
     }
-    // tpsAvg refresh on message boundaries too (activeMs may have grown)
-    const activeSec2 = Math.max(1, st.activeMs / 1000);
-    st.tpsAvg = st.tokensOut > 0 ? Math.round(st.tokensOut / activeSec2) : st.tpsAvg;
+    const st: SessionStats = entry.stats ?? this.#freshStats();
+    if (who === "user") st.userMessages += 1;
+    else st.agentMessages += 1;
     entry.stats = st;
     this.schedulePersist();
   }
 
   clear(chatId: string): void {
+    this.pendingUserMessages.delete(chatId);
     const prev = this.data[chatId];
     if (!prev) {
       // /new on a brand-new scope: still lay down a stats skeleton so the

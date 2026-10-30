@@ -18,6 +18,10 @@ interface ClaudeRawEvent {
   session_id?: string;
   cwd?: string;
   model?: string;
+  /** Set (non-null) when the event comes from a sub-agent (Task tool). */
+  parent_tool_use_id?: string | null;
+  duration_ms?: number;
+  duration_api_ms?: number;
   message?: {
     content?: ContentBlock[];
     usage?: {
@@ -34,6 +38,29 @@ interface ClaudeRawEvent {
     cache_creation_input_tokens?: number;
   };
   total_cost_usd?: number;
+}
+
+type RawUsage = NonNullable<ClaudeRawEvent['usage']>;
+
+/** f031-#8: any token field > 0 (cache-only snapshots are real, not empty). */
+function hasTokens(u: RawUsage): boolean {
+  return (
+    (u.input_tokens ?? 0) > 0 ||
+    (u.output_tokens ?? 0) > 0 ||
+    (u.cache_read_input_tokens ?? 0) > 0 ||
+    (u.cache_creation_input_tokens ?? 0) > 0
+  );
+}
+
+function perCallUsage(u: RawUsage, evt: ClaudeRawEvent): AgentEvent {
+  return {
+    type: 'usage',
+    inputTokens: u.input_tokens,
+    outputTokens: u.output_tokens,
+    cachedInputTokens: u.cache_read_input_tokens,
+    cacheCreationInputTokens: u.cache_creation_input_tokens,
+    ...(evt.parent_tool_use_id ? { sidechain: true } : {}),
+  };
 }
 
 export function* translateEvent(raw: unknown): Generator<AgentEvent> {
@@ -64,15 +91,7 @@ export function* translateEvent(raw: unknown): Generator<AgentEvent> {
     // real per-call numbers ride on message_delta) — only surface it when it
     // actually carries tokens, so a zero snapshot never clobbers a good one.
     const u = evt.message.usage;
-    if (u && ((u.input_tokens ?? 0) > 0 || (u.output_tokens ?? 0) > 0)) {
-      yield {
-        type: 'usage',
-        inputTokens: u.input_tokens,
-        outputTokens: u.output_tokens,
-        cachedInputTokens: u.cache_read_input_tokens,
-        cacheCreationInputTokens: u.cache_creation_input_tokens,
-      };
-    }
+    if (u && hasTokens(u)) yield perCallUsage(u, evt);
     return;
   }
 
@@ -84,15 +103,7 @@ export function* translateEvent(raw: unknown): Generator<AgentEvent> {
     const inner = (evt as { event?: { type?: string; usage?: ClaudeRawEvent['usage'] } }).event;
     if (inner?.type === 'message_delta' && inner.usage) {
       const u = inner.usage;
-      if ((u.input_tokens ?? 0) > 0 || (u.output_tokens ?? 0) > 0) {
-        yield {
-          type: 'usage',
-          inputTokens: u.input_tokens,
-          outputTokens: u.output_tokens,
-          cachedInputTokens: u.cache_read_input_tokens,
-          cacheCreationInputTokens: u.cache_creation_input_tokens,
-        };
-      }
+      if (hasTokens(u)) yield perCallUsage(u, evt);
     }
     return;
   }
@@ -123,6 +134,10 @@ export function* translateEvent(raw: unknown): Generator<AgentEvent> {
         cacheCreationInputTokens: evt.usage.cache_creation_input_tokens,
         costUsd: evt.total_cost_usd,
         cumulative: true,
+        ...(() => {
+          const ms = evt.duration_api_ms ?? evt.duration_ms;
+          return typeof ms === 'number' && ms > 0 ? { durationMs: ms } : {};
+        })(),
       };
     }
     yield { type: 'done', sessionId: evt.session_id, terminationReason: 'normal' };

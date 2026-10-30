@@ -22,6 +22,12 @@ export type AgentEvent =
        * cumulative billing total — NOT the live context-window fill. The panel
        * readout ignores cumulative snapshots and keeps the per-message one. */
       cumulative?: boolean;
+      /** f031-#8: emitted by a sub-agent (claude `parent_tool_use_id` set) —
+       * its prompt is not the main conversation's context. */
+      sidechain?: boolean;
+      /** f031-#10: API time of the turn (result `duration_api_ms`, falling
+       * back to `duration_ms`); TPS denominator. Only on cumulative events. */
+      durationMs?: number;
     }
   | {
       type: 'done';

@@ -10,6 +10,8 @@ import { SessionStore } from '../../../src/session/store.js';
 import { WorkspaceStore } from '../../../src/workspace/store.js';
 import { FakeAgentAdapter, type FakeAgentEvents } from '../../helpers/fake-agent.js';
 import { createTmpProfile } from '../../helpers/tmp-profile.js';
+import { CLAUDE_USAGE_FIXTURE as F } from '../../helpers/claude-usage-fixture.js';
+import { translateEvent } from '../../../src/agent/claude/stream-json.js';
 
 // f0.3.1: card-mode (嘟嘟's production mode, Claude) regressions for the
 // "card rejected → stuck on Thinking forever" incident. These replace the old
@@ -65,6 +67,7 @@ interface Harness {
   updateCardCalls: Array<{ messageId: string; card: Card }>;
   handlers: { message?: (msg: NormalizedMessage) => Promise<void> | void };
   agent: FakeAgentAdapter;
+  sessions: SessionStore;
 }
 
 async function setup(opts: {
@@ -88,7 +91,7 @@ async function setup(opts: {
   const workspaces = new WorkspaceStore(join(tmp.profile, 'workspaces.json'));
   const agent = new FakeAgentAdapter({ id: 'claude', displayName: 'Claude', events: opts.events });
 
-  const h: Harness = { sent: [], updates: [], updateCardCalls: [], handlers: {}, agent };
+  const h: Harness = { sent: [], updates: [], updateCardCalls: [], handlers: {}, agent, sessions };
   let sendN = 0;
   let updateN = 0;
   const channel = {
@@ -357,5 +360,29 @@ describe('card-mode stream failures (f0.3.1)', () => {
     expect(typeof fields.sha256).toBe('string');
     expect(typeof fields.bytes).toBe('number');
     expect(JSON.stringify(fields)).not.toContain('ANSWER_SENTINEL');
+  });
+});
+
+describe('f031-#8 /status numbers flow from the real claude stream through channel', () => {
+  it('f031-#8 context = last main-line call (not sub-agent, not result); totals = turn result', async () => {
+    const raw = [
+      { type: 'system', subtype: 'init', session_id: 'sess-f031', model: F.model },
+      F.mainAssistant(F.calls[0]!),
+      F.mainAssistant(F.calls[1]!),
+      F.sidechainAssistant(F.subagentCall),
+      { type: 'assistant', parent_tool_use_id: null, message: { content: [{ type: 'text', text: 'ok' }] } },
+      F.result(),
+    ];
+    const events = raw.flatMap((r) => [...translateEvent(r)]);
+    const h = await setup({ events });
+    await h.handlers.message?.(message('om_ctx', 'hi'));
+    await waitFor(() => h.sessions.getRaw('oc_dm')?.stats?.tokensOut !== undefined && (h.sessions.getRaw('oc_dm')?.stats?.tokensOut ?? 0) > 0);
+    const st = h.sessions.getRaw('oc_dm')!.stats!;
+    const c = F.calls[1]!;
+    expect(st.contextTokens).toBe(c.input_tokens + c.cache_read_input_tokens + c.cache_creation_input_tokens);
+    expect(st.tokensOut).toBe(F.turn.output_tokens);
+    expect(st.model).toBe(F.model);
+    expect(st.userMessages).toBe(1);
+    expect(st.agentMessages).toBe(1);
   });
 });
