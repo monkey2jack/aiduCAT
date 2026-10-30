@@ -1,5 +1,4 @@
 import { log } from '../core/logger';
-import type { AppConfig } from '../config/schema';
 import type { ProfileConfig } from '../config/profile-schema';
 
 /**
@@ -49,20 +48,6 @@ const modelsCache = new Map<string, ModelsCacheEntry>();
 
 
 /**
- * f0.2 modelProviders live on ProfileConfig (profiles/<name>) — the root
- * config schema strips unknown top-level keys, so the earlier AppConfig
- * placement never survived a restart. Both the /model card and the run-flow
- * override read from the profile.
- * `legacy` accepts the earlier (mis-placed) AppConfig-level map forUpgrade
- * tolerance, but the profile map wins when both exist.
- */
-export function providerMap(
-  profile: ProfileConfig | undefined,
-): NonNullable<ProfileConfig['modelProviders']> {
-  return profile?.modelProviders ?? {};
-}
-
-/**
  * Dropdown choices: the service's own gateway first, labelled by its
  * configured provider name (`defaultProviderName`, e.g. `10router`),
  * falling back to the plain word `默认` when unnamed. Provider names are
@@ -110,11 +95,6 @@ export function unionProviderModels(
     }
   }
   return out.slice(0, MAX_PROVIDER_MODELS * 2);
-}
-
-/** True when the config declares at least one extra provider. */
-export function hasExtraProviders(providers: NonNullable<ProfileConfig['modelProviders']>): boolean {
-  return Object.keys(providers).length > 0;
 }
 
 export function providerDef(

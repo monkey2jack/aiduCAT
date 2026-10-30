@@ -5,7 +5,7 @@ import { homedir } from 'node:os';
 import { dirname, isAbsolute } from 'node:path';
 import type { LarkChannel, NormalizedMessage } from '@larksuite/channel';
 import { claudeCapability, codexCapability } from '../agent/capability';
-import { DEFAULT_MODEL, isDefaultModel, normalizeModelSelection, resolveModelArg, supportedModels } from '../agent/models';
+import { DEFAULT_MODEL, normalizeModelSelection, resolveModelArg, supportedModels } from '../agent/models';
 import type { AgentAdapter } from '../agent/types';
 import type { ActiveRuns } from '../bot/active-runs';
 import {
@@ -1454,7 +1454,6 @@ async function showModelCard(ctx: CommandContext): Promise<void> {
   const currentProvider = normalizeProvider(providers, ctx.controls.cfg.preferences?.provider);
 
   let combos: Array<{ id: string; name: string; label?: string }> = [];
-  let totalModels: number | undefined;
   let source: 'live' | 'cached' | 'unavailable' = 'unavailable';
   if (currentProvider === DEFAULT_PROVIDER) {
     if (tr) {

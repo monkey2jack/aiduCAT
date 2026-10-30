@@ -179,10 +179,6 @@ export type ContextWindowFetch =
   | { ok: true; map: Map<string, number> }
   | { ok: false; reason: 'no-credentials' | 'fetch-failed'; map: Map<string, number> };
 
-export async function fetchContextWindows(baseUrl: string): Promise<Map<string, number>> {
-  return (await fetchContextWindowsDetailed(baseUrl)).map;
-}
-
 export async function fetchContextWindowsDetailed(baseUrl: string): Promise<ContextWindowFetch> {
   if (contextWindows && Date.now() - contextWindows.fetchedAt < MODELS_TTL_MS) {
     return { ok: true, map: contextWindows.map };

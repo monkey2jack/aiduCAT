@@ -1,4 +1,4 @@
-import type { LarkChannel, NormalizedMessage } from '@larksuite/channel';
+import type { LarkChannel } from '@larksuite/channel';
 import type { ChatModeCache } from './chat-mode-cache';
 
 /**
@@ -27,11 +27,3 @@ export async function scopeFor(
   return chatId;
 }
 
-/** Convenience overload from a NormalizedMessage. */
-export async function scopeForMessage(
-  channel: LarkChannel,
-  msg: NormalizedMessage,
-  cache: ChatModeCache,
-): Promise<string> {
-  return scopeFor(channel, msg.chatId, msg.threadId, cache);
-}

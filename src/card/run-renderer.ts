@@ -1,5 +1,5 @@
 import { deepMaskEmails } from './mask-email';
-import type { Block, FooterStatus, RunState, ToolEntry } from './run-state';
+import type { Block, RunState, ToolEntry } from './run-state';
 import { logoImgKeyForModel } from './model-logo';
 import { maskEmails } from './mask-email';
 import { sanitizeCardMarkdown, sanitizePlainText, truncateUtf8, utf8Bytes } from './sanitize';

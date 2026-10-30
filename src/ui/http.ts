@@ -60,10 +60,6 @@ export function sendHtml(res: ServerResponse, html: string): void {
   send(res, 200, 'text/html; charset=utf-8', html);
 }
 
-export function sendJs(res: ServerResponse, js: string): void {
-  send(res, 200, 'application/javascript; charset=utf-8', js);
-}
-
 /** HTTP-shaped error the servers turn into a JSON error response. */
 export class HttpError extends Error {
   constructor(public status: number, message: string) {
