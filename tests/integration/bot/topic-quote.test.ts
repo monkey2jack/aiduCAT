@@ -390,6 +390,44 @@ describe('topic message quote handling', () => {
     );
   });
 
+  it('f031-stab-#6-286 treats an empty @ with a reply quote as a request about the quoted message', async () => {
+    // upstream PR #286. aiduCAT drops a bare @ at intake; a bare @ that QUOTES
+    // a message is a question about that message and must reach the agent.
+    const h = await createHarness({
+      chatMode: 'group',
+      quotedMessages: {
+        om_quote_target: '应用业务告警：需要补偿处理',
+      },
+    });
+
+    await startTestBridge(h);
+
+    await h.channel.handlers.message?.(
+      message({
+        messageId: 'om_group_empty_at',
+        rootId: 'om_quote_target',
+        parentId: 'om_quote_target',
+        content: '',
+      }),
+    );
+    await waitFor(() => h.agent.runOptions.length === 1, 4000);
+
+    const prompt = h.agent.runOptions[0]?.prompt ?? '';
+    expect(prompt).toContain('应用业务告警：需要补偿处理');
+    expect(prompt).toContain('请根据其引用的消息识别并处理请求');
+    expect(prompt).not.toContain('通常是只 @ 了你的唤醒（ping）');
+  });
+
+  it('f031-stab-#6-286 an empty @ inside a topic (reply target = topic root) is still ignored', async () => {
+    const h = await createHarness({ quotedMessages: { om_root: 'topic root' } });
+    await startTestBridge(h);
+    await h.channel.handlers.message?.(
+      message({ messageId: 'om_topic_empty_at', rootId: 'om_root', parentId: 'om_root', threadId: 'omt_1', content: '' }),
+    );
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+    expect(h.agent.runOptions).toHaveLength(0);
+  });
+
   it('keeps non-root reply quotes in topic chats', async () => {
     const h = await createHarness({
       quotedMessages: {

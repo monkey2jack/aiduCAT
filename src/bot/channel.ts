@@ -903,7 +903,11 @@ async function intakeMessage(deps: IntakeDeps): Promise<void> {
     log.info('intake', 'emoji-only-ignored', { scope, len: rawText.length });
     return;
   }
-  if (rawText.length === 0 && emsg.resources.length === 0) {
+  // f031-stab-#6 (upstream #286): a bare @ that QUOTES a message is a
+  // question about that message, not an empty ping — let it through.
+  // (In a topic, reply-to = topic root is structure, not a quote.)
+  const quotesSomething = Boolean(replyQuoteTargetForMessage(emsg, chatMode));
+  if (rawText.length === 0 && emsg.resources.length === 0 && !quotesSomething) {
     log.info('intake', 'empty-ignored', { scope });
     return;
   }
@@ -2166,7 +2170,9 @@ function buildPrompt(
       ? texts.join('\n\n')
       : attachments.length > 0
         ? '请看下面的附件。'
-        : '（对方发来一条没有正文的消息——通常是只 @ 了你的唤醒（ping）。请简短回应。）';
+        : quotes.length > 0
+          ? '用户仅 @ 了你，请根据其引用的消息识别并处理请求；不要将此视为普通 ping。'
+          : '（对方发来一条没有正文的消息——通常是只 @ 了你的唤醒（ping）。请简短回应。）';
 
   const senderType = senderTypeOf(first);
   const mentions = mergeMentions(batch);
