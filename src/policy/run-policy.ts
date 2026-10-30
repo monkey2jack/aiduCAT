@@ -134,10 +134,9 @@ export function evaluateRunPolicy(input: RunPolicyInput): RunPolicyResult {
     resourceBindings: input.scope.resourceBindings?.map((binding) => binding.id),
   });
   const attachmentDigest = attachmentPolicyConfigDigest(input.profileConfig.attachments);
-  const accessDigest =
-    input.scope.source === 'comment' && input.access.reason === 'comment-mention'
-      ? 'comment-mention'
-      : accessPolicyDigest(input.profileConfig.access);
+  // f031-sec-L6: comments go through canUseDm like DMs (PR#3); the old
+  // always-ok access digest for comments was dead and is gone.
+  const accessDigest = accessPolicyDigest(input.profileConfig.access);
 
   return {
     ok: true,

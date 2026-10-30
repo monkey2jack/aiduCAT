@@ -24,7 +24,6 @@ export interface AccessDecision {
     | 'allowed-user'
     | 'allowed-admin'
     | 'allowed-chat'
-    | 'comment-mention'
     | 'denied-user'
     | 'denied-chat'
     | 'denied-admin'
