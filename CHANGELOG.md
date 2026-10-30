@@ -1,0 +1,111 @@
+# Changelog
+
+aiduCAT 的版本号用 `f` 前缀（f0.1、f0.2+ …），`package.json` 里是对应的 semver。按 git log 与 tag 整理；日期为提交日期（CST）。
+
+> **tag 说明**：仓库里的 `f0.2+`、`f0.2++`、`v0.2.1` 三个 tag 目前都指向 `6fa62f8`（package 0.2.1）。真正的 f0.2+ 发布提交是 `f01fcd2`，f0.2++ 发布提交是 `c7ff90d`（0.2.2）。下面按真实发布提交记录；tag 修正（需要强推 tag）待维护者决定。
+
+## f0.3.1 （未发布，package 0.3.1）
+
+基于 f0.3（`3aa4a2d`）。修掉「卡片被拒 → 永久思考中」、`/status` 数字不真实、60% 自动压缩从没生效等问题，门禁转绿。
+
+### 卡片稳定性
+- **卡片被拒自动降级**：最终更新失败 → 严格卡重试（不带图片链接、答案 ≤12KB、不带思考/工具列表）→ 纯文本消息补发答案 → 最后发一句「⚠️ 卡片发送失败，本轮回答没能送达，请重发一次」。首卡就发不出时同样走这条链。卡片不会再停在 Thinking。
+- **答案清洗**：`![alt](url)` 转成 `[🖼 alt](url)` 链接，`<img>` 转链接、其他 HTML 去掉（代码块里不动）；答案上限 25KB，超出截断并补发纯文本全文；整卡控制在 28KB 内（飞书上限 30KB）。
+- **SDK 节流更新失败不再变成 unhandledRejection**：pnpm patch `@larksuite/channel`（随 SDK 升级重做为 0.7.1 版 patch），失败记到 `lastPatchError`，最后一次失败交给降级链。
+- **空跑保护真正生效**：检查挪到 `reduce` 之后（f0.3 里会被 `done` 覆盖回绿卡），带原因文案。
+- **节流 60ms → 250ms**（飞书单条消息更新 5 QPS），关掉 SDK「累计 50 字符立即发送」的触发。
+- **不再把被拒卡片明文写进 `/tmp/aiduCAT-rejected-card.json`**，日志只记 sha256 前缀、字节数、错误码。
+
+### `/status` 真实化
+- 上下文 = 最近一次**主线**调用的 `input + cache_read + cache_creation`（以前只算 `input_tokens`，网关下只有几千）；子代理调用不覆盖。
+- 窗口与 🗜️ 压缩点和运行时同一来源；不知道时显示 `—`，不再写死 1M。
+- 统计重启不清零（格式 v2，部署时旧统计丢弃一次）；📥/📤 按每轮 result 累加；🎯 = cache_read / 全部 prompt；⚡ TPS = 输出 / 模型生成时间（`duration_api_ms`）。
+- 🚩 开始时间读 Claude 会话记录（`~/.claude/projects/*/<session>.jsonl`）第一条时间戳，读不到回落到统计开始时间。
+- 模型行没设偏好时显示 CLI 实际上报的模型；新话题首条消息计入；`/resume` 切会话清旧统计；`/stop` 空闲时回一句提示。
+- Codex 每轮 Agent 消息只记 1 次（以前 `final_text` 和 `done` 各记一次）。
+
+### 自动压缩
+- 10router 模型窗口查询改用 bot 环境里的 `AIDU_10ROUTER_TOKEN`（`x-10r-cli-token`），`ANTHROPIC_API_KEY` 保留为备选。以前只认 `ANTHROPIC_API_KEY`，生产 bot 环境没有 → 查询静默为空 → 60% 压缩从没生效。
+- 查不到窗口（没凭据 / 请求失败 / 模型不在列表）时打 `context-window unresolved` warn 日志（10 分钟内同原因同模型只打一次，不含 token），并沿用 Claude Code 自己 `settings.json` 的 `CLAUDE_CODE_AUTO_COMPACT_WINDOW`。
+
+### 命令与文档
+- `/help` 列全 20 个已注册命令（补上 `/reset /invite /remove /doc /meeting`），加测试保证命令注册表与 `/help` 一致。
+- 用户看到的提示、帮助、CLI 程序名、控制台标题、agent 系统提示词里的 `lark-channel-bridge …` 统一改成 `aiduCAT …`。数据目录 `~/.lark-channel`、服务名、`bin/lark-channel-bridge.mjs`、协议字段 `source` 不变（改名需迁移，单独排期）。
+- 三份 README 统一（版本 f0.3.1、命令表与代码一致、卡片长相按现行代码、从零安装改为 pnpm），`README.zh.md` 与 `README.md` 同内容；新增本 CHANGELOG。
+- 删除约 300 行死代码（未用 import、`resolveConflict`、`toolBodyMd`、`readRecentLogs` 等）。
+
+### 测试与门禁
+- 修 typecheck 错误、16 个过时测试、markdown 降级套件；新增 card 模式降级回归与 `/status`、命令、文档等 f031 用例。全量 typecheck / test / build 全绿。
+
+### 安全加固、稳定性与上游修复
+
+#### 安全（审计 19 条全修）
+- **默认权限收紧**：没写 `permissions` 的 profile 默认 `workspace`，`full` 只能在配置文件里显式写；群聊运行封顶 `permissions.groupMaxAccess`（默认 workspace），评论/会议/team 模式一律封顶 workspace，私聊不封顶。Codex 不再兜底 `danger-full-access`，Claude 没传策略时也不再 bypass。
+- **群里谁能叫**：白名单群里发言人本人也要在 allowedUsers/admins/owner；别的机器人默认拒绝（`access.allowedBots` 显式放行）；team 模式只对 owner 同租户开放；卡片按钮点击同规则复核。云文档评论与私聊同一白名单（回归测试）。
+- **agent 拿不到守护进程的密钥**：子进程环境变量改白名单（PATH/HOME/LANG/LC_*/代理/证书 + Claude 的 `ANTHROPIC_*`/`CLAUDE_*`、Codex 的 `OPENAI_*`/`CODEX_*`），其他变量要在 profile `agentEnv.passthrough` 放行；agent 不再拿到 bridge 配置路径；Codex `shell_environment_policy.inherit="core"`。群里默认不显示工具调用（`preferences.showToolCallsInGroups` 可开）。回复统一做密钥形态脱敏（sk-、ghp_、Bearer、JWT、PEM、`*_API_KEY=` 等）。
+- **不能借 owner 身份**：非 owner 发起的运行（私聊/群/评论/会议/会后纪要）完全不带 lark-cli 配置，并钉死 bot 身份。
+- **间接提示注入**：引用消息、话题上文、卡片、评论原文与他人回复、其他机器人的话统一包进 `<untrusted_content>`，伪造的闭合标签被拆掉。
+- `/model`、`/new chat` 只限管理员；`/config` 卡片不再带控制台 token，`start` 输出的控制台地址打码；会议里只有白名单的人能叫/叫停，自动入会只认 owner/admin 邀请。
+- 日志目录 0700、日志文件 0600，数据根/profile/媒体缓存目录 0700；日志字段与文本脱敏增强。
+- `/resume` 只收 UUID；`/cd` 拒绝凭据/系统目录（含子目录）；普通用户 `/status` 只看自己的会话；provider `env` 禁止 `LD_*`/`NODE_OPTIONS`/`PATH`/`LARKSUITE_CLI_*` 等危险变量；回复里 @所有人 变成文字；代码围栏防逃逸；删除死分支。
+- **依赖漏洞**：`pnpm.overrides` 抬升 protobufjs / ws / follow-redirects / qs / @protobufjs/utf8，`pnpm audit --prod` 20 个（8 high）→ 0。
+
+#### 稳定性
+- **SDK 升级 `@larksuite/channel` 0.6.0 → 0.7.1**，patch 重做；markdown 流式模式中途失败后最后一帧会重推，`setContent` 走节流（上游 #289）。
+- 长连接 `connectTimeoutMs` 8s / `pingTimeout` 20s；旧 agent 进程退出后才开新一轮（避免"发两次"）。
+- **空闲看门狗默认开**：15 分钟无输出即停（`preferences.runIdleTimeoutMinutes`），单个工具最长 30 分钟（`preferences.runToolTimeoutMinutes`）。被停/超时/出错的轮次里没跑完的工具显示 ⏹（卡片与 COT 时间线）。
+- **重启恢复**：`run-journal.json`（0600，含排队消息原文）记录队列与在途卡；重启后 10 分钟内的排队消息自动重放，更早的回「请重发」，在途卡标「服务重启，请重发」。
+- keystore 从 hostname 推导改为 key 文件（`.keystore.key`），首次启动自动迁移并备份旧库（上游 #242）。
+- `uncaughtException` 记录后退出进程，交给 systemd `Restart=always` 拉起；`unhandledRejection` 只记录（上游 #287）。日志写入失败、单日日志超限不会拖垮进程。
+- 运行前步骤（附件/引用/话题上下文/整理消息/准备运行）出错时回用户一句明确的错误，不再静默；**单个附件下载失败**不再静默：agent 照常运行，提示词里点名哪个附件没下载下来，并要求 agent 在回答里告诉用户、需要时请对方重发。
+- `/ps`、`/exit`、`status`、`profile list` 不再把已退出的进程当成在跑（上游 #290）；`/invite group` 后同一 profile 的所有连接立即生效（上游 #296）。
+- 非 Claude 模型不再传 `--effort`（只打一次 info），`unrecognized_model` stderr 降为 info；`/model` 卡上非 Claude 模型标「经网关翻译」。
+- 其他上游修复：#277 #286 #309（引用消息）#148 #299/#183；子进程不继承 `HERMES_HOME`/`OPENCLAW_HOME`。
+
+#### 部署注意
+- 必须 `pnpm install --frozen-lockfile`（打 SDK patch）；部署前备份整个 `~/.lark-channel`（含 `profiles/<profile>/.keystore.key`、`secrets.enc`）；回滚到旧版要把 `secrets.enc.bak-hostname-kdf` 拷回 `secrets.enc`。
+- 想保持旧的 full 权限与环境变量，要在 profile 里显式写 `permissions` 和 `agentEnv.passthrough`（见 README「权限」）。
+- `/status` 统计部署后清零一次；agent 系统提示词首行改名，首轮提示词缓存 miss 一次。
+
+## f0.3 — 2026-10-30（`3aa4a2d`，package 0.3.0）
+
+- 空跑保护：agent 秒退时想显示报错卡（实际顺序有 bug，f0.3.1 修复）；post-done grace 2s → 15s。
+- 合并 PR #3（@hermesai8888-creator）：云文档评论走与私聊相同的白名单；群里机器人互相 @ 防循环（每小时 5 次）；非 10router 网关的 60% 自动压缩回退到 provider `contextWindow`。
+- 第 30 个厂商 logo（monkey）；logo key 表随新应用重传更新。
+- README：「不用 10router？三步接入你自己的网关」。
+
+## f0.2++ — 2026-10-21（`c7ff90d`，package 0.2.2）
+
+- 面板头改一行极简：`模型 · 💭 n · 🛠️ n · ⏱️`，状态词移到面板上方（notation 字号），会话列表预览带 ☤ 前缀状态词。
+- `/status` 改为六行卡：会话 id、模型 · 强度 · 🗜️、运行权限/owner、lark-cli/运行/队列、开始时间/时长/消息数、上下文与 token 统计；`/new` 保留统计骨架。
+- 自动压缩 = 模型声明窗口的 60%（百分比，不写死 token 数）。
+- TPS 分母改为 agent 实际执行时间；Agent 消息在 run `done` 时计数。
+- Inception Labs（Mercury）厂商 logo。
+
+## f0.2+ — 2026-10-20（`f01fcd2`，package 0.1.2；后续 `6fa62f8` 合入 PR #1）
+
+- 修复：`/model` 切 Provider 后实际仍走默认网关（provider env 在 run-flow → executor → adapter 断链），合并社区 PR #1。
+- 修复：Provider 下拉选「默认网关」提交被静默丢弃。
+- 新增：Provider 静态模型清单与跨 Provider 并集下拉；Provider 可选 `env` 覆写；模型 id 支持 `/` `@`。
+- 流式节流 400ms → 60ms（f0.3.1 改回 250ms）；状态词统一 ☤ 前缀；GLM 等 logo 多轮修正。
+- 文档：多 Provider 配置、logo 上传指南、README.zh.md、容器部署注意事项。
+
+## f0.2 — 2026-10-19（`a71bf5a`）
+
+- 多 Provider `/model` 卡（Provider → Model → Effort）、29 家厂商 logo、单行面板头、clarify 重做。
+- Codex：解析 reasoning / mcp_tool_call，单卡统一布局，按轮取 `last_token_usage`，运行中实时刷新上下文。
+- 禁止 agent 重启自己所在的 aiduCAT 服务；零计数也显示；`/model` 强度选项按 Claude Code / Codex 区分。
+- README 中文为默认，英文移到 README.en.md。
+
+## f0.1+ — 2026-10-17（`d4acd98`）
+
+- `/model` 交互卡（10router combo + 强度）、`/new` 回显模型与强度、Get 表情、状态行移到面板上方，品牌「爱嘟可爱糖」。
+- `[CLARIFY]` 标记 → 飞书选项按钮，点选后答案回到本轮。
+- `/help` 下拉直接执行；`/status` 只读卡。
+- 两行面板头：强度 + 实时上下文。
+- README 补运行时契约章节；横幅换成 aidu 家族同款。
+
+## f0.1 — 2026-10-15（`b4c539f`，package 0.1.0）
+
+- 首个版本：给 Claude Code 的泡波流式卡片——单个 aiduPOP 过程面板、面板头实时状态词（结束消失）、边框颜色表示结果（绿/黄/红）、去掉停止按钮（用 `/stop`）、工具 emoji、敲键盘表情（开跑即撤）、`/model` 自由透传模型 id。
+- 基于上游 [zarazhangrui/lark-coding-agent-bridge](https://github.com/zarazhangrui/lark-coding-agent-bridge)（MIT）。

@@ -18,9 +18,9 @@ web/dist/
 .idea/
 .vscode/
 
-# Local maintenance scripts and unreleased changelog are not part of the package
+# Local maintenance scripts are not part of the package
+# (CHANGELOG.md is tracked since f0.3.1: the READMEs link to it and a doc test reads it)
 scripts/
-CHANGELOG.md
 tests-smoke/
 feedback-group-qr.png
 package-lock.json

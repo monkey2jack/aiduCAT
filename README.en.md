@@ -74,13 +74,13 @@ Optional environment variables (in the bot's service environment):
 | Command | Effect |
 |---|---|
 | `/help` | List every command (the dropdown runs one directly) |
-| `/new` | Stop the current task and start a new session (keeps model/effort) |
+| `/new` | Stop the current task and start a new session (keeps model/effort); `/new chat` is admin-only |
 | `/reset` | Same as `/new` |
 | `/stop` | Stop the running task; says so when nothing is running |
 | `/status` | Six-line status card: session id, model · effort · 🗜️ compact point, permissions/owner, lark-cli/run/queue, 🚩 session start · age · message counts, ⏳ context and token stats |
-| `/model` | Show / switch model and reasoning effort (any gateway combo id; `/model default` restores) |
+| `/model` | Show / switch model and reasoning effort (any gateway combo id; `/model default` restores; non-Claude models are marked "translated by gateway" and get no effort flag) (admin) |
 | `/resume` | List and resume past sessions for this working directory |
-| `/cd <path>` | Switch working directory (admin) |
+| `/cd <path>` | Switch working directory (admin; refuses credential/system dirs such as `~/.ssh`, `~/.claude`, `~/.lark-channel`, `/etc`, including subtrees) |
 | `/ws` | Named workspaces: `list` / `save <name>` / `use <name>` / `remove <name>` (admin) |
 | `/config` | Preferences, access control and identity policy (admin) |
 | `/timeout [N\|off]` | Session idle timeout |
@@ -176,15 +176,19 @@ DMs do not require an @ mention; groups and topics require `@bot` by default. Ma
 /remove group
 ```
 
+An allowlisted group is not enough: the sender must also be in allowedUsers / admins / owner. Other bots are rejected unless listed in `access.allowedBots` (and the group is allowlisted). Team mode only serves the owner's own tenant. Card button clicks are re-checked with the same rules. `@all` in replies becomes the plain text "@所有人".
+
 ### Cloud-doc comments
 
-Cloud-doc comments are document-scoped: a comment run follows the document's own permissions rather than a separate access gate. Mention the bot in a supported doc's comment to run.
+Cloud-doc comments use the DM allowlist: only owner / allowedUsers / admins can trigger a run by mentioning the bot in a comment. Comment runs are capped at `workspace`, and the document body and other people's replies reach the agent as untrusted content.
 
 ### lark-cli identity policy
 
 Each profile uses a profile-local lark-cli directory at `~/.lark-channel/profiles/<profile>/lark-cli`. The agent process receives `LARKSUITE_CLI_CONFIG_DIR` for that directory, so personal authorization in one profile is never shared with another. The default policy is `bot-only`; `/config` can switch an authorized user to `user-default`. `/status` shows the summary (`lark-cli: app` / `lark-cli: user-ready`).
 
 This **lark-cli identity policy** is per profile, not global.
+
+Only runs started by the owner get a lark-cli config. Runs started by anyone else (allowlisted DMs, groups, comments, meetings, meeting minutes) get no lark-cli config at all and are pinned to the bot identity.
 
 
 
@@ -271,18 +275,23 @@ Each profile may define a default workspace through `workspaces.default`. `/cd` 
 
 ### Permissions
 
-Access is controlled by the canonical `"permissions"` block:
+Access is controlled by the canonical `"permissions"` block. **Omitted = `workspace`**; `full` must be written explicitly by the owner:
 
 ```json
 {
   "permissions": {
     "defaultAccess": "full",
-    "maxAccess": "full"
-  }
+    "maxAccess": "full",
+    "groupMaxAccess": "workspace"
+  },
+  "agentEnv": { "passthrough": ["AIDU_10ROUTER_URL", "SSH_AUTH_SOCK"] }
 }
 ```
 
-Set either value to `workspace` or `read-only` to tighten a profile. The legacy `sandbox` config keys are no longer read.
+- Group runs are capped at `groupMaxAccess` (default `workspace`); comment, meeting and team-mode runs are always capped at `workspace`; DMs are not capped. Values: `full` / `workspace` / `read-only`. The legacy `sandbox` config keys are no longer read.
+- The agent subprocess env is an allowlist: PATH/HOME/LANG/LC_*/proxy/certs, plus `ANTHROPIC_*`/`CLAUDE_*` for Claude or `OPENAI_*`/`CODEX_*` for Codex. Any other service variable (e.g. `AIDU_10ROUTER_URL`, `SSH_AUTH_SOCK`) must be listed in `agentEnv.passthrough`.
+- Tool calls are hidden in groups by default; set `preferences.showToolCallsInGroups: true` to show them.
+- Timeouts: `preferences.runIdleTimeoutMinutes` (default 15 min without output), `preferences.runToolTimeoutMinutes` (one tool call, default 30 min). After a restart, queued messages younger than 10 minutes are replayed, older ones get a "please resend"; in-flight cards are marked "service restarted, please resend".
 
 ### Development
 

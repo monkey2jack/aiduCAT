@@ -71,11 +71,14 @@ describe('README runtime contract', () => {
     expect(docs).not.toContain('`/config` 只调整展示偏好，不再维护访问名单。请在 profile config 里维护。');
   });
 
-  it('documents cloud-doc comments as document-scoped instead of access-gated', async () => {
+  // f031 merge: comments are gated by the DM allowlist since f0.3 (PR #3) and
+  // f031-sec-#2; the old "document-scoped, not access-gated" wording was false.
+  it('documents cloud-doc comments as gated by the DM allowlist', async () => {
     const docs = await readDocs();
 
-    expect(docs).toContain('Cloud-doc comments are document-scoped');
-    expect(docs).toContain('云文档评论按文档权限生效');
+    expect(docs).toContain('Cloud-doc comments use the DM allowlist');
+    expect(docs).toContain('云文档评论与私聊同一白名单');
+    expect(docs).not.toContain('Cloud-doc comments are document-scoped');
     expect(docs).not.toContain('comments.enabled');
     expect(docs).not.toContain('comments.rateLimit');
     expect(docs).not.toContain('/doc ws bind');

@@ -74,13 +74,13 @@ node bin/lark-channel-bridge.mjs run
 | 命令 | 效果 |
 |---|---|
 | `/help` | 列出所有命令（下拉可直接执行） |
-| `/new` | 中断当前任务并开新会话（沿用模型/强度） |
+| `/new` | 中断当前任务并开新会话（沿用模型/强度）；`/new chat` 仅管理员 |
 | `/reset` | 同 `/new` |
 | `/stop` | 停止当前正在运行的任务；没有任务时回一句提示 |
 | `/status` | 六行状态卡：会话 id、模型 · 强度 · 🗜️ 压缩点、权限/owner、lark-cli/运行/队列、🚩 会话开始时间 · 时长 · 消息数、⏳ 上下文与 token 统计 |
-| `/model` | 查看 / 切换模型与推理强度（支持任意 gateway combo id；`/model default` 还原默认） |
+| `/model` | 查看 / 切换模型与推理强度（支持任意 gateway combo id；`/model default` 还原默认；非 Claude 模型标「经网关翻译」，不传强度）（管理员） |
 | `/resume` | 列出并恢复本工作目录的历史会话 |
-| `/cd <path>` | 切换工作目录（管理员） |
+| `/cd <path>` | 切换工作目录（管理员；拒绝 `~/.ssh`、`~/.claude`、`~/.lark-channel`、`/etc` 等凭据/系统目录及其子目录） |
 | `/ws` | 管理命名工作区：`list` / `save <name>` / `use <name>` / `remove <name>`（管理员） |
 | `/config` | 偏好、访问控制与身份策略（管理员） |
 | `/timeout [N\|off]` | 设置会话空闲超时 |
@@ -176,9 +176,11 @@ aiduCAT profile export <name> --include-secrets --yes
 /remove group
 ```
 
+群在白名单还不够：群里发言的人本人也要在 allowedUsers / admins / owner 里；别的机器人默认被拒（bot-at-bot 要在 `access.allowedBots` 里显式写，且群在白名单）；team 模式只对 owner 同租户的人开放。卡片按钮点击按同一规则复核。回复里的 @所有人 会变成文字「@所有人」，不会真的 @全员。
+
 ### 云文档评论
 
-Cloud-doc comments are document-scoped: 云文档评论按文档权限生效（document-scoped）：评论触发的运行跟随文档本身的权限，而不是单独的访问闸门。在受支持的文档评论中 @ 机器人即可运行。
+Cloud-doc comments use the DM allowlist: 云文档评论与私聊同一白名单——只有 owner / allowedUsers / admins 在评论里 @ 机器人才会运行；评论运行权限封顶 `workspace`，文档正文和别人的回复按不可信内容交给 agent。
 
 ### lark-cli 身份策略（lark-cli identity policy）
 
@@ -187,6 +189,8 @@ Cloud-doc comments are document-scoped: 云文档评论按文档权限生效（d
 每个 profile 使用独立的**当前 profile 的 lark-cli 目录**：`~/.lark-channel/profiles/<profile>/lark-cli`。agent 进程会拿到指向该目录的 `LARKSUITE_CLI_CONFIG_DIR`，因此一个 profile 里的个人授权不会被另一个 profile 共享。默认策略 `bot-only`；`/config` 可把已授权用户切到 `user-default`。`/status` 显示摘要（`lark-cli: app` / `lark-cli: user-ready`）。
 
 这套 **lark-cli 身份策略**是按 profile 隔离的，不是全局的。
+
+只有 owner 本人发起的运行带 lark-cli 配置；其他人发起的运行（白名单用户私聊、群、评论、会议、会后纪要）完全不带 lark-cli 配置，并钉死 bot 身份。
 
 
 
@@ -274,18 +278,23 @@ export ANTHROPIC_API_KEY="sk-ant-..."
 
 ### 权限（permissions）
 
-访问由标准的 `"permissions"` 块控制：
+访问由标准的 `"permissions"` 块控制。**不写 = `workspace`**；`full` 只能由 owner 在配置文件里显式写：
 
 ```json
 {
   "permissions": {
     "defaultAccess": "full",
-    "maxAccess": "full"
-  }
+    "maxAccess": "full",
+    "groupMaxAccess": "workspace"
+  },
+  "agentEnv": { "passthrough": ["AIDU_10ROUTER_URL", "SSH_AUTH_SOCK"] }
 }
 ```
 
-把任一值设为 `workspace` 或 `read-only` 可收紧 profile。旧版 `sandbox` 配置键已不再读取（legacy `sandbox` keys are ignored）。
+- 群聊运行封顶 `groupMaxAccess`（默认 `workspace`）；评论、会议、team 模式一律封顶 `workspace`；私聊不封顶。值可选 `full` / `workspace` / `read-only`。旧版 `sandbox` 配置键已不再读取（legacy `sandbox` keys are ignored）。
+- agent 子进程的环境变量是白名单：PATH/HOME/LANG/LC_*/代理/证书，Claude 另给 `ANTHROPIC_*`/`CLAUDE_*`，Codex 另给 `OPENAI_*`/`CODEX_*`。服务环境里其他变量（如 `AIDU_10ROUTER_URL`、`SSH_AUTH_SOCK`）要在 `agentEnv.passthrough` 里显式放行。
+- 群里默认不显示工具调用，`preferences.showToolCallsInGroups: true` 可打开。
+- 超时：`preferences.runIdleTimeoutMinutes`（默认 15 分钟无输出即停）、`preferences.runToolTimeoutMinutes`（单个工具默认最长 30 分钟）。重启后 10 分钟内的排队消息会自动重放，更早的回一句「请重发」；在途卡片标「服务重启，请重发」。
 
 ### 开发
 
