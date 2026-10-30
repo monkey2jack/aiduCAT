@@ -1,0 +1,192 @@
+diff --git a/dist/index.cjs b/dist/index.cjs
+index 989d2fcaee8d47d01d7e235c6995d538771404ec..60f9a55b8108f5a01db235e5a99dc8d1601fdbaf 100644
+--- a/dist/index.cjs
++++ b/dist/index.cjs
+@@ -3869,7 +3869,14 @@ var Throttle = class {
+ 		if (this.timer) clearTimeout(this.timer);
+ 		this.timer = setTimeout(() => {
+ 			this.timer = void 0;
+-			this.doFire();
++			// aiduCAT patch (f0.3.1, redone on 0.7.1): a timer-driven fire has no
++			// awaiting caller; hand failures to opts.onError instead of an
++			// unhandled rejection.
++			this.doFire().catch((err) => {
++				try {
++					this.opts.onError?.(err);
++				} catch {}
++			});
+ 		}, delay);
+ 	}
+ 	/**
+@@ -3959,7 +3966,10 @@ var CardStreamControllerImpl = class {
+ 		const cfg = sender.config;
+ 		this.throttle = new Throttle({
+ 			ms: cfg.streamThrottleMs ?? DEFAULT_THROTTLE_MS$1,
+-			chars: cfg.streamThrottleChars ?? DEFAULT_THROTTLE_CHARS$1
++			chars: cfg.streamThrottleChars ?? DEFAULT_THROTTLE_CHARS$1,
++			onError: (err) => {
++				this.lastPatchError = err;
++			}
+ 		}, () => this.patch());
+ 	}
+ 	get messageId() {
+@@ -3968,6 +3978,8 @@ var CardStreamControllerImpl = class {
+ 	get current() {
+ 		return this._current;
+ 	}
++	/** aiduCAT patch (f0.3.1): last failed throttled patch; cleared by the next success. */
++	lastPatchError;
+ 	async update(next) {
+ 		const nextCard = typeof next === "function" ? next(this._current) : next;
+ 		this._current = nextCard;
+@@ -4000,6 +4012,7 @@ var CardStreamControllerImpl = class {
+ 		const snapshot = this._current;
+ 		await this.queue.enqueue(async () => {
+ 			await this.sender.patchCard(this._messageId, snapshot);
++			this.lastPatchError = void 0;
+ 		});
+ 	}
+ 	async completeTerminal() {
+@@ -4157,8 +4170,12 @@ var MarkdownStreamControllerImpl = class {
+ 	}
+ 	async setContent(full) {
+ 		await this.ensureStarted();
++		// aiduCAT patch (f031-stab-#7): note the size change instead of
++		// MAX_SAFE_INTEGER, which forced an immediate push on every call and
++		// bypassed streamThrottleMs (Feishu: 5 QPS per message -> 230020).
++		const prevLen = this.content.length;
+ 		this.content = full ?? "";
+-		this.throttle.note(Number.MAX_SAFE_INTEGER);
++		this.throttle.note(Math.max(1, Math.abs(this.content.length - prevLen)));
+ 	}
+ 	async run(producer) {
+ 		await this.ensureStarted();
+@@ -4226,6 +4243,24 @@ var MarkdownStreamControllerImpl = class {
+ 		await this.throttle.flushNow();
+ 		await this.queue.drain();
+ 		if (!this.cardId) return;
++		// aiduCAT patch (f031-stab-#7, upstream issue #289): one failed update
++		// used to set streamingFailed forever, so the terminal frame (the only
++		// one without the "running tool" footer) was skipped and the card stayed
++		// on the footer. Retry the final frame once; if it still fails, reject
++		// after finishing the card so the caller can deliver the answer.
++		let terminalErr;
++		if (this.streamingFailed) {
++			this.streamingFailed = false;
++			await this.queue.enqueue(async () => {
++				try {
++					await this.pushSnapshot();
++				} catch (e) {
++					this.streamingFailed = true;
++					terminalErr = e;
++				}
++			});
++			await this.queue.drain();
++		}
+ 		if (!this.content && !this.streamingFailed) {
+ 			await this.queue.enqueue(async () => {
+ 				try {
+@@ -4239,6 +4274,7 @@ var MarkdownStreamControllerImpl = class {
+ 		} catch (e) {
+ 			this.sender.logger.warn?.("[stream] finishStreamingCard failed", e);
+ 		}
++		if (terminalErr) throw terminalErr;
+ 	}
+ 	async failTerminal(_err) {
+ 		this.throttle.dispose();
+diff --git a/dist/index.mjs b/dist/index.mjs
+index 6cf990f0a7499178016e151e3545bc4626d6ab65..1ab36ca4fe352f65e05dded521524e56d4a868b1 100644
+--- a/dist/index.mjs
++++ b/dist/index.mjs
+@@ -3842,7 +3842,14 @@ var Throttle = class {
+ 		if (this.timer) clearTimeout(this.timer);
+ 		this.timer = setTimeout(() => {
+ 			this.timer = void 0;
+-			this.doFire();
++			// aiduCAT patch (f0.3.1, redone on 0.7.1): a timer-driven fire has no
++			// awaiting caller; hand failures to opts.onError instead of an
++			// unhandled rejection.
++			this.doFire().catch((err) => {
++				try {
++					this.opts.onError?.(err);
++				} catch {}
++			});
+ 		}, delay);
+ 	}
+ 	/**
+@@ -3932,7 +3939,10 @@ var CardStreamControllerImpl = class {
+ 		const cfg = sender.config;
+ 		this.throttle = new Throttle({
+ 			ms: cfg.streamThrottleMs ?? DEFAULT_THROTTLE_MS$1,
+-			chars: cfg.streamThrottleChars ?? DEFAULT_THROTTLE_CHARS$1
++			chars: cfg.streamThrottleChars ?? DEFAULT_THROTTLE_CHARS$1,
++			onError: (err) => {
++				this.lastPatchError = err;
++			}
+ 		}, () => this.patch());
+ 	}
+ 	get messageId() {
+@@ -3941,6 +3951,8 @@ var CardStreamControllerImpl = class {
+ 	get current() {
+ 		return this._current;
+ 	}
++	/** aiduCAT patch (f0.3.1): last failed throttled patch; cleared by the next success. */
++	lastPatchError;
+ 	async update(next) {
+ 		const nextCard = typeof next === "function" ? next(this._current) : next;
+ 		this._current = nextCard;
+@@ -3973,6 +3985,7 @@ var CardStreamControllerImpl = class {
+ 		const snapshot = this._current;
+ 		await this.queue.enqueue(async () => {
+ 			await this.sender.patchCard(this._messageId, snapshot);
++			this.lastPatchError = void 0;
+ 		});
+ 	}
+ 	async completeTerminal() {
+@@ -4130,8 +4143,12 @@ var MarkdownStreamControllerImpl = class {
+ 	}
+ 	async setContent(full) {
+ 		await this.ensureStarted();
++		// aiduCAT patch (f031-stab-#7): note the size change instead of
++		// MAX_SAFE_INTEGER, which forced an immediate push on every call and
++		// bypassed streamThrottleMs (Feishu: 5 QPS per message -> 230020).
++		const prevLen = this.content.length;
+ 		this.content = full ?? "";
+-		this.throttle.note(Number.MAX_SAFE_INTEGER);
++		this.throttle.note(Math.max(1, Math.abs(this.content.length - prevLen)));
+ 	}
+ 	async run(producer) {
+ 		await this.ensureStarted();
+@@ -4199,6 +4216,24 @@ var MarkdownStreamControllerImpl = class {
+ 		await this.throttle.flushNow();
+ 		await this.queue.drain();
+ 		if (!this.cardId) return;
++		// aiduCAT patch (f031-stab-#7, upstream issue #289): one failed update
++		// used to set streamingFailed forever, so the terminal frame (the only
++		// one without the "running tool" footer) was skipped and the card stayed
++		// on the footer. Retry the final frame once; if it still fails, reject
++		// after finishing the card so the caller can deliver the answer.
++		let terminalErr;
++		if (this.streamingFailed) {
++			this.streamingFailed = false;
++			await this.queue.enqueue(async () => {
++				try {
++					await this.pushSnapshot();
++				} catch (e) {
++					this.streamingFailed = true;
++					terminalErr = e;
++				}
++			});
++			await this.queue.drain();
++		}
+ 		if (!this.content && !this.streamingFailed) {
+ 			await this.queue.enqueue(async () => {
+ 				try {
+@@ -4212,6 +4247,7 @@ var MarkdownStreamControllerImpl = class {
+ 		} catch (e) {
+ 			this.sender.logger.warn?.("[stream] finishStreamingCard failed", e);
+ 		}
++		if (terminalErr) throw terminalErr;
+ 	}
+ 	async failTerminal(_err) {
+ 		this.throttle.dispose();

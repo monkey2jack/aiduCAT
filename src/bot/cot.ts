@@ -356,6 +356,7 @@ export async function consumeCotEvents(
       if (evt.type === 'done' || evt.type === 'error') {
         closeReasoningIfNeeded();
         closeTextIfNeeded();
+        if (evt.type === 'error' || evt.terminationReason !== 'normal') closePendingTools();
         if (textStepOpen) {
           publisher.enqueue('STEP_FINISHED', {
             stepId: finalStepId,
@@ -385,6 +386,20 @@ export async function consumeCotEvents(
     await publisher.finish('error');
   }
 
+  // f031-stab-#289: a tool cut off by stop/timeout/error never gets its
+  // TOOL_CALL_RESULT; close it as stopped so the timeline doesn't stay "running".
+  function closePendingTools(): void {
+    for (const [toolCallId, brief] of toolBrief) {
+      publisher.enqueue('TOOL_CALL_RESULT', {
+        messageId: `tool-result-${toolCallId}`,
+        toolCallId,
+        role: 'tool',
+        content: cotBriefToolTitle(brief.name, brief.input, 'stopped'),
+      });
+    }
+    toolBrief.clear();
+  }
+
   function closeReasoningIfNeeded(): void {
     if (!reasoningOpen) return;
     reasoningOpen = false;
@@ -403,7 +418,7 @@ export async function consumeCotEvents(
 export function cotBriefToolTitle(
   name: string,
   input: unknown,
-  status: 'running' | 'done' | 'error' = 'running',
+  status: 'running' | 'done' | 'error' | 'stopped' = 'running',
 ): string {
   return toolHeaderText({ id: 'cot-tool', name, input, status }).replace(/\*\*/g, '');
 }

@@ -31,7 +31,8 @@ describe('profile management commands', () => {
     await writeRegistry(root, [
       processEntry({
         id: 'run1',
-        pid: 12345,
+        // f031-stab-#290: ps/profile list hide dead pids, so use a live one.
+        pid: process.pid,
         profileName: 'codex-dev',
         agentKind: 'codex',
         appId: 'cli_codex',
@@ -46,7 +47,7 @@ describe('profile management commands', () => {
 
     expect(lines).toEqual([
       'ACTIVE  PROFILE    AGENT   STATUS',
-      '*       codex-dev  codex   pid=12345 agent=codex',
+      `*       codex-dev  codex   pid=${process.pid} agent=codex`,
       '        alpha      claude  -',
       '        claude     claude  -',
     ]);

@@ -191,6 +191,10 @@ export async function fetchTopicContext(
           container_id: threadId,
           sort_type: 'ByCreateTimeAsc',
           page_size: 50,
+          // f031-stab-#6 (upstream #309): without this Feishu returns the v1
+          // fallback body for CardKit 2.0 cards ("请升级至最新版本客户端")
+          // instead of the real content.
+          card_msg_content_type: 'user_card_content',
           ...(pageToken ? { page_token: pageToken } : {}),
         },
       });

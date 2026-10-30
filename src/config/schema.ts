@@ -136,12 +136,18 @@ export interface AppPreferences {
    */
   maxConcurrentRuns?: number;
   /**
-   * Global default idle-timeout for claude runs, in minutes. When set,
-   * if claude emits no stream event for this long the bridge kills the
-   * run as presumed-hung. Undefined / 0 = no timeout (the default — runs
-   * can hang indefinitely). Per-scope `/timeout` overrides this.
+   * Global default idle-timeout for claude runs, in minutes. If claude
+   * emits no stream event for this long (and no tool is in flight) the
+   * bridge kills the run as presumed-hung. f031-stab-#4: undefined = 15
+   * (default ON); 0 = explicitly off. Per-scope `/timeout` overrides this.
    */
   runIdleTimeoutMinutes?: number;
+  /**
+   * f031-stab-#4: hard cap for ONE tool call, in minutes. The idle watchdog
+   * pauses while a tool runs (OAuth waits, long builds), so a wedged tool
+   * could block the chat forever. Undefined = 30; 0 = off; clamp 1..240.
+   */
+  runToolTimeoutMinutes?: number;
   /**
    * Whether the bot only responds to messages that @-mention it in groups
    * (regular and topic groups). p2p is always unrestricted. Default true:
@@ -320,9 +326,20 @@ export function getAgentStopGraceMs(cfg: AppConfig): number {
   return Math.min(30_000, Math.max(100, Math.floor(raw)));
 }
 
+export const DEFAULT_RUN_IDLE_TIMEOUT_MINUTES = 15;
+export const DEFAULT_RUN_TOOL_TIMEOUT_MINUTES = 30;
+
 export function getRunIdleTimeoutMs(cfg: AppConfig): number | undefined {
-  const raw = cfg.preferences?.runIdleTimeoutMinutes;
+  const raw = cfg.preferences?.runIdleTimeoutMinutes ?? DEFAULT_RUN_IDLE_TIMEOUT_MINUTES;
   if (typeof raw !== 'number' || !Number.isFinite(raw) || raw <= 0) return undefined;
   const clamped = Math.min(Math.max(Math.floor(raw), 1), 120);
+  return clamped * 60_000;
+}
+
+/** f031-stab-#4: per-tool-call hard cap (see `runToolTimeoutMinutes`). */
+export function getRunToolTimeoutMs(cfg: AppConfig): number | undefined {
+  const raw = cfg.preferences?.runToolTimeoutMinutes ?? DEFAULT_RUN_TOOL_TIMEOUT_MINUTES;
+  if (typeof raw !== 'number' || !Number.isFinite(raw) || raw <= 0) return undefined;
+  const clamped = Math.min(Math.max(Math.floor(raw), 1), 240);
   return clamped * 60_000;
 }

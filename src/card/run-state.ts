@@ -1,6 +1,8 @@
 import type { AgentEvent } from '../agent/types';
+import { stripLeakedThinking } from './thinking-leak';
 
-export type ToolStatus = 'running' | 'done' | 'error';
+/** 'stopped' = the round ended (stop/timeout/error) before this tool returned. */
+export type ToolStatus = 'running' | 'done' | 'error' | 'stopped';
 
 export interface ToolEntry {
   id: string;
@@ -11,7 +13,9 @@ export interface ToolEntry {
 }
 
 export type Block =
-  | { kind: 'text'; content: string; streaming: boolean }
+  /** `raw`: f031-stab-#6 — the text as streamed, kept only when leaked
+   * thinking was stripped from `content` (needed to keep merging deltas). */
+  | { kind: 'text'; content: string; streaming: boolean; raw?: string }
   | { kind: 'tool'; tool: ToolEntry };
 
 export type FooterStatus = 'thinking' | 'tool_running' | 'streaming' | null;
@@ -35,6 +39,8 @@ export interface RunState {
   /** Set when terminal === 'idle_timeout' — how long claude was idle before
    * the watchdog gave up (so the message can say "N 分钟无响应"). */
   idleTimeoutMinutes?: number;
+  /** f031-stab-#4: set when the per-tool hard cap (not plain idle) fired. */
+  timeoutTool?: string;
   /** aiduCAT clarify: last parsed question marker (rendered as option buttons
    * under the answer when the run ends waiting on user input). */
   clarify?: ClarifyQuestion;
@@ -91,6 +97,19 @@ export function parseClarifyMarker(
   }
 }
 
+/**
+ * f031-stab-#289: a round that ends abnormally (stop, timeout, error) closes
+ * every tool still waiting for its result as 'stopped' — otherwise the
+ * finished card lists it exactly like a completed call.
+ */
+function stopRunningTools(blocks: Block[]): Block[] {
+  return blocks.map((b) =>
+    b.kind === 'tool' && b.tool.status === 'running'
+      ? { ...b, tool: { ...b.tool, status: 'stopped' as const } }
+      : b,
+  );
+}
+
 function closeStreamingText(blocks: Block[]): Block[] {
   return blocks.map((b) =>
     b.kind === 'text' && b.streaming ? { ...b, streaming: false } : b,
@@ -101,8 +120,11 @@ export function reduce(state: RunState, evt: AgentEvent): RunState {
   switch (evt.type) {
     case 'text': {
       const last = state.blocks[state.blocks.length - 1];
-      const merged =
-        last && last.kind === 'text' && last.streaming ? last.content + evt.delta : evt.delta;
+      const rawMerged =
+        last && last.kind === 'text' && last.streaming ? (last.raw ?? last.content) + evt.delta : evt.delta;
+      // f031-stab-#6 (#148): leaked <think>…</think> never reaches the card.
+      const merged = stripLeakedThinking(rawMerged);
+      const raw = merged === rawMerged ? {} : { raw: rawMerged };
       const parsed = parseClarifyMarker(merged);
       if (parsed) {
         const block: Block = { kind: 'text', content: parsed.cleaned, streaming: false };
@@ -122,7 +144,7 @@ export function reduce(state: RunState, evt: AgentEvent): RunState {
         // anywhere). Keep the full merged text in the block so the sentinel
         // survives into the next delta — the renderer strips everything from
         // the sentinel on, so users never see marker fragments.
-        const block: Block = { kind: 'text', content: merged, streaming: true };
+        const block: Block = { kind: 'text', content: merged, streaming: true, ...raw };
         return {
           ...state,
           blocks:
@@ -133,7 +155,7 @@ export function reduce(state: RunState, evt: AgentEvent): RunState {
           footer: 'streaming',
         };
       }
-      const block: Block = { kind: 'text', content: merged, streaming: true };
+      const block: Block = { kind: 'text', content: merged, streaming: true, ...raw };
       return {
         ...state,
         blocks:
@@ -150,9 +172,10 @@ export function reduce(state: RunState, evt: AgentEvent): RunState {
       // runs emit final_text, not streamed text deltas) — parse the clarify
       // marker out of it exactly like the text path, or the buttons never
       // appear (2026-10-19 猴哥 clarify 测试失败根因).
-      const parsed = parseClarifyMarker(evt.content);
+      const content = stripLeakedThinking(evt.content);
+      const parsed = parseClarifyMarker(content);
       if (parsed) return { ...state, finalText: parsed.cleaned, clarify: parsed.clarify };
-      return { ...state, finalText: evt.content };
+      return { ...state, finalText: content };
     }
 
     case 'usage':
@@ -226,6 +249,7 @@ export function reduce(state: RunState, evt: AgentEvent): RunState {
             : 'error';
       return {
         ...state,
+        blocks: stopRunningTools(state.blocks),
         terminal,
         errorMsg: terminal === 'error' ? evt.message : state.errorMsg,
         footer: null,
@@ -239,9 +263,10 @@ export function reduce(state: RunState, evt: AgentEvent): RunState {
           : evt.terminationReason === 'timeout'
             ? 'idle_timeout'
             : 'done';
+      const closed = closeStreamingText(state.blocks);
       return {
         ...state,
-        blocks: closeStreamingText(state.blocks),
+        blocks: terminal === 'done' ? closed : stopRunningTools(closed),
         reasoning: { ...state.reasoning, active: false },
         terminal,
         footer: null,
@@ -256,22 +281,32 @@ export function reduce(state: RunState, evt: AgentEvent): RunState {
 export function markInterrupted(state: RunState): RunState {
   return {
     ...state,
-    blocks: closeStreamingText(state.blocks),
+    blocks: stopRunningTools(closeStreamingText(state.blocks)),
     reasoning: { ...state.reasoning, active: false },
     terminal: 'interrupted',
     footer: null,
   };
 }
 
-export function markIdleTimeout(state: RunState, minutes: number): RunState {
+export function markIdleTimeout(state: RunState, minutes: number, toolName?: string): RunState {
   return {
     ...state,
-    blocks: closeStreamingText(state.blocks),
+    blocks: stopRunningTools(closeStreamingText(state.blocks)),
     reasoning: { ...state.reasoning, active: false },
     terminal: 'idle_timeout',
     footer: null,
     idleTimeoutMinutes: minutes,
+    ...(toolName ? { timeoutTool: toolName } : {}),
   };
+}
+
+/** f031-stab-#4: the one-line, user-facing reason for a timeout terminal. */
+export function timeoutNotice(state: RunState): string {
+  const mins = state.idleTimeoutMinutes ?? 0;
+  if (state.timeoutTool) {
+    return `⏱ 工具「${state.timeoutTool}」运行超过 ${mins} 分钟没有结果，已自动停止本轮。可以直接重发，或换个做法再试。`;
+  }
+  return `⏱ ${mins} 分钟没有任何进展，已自动停止本轮。可以直接重发，或换个说法再试。`;
 }
 
 /**
@@ -285,7 +320,7 @@ export const EMPTY_RUN_MESSAGE = 'agent 没有产出任何内容（可能进程�
 export function markEmptyRun(state: RunState): RunState {
   return {
     ...state,
-    blocks: closeStreamingText(state.blocks),
+    blocks: stopRunningTools(closeStreamingText(state.blocks)),
     reasoning: { ...state.reasoning, active: false },
     terminal: 'error',
     // f0.3.1 #4: keep a real error from the agent; otherwise say why it's red.

@@ -5,6 +5,7 @@ import type {
 } from '@larksuite/channel';
 import { createLarkChannel } from '@larksuite/channel';
 import { dirname, join } from 'node:path';
+import { randomUUID } from 'node:crypto';
 import { claudeCapability, codexCapability } from '../agent/capability';
 import { modelLabel, normalizeModelSelection, resolveModelArg } from '../agent/models';
 import {
@@ -38,8 +39,10 @@ import {
   getMaxConcurrentRuns,
   getMessageReplyMode,
   getRunIdleTimeoutMs,
+  getRunToolTimeoutMs,
   getShowToolCalls,
 } from '../config/schema';
+import type { KeystorePaths } from '../config/keystore';
 import { resolveAppSecret } from '../config/secret-resolver';
 import { log, reportMetric, withTrace } from '../core/logger';
 import { MediaCache, type LocalAttachment } from '../media/cache';
@@ -54,6 +57,8 @@ import { attachMeetingAgent, summarizeEndedMeeting } from '../meeting/orchestrat
 import type { ScopeContext } from '../policy/run-policy';
 import { createOwnerRefreshController } from '../policy/owner';
 import { RunExecutor } from '../runtime/run-executor';
+import { RunWatchdog, type RunTimeouts } from './run-watchdog';
+import { RunJournal, type JournalSnapshot } from './run-journal';
 import type { SessionCatalog } from '../session/catalog';
 import type { SessionStore } from '../session/store';
 import type { WorkspaceStore } from '../workspace/store';
@@ -182,7 +187,7 @@ export interface StartChannelDeps {
   sessionCatalog?: SessionCatalog;
   workspaces: WorkspaceStore;
   controls: Controls;
-  appPaths?: Pick<AppPaths, 'secretsFile' | 'keystoreSaltFile' | 'mediaDir'>;
+  appPaths?: KeystorePaths & Pick<AppPaths, 'mediaDir'>;
 }
 
 export async function startChannel(deps: StartChannelDeps): Promise<BridgeChannel> {
@@ -267,13 +272,19 @@ export async function startChannel(deps: StartChannelDeps): Promise<BridgeChanne
     },
     // SDK 1.65.0-alpha.3+ knobs.
     wsConfig: {
-      // 3s liveness watchdog: if no inbound message arrives within 3s after
-      // the last ping, SDK presumes connection dead and forces a reconnect.
-      pingTimeout: 3,
+      // f031-stab-#2 (upstream #252): liveness watchdog — no inbound frame
+      // within N s after our ping ⇒ presumed dead ⇒ reconnect. 3s tripped on
+      // a single late pong, and every reconnect killed in-flight runs. 20s
+      // still catches a half-dead socket well before the 15s keepalive ×3.
+      pingTimeout: 20,
     },
     // 8s handshake timeout (replaces hardcoded 15s). Fast-fail + fast-retry
     // beats slow-fail in unstable networks.
     handshakeTimeoutMs: 8_000,
+    // f031-stab-#1: since @larksuite/channel 0.6.1 forceReconnect waits on
+    // connectTimeoutMs (default 15s) instead of the handshake timeout; pin it
+    // to 8s so reconnects behave as before the upgrade.
+    connectTimeoutMs: 8_000,
     // Per-request REST timeout — without a cap a slow API can hang the
     // event-handling thread.
     httpTimeoutMs: 30_000,
@@ -289,12 +300,27 @@ export async function startChannel(deps: StartChannelDeps): Promise<BridgeChanne
   // unblock arms a fresh quiet-window timer. Net effect: at most one run per
   // chat in flight, and everything sent during a run merges into the next
   // batch (only flushed once 600ms of silence has passed *after* the run).
+  // f031-stab-#5: queued messages + in-flight runs mirrored on disk (0600,
+  // next to sessions.json) so a restart can close orphan cards and re-queue.
+  const journal = new RunJournal(
+    deps.appPaths?.mediaDir ? join(dirname(deps.appPaths.mediaDir), RUN_JOURNAL_FILE) : undefined,
+  );
+  const leftover = await journal.takeOver();
   const pending = new PendingQueue(DEBOUNCE_MS, (scope, batch) => {
     const firstMsg = batch[0];
     if (!firstMsg) return;
     // f0.2+ /status: count every incoming user message batch as one user turn.
     sessions.recordMessage(scope, 'user');
     pending.block(scope);
+    const lastMsg = batch[batch.length - 1]!;
+    const runKey = randomUUID();
+    journal.dequeue(scope, batch.map((m) => m.messageId));
+    journal.startRun(scope, {
+      runKey,
+      chatId: firstMsg.chatId,
+      replyTo: lastMsg.messageId,
+      ...(firstMsg.threadId ? { replyInThread: true } : {}),
+    });
     void withTrace({ chatId: firstMsg.chatId }, async () => {
       log.info('flush', 'start', {
         scope,
@@ -333,14 +359,26 @@ export async function startChannel(deps: StartChannelDeps): Promise<BridgeChanne
           lastRunModelByScope,
           scope,
           mode,
+          onCardOpened: (messageId) => journal.setCard(scope, runKey, messageId),
         });
       } catch (err) {
         log.fail('flush', err);
+        // f031-stab-#16: a pre-run step failed before anything reached the
+        // user — say so instead of staying silent.
+        if (err instanceof PreRunError) {
+          await sendPreRunFailure(channel, lastMsg, err).catch((sendErr) =>
+            log.warn('flush', 'pre-run-notice-failed', { err: String(sendErr) }),
+          );
+        }
       } finally {
+        journal.endRun(scope, runKey);
         pending.unblock(scope);
         log.info('flush', 'end');
       }
     });
+  }, {
+    onPush: (scope, msg) => journal.queue(scope, msg),
+    onDrop: (scope, msgs) => journal.dequeue(scope, msgs.map((m) => m.messageId)),
   });
 
   // Counter for stdout reconnect escalation; reset on `reconnected`.
@@ -520,6 +558,9 @@ export async function startChannel(deps: StartChannelDeps): Promise<BridgeChanne
     forceReconnect: () => controls.restart(),
   });
 
+  // f031-stab-#5: settle what the previous process left behind.
+  await recoverAfterRestart({ channel, pending, journal, snapshot: leftover });
+
   return {
     channel,
     disconnect: async () => {
@@ -532,6 +573,9 @@ export async function startChannel(deps: StartChannelDeps): Promise<BridgeChanne
       // reconnect would be surprising.
       meetingManager?.dispose();
       controls.meeting = undefined;
+      // f031-stab-#5: freeze the journal first — what is queued / in flight
+      // right now is exactly what the next start must recover.
+      await journal.close();
       pending.cancelAll();
       const [disconnectResult, stopAllResult, ...flushResults] = await Promise.allSettled([
         channel.disconnect(),
@@ -554,6 +598,63 @@ export async function startChannel(deps: StartChannelDeps): Promise<BridgeChanne
       }
     },
   };
+}
+
+/** f031-stab-#5 */
+const RUN_JOURNAL_FILE = 'run-journal.json';
+/** Re-queue messages only if the restart was quick; older ones get a notice. */
+const REPLAY_MAX_AGE_MS = 10 * 60_000;
+export const RESTART_INTERRUPTED_MESSAGE = '服务重启，这一轮被中断了，请重发一次。';
+
+async function recoverAfterRestart(input: {
+  channel: LarkChannel;
+  pending: PendingQueue;
+  journal: RunJournal;
+  snapshot: JournalSnapshot;
+}): Promise<void> {
+  const { channel, pending, snapshot } = input;
+  if (snapshot.inflight.length === 0 && snapshot.queued.length === 0) return;
+  log.warn('journal', 'recover', {
+    inflight: snapshot.inflight.length,
+    queuedScopes: snapshot.queued.length,
+  });
+  const notify = async (chatId: string, text: string, replyTo?: string, replyInThread?: boolean): Promise<void> => {
+    try {
+      await channel.send(chatId, { text }, replyTo ? { replyTo, ...(replyInThread ? { replyInThread } : {}) } : undefined);
+    } catch (err) {
+      log.warn('journal', 'notify-failed', { chatId, err: err instanceof Error ? err.message : String(err) });
+    }
+  };
+  for (const [scope, e] of snapshot.inflight) {
+    let closed = false;
+    if (e.cardMessageId) {
+      try {
+        const state: RunState = { ...initialState, terminal: 'error', footer: null, errorMsg: RESTART_INTERRUPTED_MESSAGE };
+        await channel.updateCard(e.cardMessageId, renderCard(state));
+        closed = true;
+      } catch (err) {
+        log.warn('journal', 'orphan-card-close-failed', { scope, err: err instanceof Error ? err.message : String(err) });
+      }
+    }
+    if (!closed) await notify(e.chatId, `⚠️ ${RESTART_INTERRUPTED_MESSAGE}`, e.replyTo, e.replyInThread);
+    log.info('journal', 'orphan-closed', { scope, card: Boolean(e.cardMessageId), viaCard: closed });
+  }
+  const now = Date.now();
+  for (const [scope, entries] of snapshot.queued) {
+    const fresh = entries.filter((q) => now - q.storedAt <= REPLAY_MAX_AGE_MS);
+    const stale = entries.filter((q) => now - q.storedAt > REPLAY_MAX_AGE_MS);
+    for (const q of fresh) pending.push(scope, q.msg);
+    if (stale.length > 0) {
+      const last = stale[stale.length - 1]!.msg;
+      await notify(
+        last.chatId,
+        `⚠️ 服务重启前收到的 ${stale.length} 条消息没来得及处理（已超过 ${REPLAY_MAX_AGE_MS / 60_000} 分钟），请重发。`,
+        last.messageId,
+        Boolean(last.threadId),
+      );
+    }
+    log.info('journal', 'queued-recovered', { scope, replayed: fresh.length, stale: stale.length });
+  }
 }
 
 function startKnownChatsRefreshTimer(
@@ -809,7 +910,11 @@ async function intakeMessage(deps: IntakeDeps): Promise<void> {
     log.info('intake', 'emoji-only-ignored', { scope, len: rawText.length });
     return;
   }
-  if (rawText.length === 0 && emsg.resources.length === 0) {
+  // f031-stab-#6 (upstream #286): a bare @ that QUOTES a message is a
+  // question about that message, not an empty ping — let it through.
+  // (In a topic, reply-to = topic root is structure, not a quote.)
+  const quotesSomething = Boolean(replyQuoteTargetForMessage(emsg, chatMode));
+  if (rawText.length === 0 && emsg.resources.length === 0 && !quotesSomething) {
     log.info('intake', 'empty-ignored', { scope });
     return;
   }
@@ -833,6 +938,63 @@ interface RunBatchDeps {
   lastRunModelByScope: Map<string, string>;
   scope: string;
   mode: ChatMode;
+  /** f031-stab-#5: the streaming card exists — record its id for restart recovery. */
+  onCardOpened?: (messageId: string) => void;
+}
+
+/**
+ * f031-stab-#16: steps that run before the agent starts (attachments, quote,
+ * topic context, prompt, run setup). Their errors used to be swallowed by
+ * log.fail('flush') and the user got nothing; tagged here so the flush
+ * catch can answer with an explicit error.
+ */
+type PreRunStep = 'attachments' | 'quote' | 'topic' | 'prompt' | 'run-setup';
+const PRE_RUN_STEP_LABEL: Record<PreRunStep, string> = {
+  attachments: '处理附件',
+  quote: '读取引用的消息',
+  topic: '读取话题上下文',
+  prompt: '整理消息内容',
+  'run-setup': '准备运行 agent',
+};
+
+export class PreRunError extends Error {
+  constructor(
+    readonly step: PreRunStep,
+    readonly original: unknown,
+  ) {
+    super(`pre-run step ${step} failed: ${original instanceof Error ? original.message : String(original)}`);
+    this.name = 'PreRunError';
+  }
+}
+
+async function preRun<T>(step: PreRunStep, fn: () => Promise<T>): Promise<T> {
+  try {
+    return await fn();
+  } catch (err) {
+    throw new PreRunError(step, err);
+  }
+}
+
+export function preRunFailureText(err: PreRunError): string {
+  const raw = err.original instanceof Error ? err.original.message : String(err.original);
+  const reason = raw.replace(/\s+/g, ' ').trim().slice(0, 200) || '未知错误';
+  return `⚠️ 这条消息没能交给 agent：${PRE_RUN_STEP_LABEL[err.step]}时出错（${reason}）。请重发一次；反复出现请查看 aiduCAT 日志。`;
+}
+
+async function sendPreRunFailure(
+  channel: LarkChannel,
+  msg: NormalizedMessage,
+  err: PreRunError,
+): Promise<void> {
+  const text = preRunFailureText(err);
+  const opts = msg.threadId
+    ? { replyTo: msg.messageId, replyInThread: true }
+    : { replyTo: msg.messageId };
+  try {
+    await channel.send(msg.chatId, { text }, opts);
+  } catch {
+    await channel.send(msg.chatId, { text });
+  }
 }
 
 async function runAgentBatch(deps: RunBatchDeps): Promise<void> {
@@ -863,7 +1025,9 @@ async function runAgentBatch(deps: RunBatchDeps): Promise<void> {
   const resourceItems = batch.flatMap((m) =>
     m.resources.map((r) => ({ messageId: m.messageId, resource: r })),
   );
-  const attachments = await media.resolve(resourceItems, controls.profileConfig.attachments);
+  const attachments = await preRun('attachments', () =>
+    media.resolve(resourceItems, controls.profileConfig.attachments),
+  );
   if (attachments.length > 0) {
     log.info('media', 'resolved', { count: attachments.length });
     for (const attachment of attachments) {
@@ -891,7 +1055,7 @@ async function runAgentBatch(deps: RunBatchDeps): Promise<void> {
   ];
   const quotes: QuotedContext[] = [];
   for (const targetId of quoteTargets) {
-    const q = await fetchQuotedContext(channel, targetId);
+    const q = await preRun('quote', () => fetchQuotedContext(channel, targetId));
     if (q) {
       quotes.push(q);
       log.info('quote', 'fetched', {
@@ -911,10 +1075,12 @@ async function runAgentBatch(deps: RunBatchDeps): Promise<void> {
   let topicContext: QuotedContext[] = [];
   if (mode === 'topic' && threadId && !sessions.getRaw(scope)) {
     const exclude = new Set([...batchIds, ...quoteTargets]);
-    topicContext = await fetchTopicContext(channel, threadId, {
-      maxMessages: 40,
-      excludeIds: exclude,
-    });
+    topicContext = await preRun('topic', () =>
+      fetchTopicContext(channel, threadId, {
+        maxMessages: 40,
+        excludeIds: exclude,
+      }),
+    );
     if (topicContext.length > 0) {
       log.info('topic', 'context-fetched', {
         scope,
@@ -945,13 +1111,8 @@ async function runAgentBatch(deps: RunBatchDeps): Promise<void> {
       ]
     : undefined;
 
-  const prompt = buildPrompt(
-    batch,
-    attachments,
-    quotes,
-    topicContext,
-    channel.botIdentity,
-    extraInstructions,
+  const prompt = await preRun('prompt', async () =>
+    buildPrompt(batch, attachments, quotes, topicContext, channel.botIdentity, extraInstructions),
   );
   log.info('prompt', 'built', {
     promptChars: prompt.length,
@@ -992,7 +1153,7 @@ async function runAgentBatch(deps: RunBatchDeps): Promise<void> {
     controls.profileConfig.agentKind === 'codex'
       ? codexCapability(controls.profileConfig)
       : claudeCapability(controls.profileConfig);
-  const flow = await startRunFlow({
+  const flow = await preRun('run-setup', async () => startRunFlow({
     scopeId: scope,
     // f0.2+: the selected model's declared window drives the 60% compact env.
     modelWindow: await resolveModelWindow(controls.profileConfig, modelSelection),
@@ -1014,7 +1175,7 @@ async function runAgentBatch(deps: RunBatchDeps): Promise<void> {
       source: 'im',
       stage: 'submit',
     },
-  });
+  }));
   if (!flow.ok) {
     log.info('run-flow', 'rejected', { scope, code: flow.rejectReason.code });
     log.warn('policy', 'denied', {
@@ -1071,8 +1232,10 @@ async function runAgentBatch(deps: RunBatchDeps): Promise<void> {
         ? scopeOverride * 60_000
         : undefined
       : getRunIdleTimeoutMs(controls.cfg);
-  if (idleTimeoutMs) {
-    log.info('flush', 'idle-watchdog', { idleTimeoutMs });
+  // f031-stab-#4: plus a hard cap per tool call (idle pauses while tools run).
+  const runTimeouts: RunTimeouts = { idleMs: idleTimeoutMs, toolMs: getRunToolTimeoutMs(controls.cfg) };
+  if (idleTimeoutMs || runTimeouts.toolMs) {
+    log.info('flush', 'idle-watchdog', { idleTimeoutMs, toolTimeoutMs: runTimeouts.toolMs });
   }
 
   // Group replies use rich text (post) so `<at user_id>` becomes a real
@@ -1152,7 +1315,7 @@ async function runAgentBatch(deps: RunBatchDeps): Promise<void> {
           handle,
           eventStream,
           scope,
-          idleTimeoutMs,
+          runTimeouts,
           recordSession,
           async () => {},
           sessions,
@@ -1232,6 +1395,7 @@ async function runAgentBatch(deps: RunBatchDeps): Promise<void> {
                 producerStarted = true;
                 if (progress.abandoned()) return;
                 cardCtrl = ctrl;
+                if (ctrl.messageId) deps.onCardOpened?.(ctrl.messageId);
                 await ctrl.update(renderCard(filterForPrefs(latestState), cardRenderOptions));
                 await renderDone;
               },
@@ -1244,7 +1408,7 @@ async function runAgentBatch(deps: RunBatchDeps): Promise<void> {
         handle,
         eventStream,
         scope,
-        idleTimeoutMs,
+        runTimeouts,
         recordSession,
         async (state) => {
           latestState = state;
@@ -1357,21 +1521,46 @@ async function runAgentBatch(deps: RunBatchDeps): Promise<void> {
           sendOpts,
         ),
       );
+      // f031-stab-#6 (upstream #299/#183): a failed streaming update (rate
+      // limit 230020, oversize, network) used to abort processAgentStream
+      // mid-run and the rest of the answer was lost. Keep consuming the run;
+      // once it ends, deliver the whole answer as a plain message.
+      let mdUpdateFailed: unknown;
+      const deliverFullAnswer = async (state: RunState, err: unknown): Promise<void> => {
+        const body = renderText(filterForPrefs(state));
+        log.warn('stream', 'markdown-degraded', {
+          scope,
+          code: (err as { response?: { data?: { code?: unknown } } })?.response?.data?.code,
+          err: err instanceof Error ? err.message : String(err),
+        });
+        if (!body.trim()) return;
+        await channel.send(
+          chatId,
+          { markdown: `⚠️ 流式消息更新失败，完整回答如下：\n\n${body}` },
+          sendOpts,
+        );
+      };
       const renderDone = processAgentStream(
         handle,
         eventStream,
         scope,
-        idleTimeoutMs,
+        runTimeouts,
         recordSession,
         async (state) => {
           latestState = state;
           if (shouldOpenProgressStream(filterForPrefs(state))) progress.ensureOpen();
-          if (markdownCtrl) {
-            await markdownCtrl.setContent(renderText(filterForPrefs(state)));
+          if (markdownCtrl && mdUpdateFailed === undefined) {
+            try {
+              await markdownCtrl.setContent(renderText(filterForPrefs(state)));
+            } catch (err) {
+              if (controls.profileConfig.agentKind === 'codex') throw err;
+              mdUpdateFailed = err;
+            }
           }
         },
         sessions,
       capability.agentId);
+      let mdDelivered = false;
       try {
         await awaitRenderAwareStream({
           mode: replyMode,
@@ -1382,13 +1571,25 @@ async function runAgentBatch(deps: RunBatchDeps): Promise<void> {
             if (controls.profileConfig.agentKind === 'codex') return;
             const body = renderText(filterForPrefs(state));
             if (body.trim()) {
+              mdDelivered = true;
               await channel.send(chatId, { markdown: body }, sendOpts);
             }
           },
+          // f031-stab-#6: the final markdown flush failed — answer as a message.
+          onProducerFailure:
+            controls.profileConfig.agentKind === 'codex'
+              ? undefined
+              : async (err, state) => {
+                  mdDelivered = true;
+                  await deliverFullAnswer(state, err);
+                },
         });
       } catch (err) {
         if (controls.profileConfig.agentKind !== 'codex') throw err;
         log.fail('stream', err, { mode: replyMode, step: 'progress-stream' });
+      }
+      if (mdUpdateFailed !== undefined && !mdDelivered) {
+        await deliverFullAnswer(latestState, mdUpdateFailed);
       }
       await recallIfEmptyStreamedReply(channel, progress, filterForPrefs(latestState), scope);
       if (controls.profileConfig.agentKind === 'codex') {
@@ -1410,7 +1611,7 @@ async function runAgentBatch(deps: RunBatchDeps): Promise<void> {
         handle,
         eventStream,
         scope,
-        idleTimeoutMs,
+        runTimeouts,
         recordSession,
         async () => {},
         sessions,
@@ -1697,7 +1898,7 @@ async function processAgentStream(
   handle: RunHandle,
   events: AsyncIterable<AgentEvent>,
   scope: string,
-  idleTimeoutMs: number | undefined,
+  timeouts: RunTimeouts,
   recordSession: (event: AgentEvent) => void,
   flush: (state: RunState) => Promise<void>,
   stats: Pick<SessionStore, 'recordUsage' | 'recordMessage' | 'recordModel'>,
@@ -1720,24 +1921,22 @@ async function processAgentStream(
   // The watchdog re-arms when:
   //  - a tool_result drains the in-flight set to zero, OR
   //  - any non-tool event arrives while the set is empty.
-  let idleFired = false;
-  let timer: NodeJS.Timeout | undefined;
-  const inFlightTools = new Set<string>();
-  const armOrPauseIdle = (): void => {
-    if (!idleTimeoutMs) return;
-    if (timer) clearTimeout(timer);
-    timer = undefined;
-    if (inFlightTools.size > 0) return;
-    timer = setTimeout(() => {
-      idleFired = true;
+  //
+  // f031-stab-#4: RunWatchdog adds a hard cap per tool call on top, so a
+  // wedged tool can no longer keep the scope blocked until a manual /stop.
+  const watchdog = new RunWatchdog({
+    idleMs: timeouts.idleMs,
+    toolMs: timeouts.toolMs,
+    onFire: (fire) => {
       handle.interrupted = true;
-      log.warn('agent', 'idle-timeout', { scope, idleTimeoutMs });
+      if (fire.kind === 'idle') log.warn('agent', 'idle-timeout', { scope, idleTimeoutMs: fire.ms });
+      else log.warn('agent', 'tool-timeout', { scope, tool: fire.toolName, toolTimeoutMs: fire.ms });
       void handle.run.stop().catch(() => {
         /* stop errors are non-fatal */
       });
-    }, idleTimeoutMs);
-  };
-  armOrPauseIdle();
+    },
+  });
+  watchdog.start();
 
   // fix(2026-10-30): empty-run guard - count events that prove the agent
   // genuinely produced something (text/thinking/final_text/tool/usage).
@@ -1755,16 +1954,17 @@ async function processAgentStream(
       // sees the correct set size. tool_use opens a window; tool_result
       // closes it. Other event types are bookkept after the if/else.
       if (evt.type === 'tool_use') {
-        inFlightTools.add(evt.id);
+        watchdog.toolStarted(evt.id, evt.name);
         log.info('agent', 'tool-in-flight', {
           tool: evt.name,
-          inFlight: inFlightTools.size,
+          inFlight: watchdog.inFlight,
         });
       } else if (evt.type === 'tool_result') {
-        inFlightTools.delete(evt.id);
-        log.info('agent', 'tool-done', { inFlight: inFlightTools.size });
+        watchdog.toolFinished(evt.id);
+        log.info('agent', 'tool-done', { inFlight: watchdog.inFlight });
+      } else {
+        watchdog.activity();
       }
-      armOrPauseIdle();
 
       if (evt.type === 'system') {
         recordSession(evt);
@@ -1860,7 +2060,7 @@ async function processAgentStream(
       if (state.terminal !== 'running') break;
     }
   } finally {
-    if (timer) clearTimeout(timer);
+    watchdog.dispose();
   }
 
   // If state already reached a terminal event (done/error/etc.) before the
@@ -1868,8 +2068,13 @@ async function processAgentStream(
   // wins. This avoids "claude finished but flush was slow → timer fired
   // mid-flush → user sees 'idle_timeout' on a successful run".
   if (state.terminal === 'running') {
-    if (idleFired) {
-      state = markIdleTimeout(state, Math.round(idleTimeoutMs! / 60_000));
+    const fired = watchdog.firedWith;
+    if (fired) {
+      state = markIdleTimeout(
+        state,
+        Math.round(fired.ms / 60_000),
+        fired.kind === 'tool' ? fired.toolName : undefined,
+      );
     } else if (handle.interrupted) {
       state = markInterrupted(state);
     } else {
@@ -2063,7 +2268,9 @@ function buildPrompt(
       ? texts.join('\n\n')
       : attachments.length > 0
         ? '请看下面的附件。'
-        : '（对方发来一条没有正文的消息——通常是只 @ 了你的唤醒（ping）。请简短回应。）';
+        : quotes.length > 0
+          ? '用户仅 @ 了你，请根据其引用的消息识别并处理请求；不要将此视为普通 ping。'
+          : '（对方发来一条没有正文的消息——通常是只 @ 了你的唤醒（ping）。请简短回应。）';
 
   const senderType = senderTypeOf(first);
   const mentions = mergeMentions(batch);

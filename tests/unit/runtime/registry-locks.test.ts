@@ -36,7 +36,8 @@ describe('registry and runtime lock integration', () => {
     });
     const before = await readFile(registryFile, 'utf8');
 
-    expect(readAndPrune(registryFile).map((item) => item.id)).toEqual(['stale-a', 'stale-b']);
+    // f031-stab-#290: dead pid hidden on read; live-but-unlocked entry still listed.
+    expect(readAndPrune(registryFile).map((item) => item.id)).toEqual(['stale-b']);
     expect(await readFile(registryFile, 'utf8')).toBe(before);
 
     const registered = await register({
@@ -146,7 +147,7 @@ describe('registry and runtime lock integration', () => {
     const legacyRegistryFile = join(root, 'processes.json');
     const registryFile = join(root, 'registry', 'processes.json');
     await writeJson(legacyRegistryFile, {
-      entries: [entry({ id: 'legacy', pid: 999_999_993, profileName: 'claude' })],
+      entries: [entry({ id: 'legacy', pid: process.pid, profileName: 'claude' })],
     });
     const legacyBefore = await readFile(legacyRegistryFile, 'utf8');
 

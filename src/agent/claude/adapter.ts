@@ -25,6 +25,18 @@ export interface ClaudeAdapterOptions {
 
 type ClaudeChild = SpawnedProcessByStdio<Writable, Readable, Readable>;
 
+const effortSkipLogged = new Set<string>();
+
+/**
+ * f031-stab-#15: is this a Claude model (official id, CLI alias, or a gateway
+ * name like `Claude-Opus-4.6` / `cu/claude-opus-5-5`)? `undefined` = CLI
+ * default, treated as Claude.
+ */
+export function isClaudeModelId(model: string | undefined): boolean {
+  if (!model) return true;
+  return /claude|opus|sonnet|haiku/i.test(model);
+}
+
 export class ClaudeAdapter implements AgentAdapter {
   readonly id = 'claude';
   readonly displayName = 'Claude Code';
@@ -88,9 +100,19 @@ export class ClaudeAdapter implements AgentAdapter {
     if (opts.sessionId) args.push('--resume', opts.sessionId);
     if (opts.model) args.push('--model', opts.model);
     if (opts.effort) {
-      // Claude Code validates low/medium/high/xhigh/max. If ultra was selected (e.g. from codex profile), fallback to max.
-      const effort = opts.effort === 'ultra' ? 'max' : opts.effort;
-      args.push('--effort', effort);
+      // f031-stab-#15: --effort is an Anthropic setting. Behind a gateway a
+      // non-Claude model (Gemini/GPT/GLM/Kimi…) does not support it, so only
+      // Claude models get it. The model is --model, else the per-run
+      // ANTHROPIC_MODEL override, else the CLI default (assumed Claude).
+      const effectiveModel = opts.model ?? opts.envOverrides?.ANTHROPIC_MODEL ?? process.env.ANTHROPIC_MODEL;
+      if (isClaudeModelId(effectiveModel)) {
+        // Claude Code validates low/medium/high/xhigh/max. If ultra was selected (e.g. from codex profile), fallback to max.
+        const effort = opts.effort === 'ultra' ? 'max' : opts.effort;
+        args.push('--effort', effort);
+      } else if (effectiveModel && !effortSkipLogged.has(effectiveModel)) {
+        effortSkipLogged.add(effectiveModel);
+        log.info('agent', 'effort-skipped-non-claude', { model: effectiveModel, effort: opts.effort });
+      }
     }
 
     const child = spawnProcess(this.binary, args, {
@@ -126,7 +148,12 @@ export class ClaudeAdapter implements AgentAdapter {
       while (nl !== -1) {
         const line = stderrBuffer.slice(0, nl);
         stderrBuffer = stderrBuffer.slice(nl + 1);
-        if (line.trim()) log.warn('agent', 'stderr', { line });
+        // f031-stab-#15: Claude Code warns `[claude-code:unrecognized_model]`
+        // on every run with a gateway model id — expected, not a fault.
+        if (line.trim()) {
+          if (line.includes('unrecognized_model')) log.info('agent', 'stderr', { line });
+          else log.warn('agent', 'stderr', { line });
+        }
         if (isWindowsCommandNotFoundLine(line)) {
           runtimeError = new Error(`failed to spawn claude: ${line.trim()}`);
           child.stdout.destroy();

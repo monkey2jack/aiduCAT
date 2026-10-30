@@ -1,5 +1,5 @@
 import { deepMaskEmails } from './mask-email';
-import type { Block, FooterStatus, RunState, ToolEntry } from './run-state';
+import { timeoutNotice, type Block, type FooterStatus, type RunState, type ToolEntry } from './run-state';
 import { logoImgKeyForModel } from './model-logo';
 import { maskEmails } from './mask-email';
 import { sanitizeCardMarkdown, sanitizePlainText, truncateUtf8, utf8Bytes } from './sanitize';
@@ -121,6 +121,7 @@ export function answerPlainText(state: RunState): string {
   const text = sanitizePlainText(rawAnswerBlocks(state).join('\n\n')).trim();
   if (text) return maskEmails(text);
   if (state.terminal === 'error' && state.errorMsg) return maskEmails(`⚠️ ${sanitizePlainText(state.errorMsg)}`);
+  if (state.terminal === 'idle_timeout') return timeoutNotice(state);
   return '';
 }
 
@@ -150,6 +151,11 @@ function buildCard(
   // visible without expanding the collapsed panel.
   if (elements.length === 0 && state.terminal === 'error' && state.errorMsg) {
     elements.push(noteMd(`⚠️ ${errorText(state.errorMsg)}`));
+  }
+  // f031-stab-#4: a timeout (idle or one tool over its cap) says so on the
+  // card itself — ⚠️Timeout in the summary alone left the user guessing.
+  if (state.terminal === 'idle_timeout') {
+    elements.push(noteMd(timeoutNotice(state)));
   }
 
   // f0.2 猴哥点单: the live status word (☤Reasoning... / ☤Tooling... /

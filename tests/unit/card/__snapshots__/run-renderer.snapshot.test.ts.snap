@@ -372,6 +372,11 @@ exports[`run card renderer snapshots > renders done, error, interrupted, and idl
         "tag": "markdown",
       },
       {
+        "content": "⏱ 15 分钟没有任何进展，已自动停止本轮。可以直接重发，或换个说法再试。",
+        "tag": "markdown",
+        "text_size": "notation",
+      },
+      {
         "border": {
           "color": "yellow",
           "corner_radius": "5px",
@@ -495,7 +500,7 @@ exports[`run card renderer snapshots > renders markdown text mode without card-o
 
 Done
 
-_⏱ 10 分钟无响应,已自动终止_"
+_⏱ 10 分钟没有任何进展，已自动停止本轮。可以直接重发，或换个说法再试。_"
 `;
 
 exports[`run card renderer snapshots > renders markdown text mode without card-only controls 4`] = `"⚠️ agent 失败:process failed"`;
