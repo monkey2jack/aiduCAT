@@ -265,6 +265,22 @@ export function recordRunSessionEvent(input: RecordRunSessionEventInput): void {
  * model-providers.resolveProviderKey; a failure logs and returns no override
  * so the run continues on the service env instead of erroring.
  */
+/**
+ * f031-sec-L4: provider `env` is for model routing knobs, not for changing how
+ * the agent process loads code or which Feishu identity it uses.
+ */
+const FORBIDDEN_PROVIDER_ENV = new Set([
+  'PATH', 'HOME', 'SHELL', 'NODE_OPTIONS', 'NODE_PATH', 'BASH_ENV', 'ENV', 'SHELLOPTS',
+  'PROMPT_COMMAND', 'PYTHONPATH', 'PYTHONSTARTUP', 'PERL5OPT', 'RUBYOPT', 'GIT_SSH_COMMAND',
+]);
+const FORBIDDEN_PROVIDER_ENV_PREFIXES = ['LD_', 'DYLD_', 'LARKSUITE_CLI_', 'LARK_CHANNEL'];
+
+export function isForbiddenProviderEnv(key: string): boolean {
+  return (
+    FORBIDDEN_PROVIDER_ENV.has(key) || FORBIDDEN_PROVIDER_ENV_PREFIXES.some((p) => key.startsWith(p))
+  );
+}
+
 export async function runProviderEnvOverrides(
   providers: ProfileConfig['modelProviders'],
   providerId: string | undefined,
@@ -295,7 +311,9 @@ export async function runProviderEnvOverrides(
   }
   if (def.env && typeof def.env === 'object') {
     for (const [k, v] of Object.entries(def.env)) {
-      if (/^[A-Z_][A-Z0-9_]*$/.test(k) && typeof v === 'string') base[k] = v;
+      if (/^[A-Z_][A-Z0-9_]*$/.test(k) && typeof v === 'string' && !isForbiddenProviderEnv(k)) {
+        base[k] = v;
+      }
     }
   }
   void agentId;
