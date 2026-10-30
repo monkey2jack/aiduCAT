@@ -13,6 +13,7 @@ import { evaluateRunPolicy } from '../policy/run-policy';
 import { resolveModelArg } from '../agent/models';
 import { untrustedText } from '../agent/prompt';
 import { runProviderEnvOverrides } from './run-flow';
+import { runLarkCliIdentityEnv } from '../config/profile-schema';
 import { resolveWorkingDirectory } from '../policy/workspace';
 import { RunRejected } from '../runtime/errors';
 import type { ActiveRuns } from './active-runs';
@@ -281,11 +282,15 @@ export async function handleCommentMention(deps: CommentDeps): Promise<void> {
         // also applies to comment runs.
         model: resolveModelArg(controls.profileConfig.agentKind, prefs.model),
         effort: capability.agentId === 'claude' && prefs.effort === 'ultra' ? 'max' : prefs.effort,
-        envOverrides: await runProviderEnvOverrides(
-          controls.profileConfig.modelProviders,
-          prefs.provider,
-          capability.agentId,
-        ),
+        envOverrides: {
+          ...((await runProviderEnvOverrides(
+            controls.profileConfig.modelProviders,
+            prefs.provider,
+            capability.agentId,
+          )) ?? {}),
+          // f031-sec-H2: a non-owner commenter's run gets no lark-cli config.
+          ...runLarkCliIdentityEnv(controls.profileConfig, access.reason === 'owner'),
+        },
         stopGraceMs: getAgentStopGraceMs(controls.cfg),
         observability: {
           profile: controls.profile,

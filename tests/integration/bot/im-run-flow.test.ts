@@ -70,6 +70,8 @@ describe('IM run flow', () => {
       const env = (h.agent.runOptions[0] as { envOverrides?: Record<string, string> }).envOverrides ?? {};
       expect(env.LARKSUITE_CLI_DEFAULT_AS).toBe(expectBot ? 'bot' : undefined);
       expect(env.LARKSUITE_CLI_STRICT_MODE).toBe(expectBot ? 'bot' : undefined);
+      // f031-sec-H2: non-owner runs carry no lark-cli config at all.
+      expect(env.LARKSUITE_CLI_CONFIG_DIR?.includes('aiducat-no-lark-cli') ?? false).toBe(expectBot);
     }
   });
 

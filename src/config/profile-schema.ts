@@ -1,3 +1,5 @@
+import { join } from 'node:path';
+import { devNull } from 'node:os';
 import type {
   AppCredentials,
   AppPreferences,
@@ -201,16 +203,26 @@ export function effectiveLarkCliIdentity(
 }
 
 /**
- * f031-sec-#5: per-run lark-cli identity. With `user-default` the agent could
- * act as the owner's Feishu user; a run started by anyone but the owner is
- * pinned to the bot identity for that run only.
+ * f031-sec-H2 (#5 hardened, 猴哥授权 2026-10-31): a run started by anyone but
+ * the owner gets NO lark-cli config — neither the profile's lark-cli dir (which
+ * may hold the owner's user token) nor the source projection. Both point at a
+ * path under the null device, which can never exist or be created, so lark-cli
+ * cannot fall back to any credential. DEFAULT_AS/STRICT_MODE=bot stay as a
+ * second lock. The owner's runs are unchanged.
  */
+export const NO_LARK_CLI_CONFIG_DIR = join(devNull, 'aiducat-no-lark-cli');
+
 export function runLarkCliIdentityEnv(
-  profile: Pick<ProfileConfig, 'mode' | 'larkCli'>,
+  _profile: Pick<ProfileConfig, 'mode' | 'larkCli'>,
   actorIsOwner: boolean,
 ): Record<string, string> {
-  if (effectiveLarkCliIdentity(profile) !== 'user-default' || actorIsOwner) return {};
-  return { LARKSUITE_CLI_STRICT_MODE: 'bot', LARKSUITE_CLI_DEFAULT_AS: 'bot' };
+  if (actorIsOwner) return {};
+  return {
+    LARKSUITE_CLI_CONFIG_DIR: NO_LARK_CLI_CONFIG_DIR,
+    LARK_CHANNEL_CONFIG: NO_LARK_CLI_CONFIG_DIR,
+    LARKSUITE_CLI_STRICT_MODE: 'bot',
+    LARKSUITE_CLI_DEFAULT_AS: 'bot',
+  };
 }
 
 export interface RootConfig {
