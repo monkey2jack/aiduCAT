@@ -51,6 +51,9 @@ beforeEach(async () => {
       createDefaultProfileConfig({
         agentKind: 'claude',
         accounts: { app: { id: 'cli_a', secret: '${APP_SECRET}', tenant: 'feishu' } },
+        // f031 merge: since f031-sec-#3 the sender must be allowlisted too, so the
+        // member is an allowed user — only the group allowlist is under test here.
+        access: { allowedUsers: ['ou_member'] },
       }),
     ),
     configPath,
