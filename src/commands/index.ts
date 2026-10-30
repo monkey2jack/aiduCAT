@@ -225,6 +225,8 @@ const ADMIN_COMMANDS = new Set([
   // Joining a meeting makes the bot visible to every participant and exposes
   // meeting content to the agent — owner/admin only.
   '/meeting',
+  // f031-sec-M1: /model rewrites the profile-wide model/provider for every chat.
+  '/model',
 ]);
 
 function isAdminCommand(cmd: string): boolean {
