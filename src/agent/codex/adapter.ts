@@ -55,7 +55,7 @@ export class CodexAdapter implements AgentAdapter {
     this.inheritCodexHome = opts.inheritCodexHome !== false;
     this.ignoreUserConfig = opts.ignoreUserConfig === true;
     this.ignoreRules = opts.ignoreRules !== false;
-    this.sandbox = opts.sandbox ?? 'danger-full-access';
+    this.sandbox = opts.sandbox ?? 'workspace-write';
     this.defaultStopGraceMs = opts.stopGraceMs ?? 5000;
     this.larkChannel = opts.larkChannel;
   }

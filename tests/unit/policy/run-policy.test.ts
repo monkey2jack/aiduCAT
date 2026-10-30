@@ -209,6 +209,7 @@ function profile(options: {
 function scope(overrides: Partial<ScopeContext> = {}): ScopeContext {
   return {
     source: 'im',
+    chatType: 'p2p',
     chatId: 'oc_chat',
     actorId: 'ou_user',
     ...overrides,

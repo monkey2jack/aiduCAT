@@ -3,6 +3,8 @@ import {
   accessToClaudePermissionMode,
   accessToCodexSandbox,
   clampAccess,
+  minAccess,
+  sourceAccessCeiling,
   type AccessMode,
   type ClaudePermissionMode,
   type CodexSandboxMode,
@@ -18,6 +20,8 @@ import {
 
 export interface ScopeContext {
   source: 'im' | 'card' | 'comment' | 'meeting';
+  /** IM chat type ('p2p' | 'group' | …). Missing on an IM run = treated as group. */
+  chatType?: string;
   chatId?: string;
   threadId?: string;
   actorId: string;
@@ -104,10 +108,18 @@ export function evaluateRunPolicy(input: RunPolicyInput): RunPolicyResult {
     return reject('required-attachment-rejected', '必需附件未通过校验，已拒绝运行。');
   }
 
+  // f031-sec-#1: group / comment / meeting / team runs are capped (workspace
+  // by default; groups may be raised by an explicit permissions.groupMaxAccess).
+  const ceiling = sourceAccessCeiling({
+    mode: input.profileConfig.mode,
+    source: input.scope.source,
+    chatType: input.scope.chatType,
+    permissions: input.profileConfig.permissions,
+  });
   const accessMode = clampAccess(
     input.profileConfig.permissions.defaultAccess,
     input.profileConfig.permissions.maxAccess,
-    input.capability.permissions.maxAccess,
+    minAccess(input.capability.permissions.maxAccess, ceiling),
   );
   const sandbox = accessToCodexSandbox(accessMode);
   const permissionMode = accessToClaudePermissionMode(

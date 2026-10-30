@@ -98,8 +98,8 @@ describe('profile create command', () => {
 
     const loaded = await loadRootConfig(configPath);
     expect(loaded?.profiles['codex-dev']?.sandbox).toMatchObject({
-      defaultMode: 'danger-full-access',
-      maxMode: 'danger-full-access',
+      defaultMode: 'workspace-write',
+      maxMode: 'workspace-write',
     });
   });
 

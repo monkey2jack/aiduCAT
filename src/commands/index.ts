@@ -1209,6 +1209,7 @@ async function handleDoctor(args: string, ctx: CommandContext): Promise<void> {
   const policy = evaluateRunPolicy({
     scope: {
       source: 'im',
+      chatType: ctx.msg.chatType,
       chatId: ctx.msg.chatId,
       actorId: ctx.msg.senderId,
       ...(ctx.msg.threadId ? { threadId: ctx.msg.threadId } : {}),

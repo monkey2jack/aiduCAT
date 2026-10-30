@@ -984,6 +984,7 @@ async function runAgentBatch(deps: RunBatchDeps): Promise<void> {
       : canUseGroup(controls.profileConfig, controls, firstMsg.chatId, firstMsg.senderId);
   const scopeContext: ScopeContext = {
     source: 'im',
+    chatType: firstMsg.chatType,
     chatId,
     actorId: firstMsg.senderId,
     ...(threadId ? { threadId } : {}),
