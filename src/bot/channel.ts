@@ -363,6 +363,13 @@ export async function startChannel(deps: StartChannelDeps): Promise<BridgeChanne
         });
       } catch (err) {
         log.fail('flush', err);
+        // f031-stab-#16: a pre-run step failed before anything reached the
+        // user — say so instead of staying silent.
+        if (err instanceof PreRunError) {
+          await sendPreRunFailure(channel, lastMsg, err).catch((sendErr) =>
+            log.warn('flush', 'pre-run-notice-failed', { err: String(sendErr) }),
+          );
+        }
       } finally {
         journal.endRun(scope, runKey);
         pending.unblock(scope);
@@ -935,6 +942,61 @@ interface RunBatchDeps {
   onCardOpened?: (messageId: string) => void;
 }
 
+/**
+ * f031-stab-#16: steps that run before the agent starts (attachments, quote,
+ * topic context, prompt, run setup). Their errors used to be swallowed by
+ * log.fail('flush') and the user got nothing; tagged here so the flush
+ * catch can answer with an explicit error.
+ */
+type PreRunStep = 'attachments' | 'quote' | 'topic' | 'prompt' | 'run-setup';
+const PRE_RUN_STEP_LABEL: Record<PreRunStep, string> = {
+  attachments: '处理附件',
+  quote: '读取引用的消息',
+  topic: '读取话题上下文',
+  prompt: '整理消息内容',
+  'run-setup': '准备运行 agent',
+};
+
+export class PreRunError extends Error {
+  constructor(
+    readonly step: PreRunStep,
+    readonly original: unknown,
+  ) {
+    super(`pre-run step ${step} failed: ${original instanceof Error ? original.message : String(original)}`);
+    this.name = 'PreRunError';
+  }
+}
+
+async function preRun<T>(step: PreRunStep, fn: () => Promise<T>): Promise<T> {
+  try {
+    return await fn();
+  } catch (err) {
+    throw new PreRunError(step, err);
+  }
+}
+
+export function preRunFailureText(err: PreRunError): string {
+  const raw = err.original instanceof Error ? err.original.message : String(err.original);
+  const reason = raw.replace(/\s+/g, ' ').trim().slice(0, 200) || '未知错误';
+  return `⚠️ 这条消息没能交给 agent：${PRE_RUN_STEP_LABEL[err.step]}时出错（${reason}）。请重发一次；反复出现请查看 aiduCAT 日志。`;
+}
+
+async function sendPreRunFailure(
+  channel: LarkChannel,
+  msg: NormalizedMessage,
+  err: PreRunError,
+): Promise<void> {
+  const text = preRunFailureText(err);
+  const opts = msg.threadId
+    ? { replyTo: msg.messageId, replyInThread: true }
+    : { replyTo: msg.messageId };
+  try {
+    await channel.send(msg.chatId, { text }, opts);
+  } catch {
+    await channel.send(msg.chatId, { text });
+  }
+}
+
 async function runAgentBatch(deps: RunBatchDeps): Promise<void> {
   const {
     channel,
@@ -963,7 +1025,9 @@ async function runAgentBatch(deps: RunBatchDeps): Promise<void> {
   const resourceItems = batch.flatMap((m) =>
     m.resources.map((r) => ({ messageId: m.messageId, resource: r })),
   );
-  const attachments = await media.resolve(resourceItems, controls.profileConfig.attachments);
+  const attachments = await preRun('attachments', () =>
+    media.resolve(resourceItems, controls.profileConfig.attachments),
+  );
   if (attachments.length > 0) {
     log.info('media', 'resolved', { count: attachments.length });
     for (const attachment of attachments) {
@@ -991,7 +1055,7 @@ async function runAgentBatch(deps: RunBatchDeps): Promise<void> {
   ];
   const quotes: QuotedContext[] = [];
   for (const targetId of quoteTargets) {
-    const q = await fetchQuotedContext(channel, targetId);
+    const q = await preRun('quote', () => fetchQuotedContext(channel, targetId));
     if (q) {
       quotes.push(q);
       log.info('quote', 'fetched', {
@@ -1011,10 +1075,12 @@ async function runAgentBatch(deps: RunBatchDeps): Promise<void> {
   let topicContext: QuotedContext[] = [];
   if (mode === 'topic' && threadId && !sessions.getRaw(scope)) {
     const exclude = new Set([...batchIds, ...quoteTargets]);
-    topicContext = await fetchTopicContext(channel, threadId, {
-      maxMessages: 40,
-      excludeIds: exclude,
-    });
+    topicContext = await preRun('topic', () =>
+      fetchTopicContext(channel, threadId, {
+        maxMessages: 40,
+        excludeIds: exclude,
+      }),
+    );
     if (topicContext.length > 0) {
       log.info('topic', 'context-fetched', {
         scope,
@@ -1045,13 +1111,8 @@ async function runAgentBatch(deps: RunBatchDeps): Promise<void> {
       ]
     : undefined;
 
-  const prompt = buildPrompt(
-    batch,
-    attachments,
-    quotes,
-    topicContext,
-    channel.botIdentity,
-    extraInstructions,
+  const prompt = await preRun('prompt', async () =>
+    buildPrompt(batch, attachments, quotes, topicContext, channel.botIdentity, extraInstructions),
   );
   log.info('prompt', 'built', {
     promptChars: prompt.length,
@@ -1092,7 +1153,7 @@ async function runAgentBatch(deps: RunBatchDeps): Promise<void> {
     controls.profileConfig.agentKind === 'codex'
       ? codexCapability(controls.profileConfig)
       : claudeCapability(controls.profileConfig);
-  const flow = await startRunFlow({
+  const flow = await preRun('run-setup', async () => startRunFlow({
     scopeId: scope,
     // f0.2+: the selected model's declared window drives the 60% compact env.
     modelWindow: await resolveModelWindow(controls.profileConfig, modelSelection),
@@ -1114,7 +1175,7 @@ async function runAgentBatch(deps: RunBatchDeps): Promise<void> {
       source: 'im',
       stage: 'submit',
     },
-  });
+  }));
   if (!flow.ok) {
     log.info('run-flow', 'rejected', { scope, code: flow.rejectReason.code });
     log.warn('policy', 'denied', {

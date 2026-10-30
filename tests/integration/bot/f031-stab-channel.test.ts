@@ -203,3 +203,36 @@ describe('f031-stab-#6-299 markdown stream update fails mid-run', () => {
     await waitFor(() => h.sent.some((s) => JSON.stringify(s.content).includes('FINAL_FLUSH_ANSWER')), 8000);
   });
 });
+
+// ---------------------------------------------------------------------------
+// f031-stab-#16 (audit-quality #16): a pre-run step (attachments, quote, topic
+// context, run setup) that throws used to be swallowed by log.fail('flush') —
+// Dudu got nothing at all. Now she gets an explicit error reply.
+// ---------------------------------------------------------------------------
+import { MediaCache } from '../../../src/media/cache.js';
+
+describe('f031-stab-#16 pre-run failures reach the user', () => {
+  it('f031-stab-#16 attachment step throws → explicit error reply, no agent run', async () => {
+    vi.spyOn(MediaCache.prototype, 'resolve').mockRejectedValue(new Error('ENOSPC: no space left on device'));
+    const h = await start({ events: doneOnly });
+    await h.handlers.message?.(dmMessage('om_pre1', '看看这个'));
+    await waitFor(() => h.sent.length >= 1);
+    const text = String(h.sent[0]!.content.text ?? h.sent[0]!.content.markdown ?? '');
+    expect(text).toContain('出错');
+    expect(text).toContain('ENOSPC');
+    expect(text).toContain('重发');
+    expect(h.sent[0]!.options).toMatchObject({ replyTo: 'om_pre1' });
+    expect(h.agent.runOptions).toHaveLength(0);
+  });
+
+  it('f031-stab-#16 the scope is not left blocked: the next message runs normally', async () => {
+    const spy = vi.spyOn(MediaCache.prototype, 'resolve').mockRejectedValueOnce(new Error('boom'));
+    const h = await start({ events: doneOnly });
+    await h.handlers.message?.(dmMessage('om_pre2', 'first'));
+    await waitFor(() => h.sent.length >= 1);
+    spy.mockRestore();
+    await h.handlers.message?.(dmMessage('om_pre3', 'second'));
+    await waitFor(() => h.agent.runOptions.length >= 1);
+    expect(h.agent.runOptions[0]!.prompt).toContain('second');
+  });
+});
