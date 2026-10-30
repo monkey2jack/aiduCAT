@@ -280,11 +280,12 @@ export async function startChannel(deps: StartChannelDeps): Promise<BridgeChanne
     // the normalizer drops (e.g. action.form_value on CardKit 2.0 form submits).
     includeRawEvent: true,
     outbound: {
-      // f0.2 猴哥点单: 400ms 让卡片流式像"一跳一跳"。压到 60ms（SDK 默认
-      // 100ms，再紧一点）逼近打字机观感；patchCard 是整卡 JSON 补丁，非
-      // 原生 typewriter，但频率上来后肉眼连贯度显著提升。飞书 im API 有
-      // QPS 限制，50/s 的 patch 上限远够（单 run 并发只有 1 条卡流）。
-      streamThrottleMs: 60,
+      // f0.3.1 #5: 飞书「更新应用发送的消息卡片」单条消息限频 5 QPS（50/s 是
+      // 整个应用的总量），超了返回 230020，整卡 patch 就失败。250ms = 每卡
+      // ≤4 次/秒，留余量。streamThrottleChars 必须关掉：SDK 在累计字符数
+      // ≥ 阈值时立即发（默认 50），而整卡 JSON 每次都远超 50，等于没有节流。
+      streamThrottleMs: 250,
+      streamThrottleChars: Number.MAX_SAFE_INTEGER,
     },
     // SDK 1.65.0-alpha.3+ knobs.
     wsConfig: {
