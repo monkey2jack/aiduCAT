@@ -39,7 +39,8 @@ export interface StreamCtrl {
   update(next: unknown): Promise<void>;
 }
 interface StreamInput {
-  card: { initial: unknown; producer: (ctrl: StreamCtrl) => Promise<void> };
+  card?: { initial: unknown; producer: (ctrl: StreamCtrl) => Promise<void> };
+  markdown?: (ctrl: { setContent(markdown: string): Promise<void> }) => Promise<void> | void;
 }
 
 export interface StabHarness {
@@ -66,6 +67,10 @@ export async function setupStabChannel(opts: {
   updateCard?: (messageId: string, card: Card, n: number) => Promise<void>;
   /** called with each streamed card update; lets a test pause mid-run */
   onUpdate?: (card: unknown) => Promise<void> | void;
+  /** markdown-mode stream: called on every setContent (throw to simulate a failed update) */
+  markdownSetContent?: (markdown: string, n: number) => Promise<void> | void;
+  /** markdown-mode stream: reject after the producer finished (final flush failed) */
+  markdownFailTerminal?: Error;
 }): Promise<StabHarness> {
   const tmp = opts.tmp ?? (await createTmpProfile('stab-channel-'));
   const workspace = await realpath(tmp.workspace);
@@ -134,6 +139,19 @@ export async function setupStabChannel(opts: {
     async stream(_chatId: string, input: StreamInput) {
       streamN++;
       const id = `om_stream_${streamN}`;
+      if (input.markdown) {
+        let n = 0;
+        await input.markdown({
+          async setContent(md: string) {
+            h.updates.push(md);
+            n++;
+            await opts.markdownSetContent?.(md, n);
+          },
+        });
+        if (opts.markdownFailTerminal) throw opts.markdownFailTerminal;
+        return { messageId: id };
+      }
+      if (!input.card) throw new Error('unsupported stream input');
       h.updates.push(input.card.initial);
       const ctrl: StreamCtrl = {
         messageId: id,

@@ -1460,6 +1460,25 @@ async function runAgentBatch(deps: RunBatchDeps): Promise<void> {
           sendOpts,
         ),
       );
+      // f031-stab-#6 (upstream #299/#183): a failed streaming update (rate
+      // limit 230020, oversize, network) used to abort processAgentStream
+      // mid-run and the rest of the answer was lost. Keep consuming the run;
+      // once it ends, deliver the whole answer as a plain message.
+      let mdUpdateFailed: unknown;
+      const deliverFullAnswer = async (state: RunState, err: unknown): Promise<void> => {
+        const body = renderText(filterForPrefs(state));
+        log.warn('stream', 'markdown-degraded', {
+          scope,
+          code: (err as { response?: { data?: { code?: unknown } } })?.response?.data?.code,
+          err: err instanceof Error ? err.message : String(err),
+        });
+        if (!body.trim()) return;
+        await channel.send(
+          chatId,
+          { markdown: `⚠️ 流式消息更新失败，完整回答如下：\n\n${body}` },
+          sendOpts,
+        );
+      };
       const renderDone = processAgentStream(
         handle,
         eventStream,
@@ -1469,12 +1488,18 @@ async function runAgentBatch(deps: RunBatchDeps): Promise<void> {
         async (state) => {
           latestState = state;
           if (shouldOpenProgressStream(filterForPrefs(state))) progress.ensureOpen();
-          if (markdownCtrl) {
-            await markdownCtrl.setContent(renderText(filterForPrefs(state)));
+          if (markdownCtrl && mdUpdateFailed === undefined) {
+            try {
+              await markdownCtrl.setContent(renderText(filterForPrefs(state)));
+            } catch (err) {
+              if (controls.profileConfig.agentKind === 'codex') throw err;
+              mdUpdateFailed = err;
+            }
           }
         },
         sessions,
       capability.agentId);
+      let mdDelivered = false;
       try {
         await awaitRenderAwareStream({
           mode: replyMode,
@@ -1485,13 +1510,25 @@ async function runAgentBatch(deps: RunBatchDeps): Promise<void> {
             if (controls.profileConfig.agentKind === 'codex') return;
             const body = renderText(filterForPrefs(state));
             if (body.trim()) {
+              mdDelivered = true;
               await channel.send(chatId, { markdown: body }, sendOpts);
             }
           },
+          // f031-stab-#6: the final markdown flush failed — answer as a message.
+          onProducerFailure:
+            controls.profileConfig.agentKind === 'codex'
+              ? undefined
+              : async (err, state) => {
+                  mdDelivered = true;
+                  await deliverFullAnswer(state, err);
+                },
         });
       } catch (err) {
         if (controls.profileConfig.agentKind !== 'codex') throw err;
         log.fail('stream', err, { mode: replyMode, step: 'progress-stream' });
+      }
+      if (mdUpdateFailed !== undefined && !mdDelivered) {
+        await deliverFullAnswer(latestState, mdUpdateFailed);
       }
       await recallIfEmptyStreamedReply(channel, progress, filterForPrefs(latestState), scope);
       if (controls.profileConfig.agentKind === 'codex') {

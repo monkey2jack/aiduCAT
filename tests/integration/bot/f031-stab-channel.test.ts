@@ -164,3 +164,42 @@ describe('f031-stab-#5 restart recovery', () => {
     expect(after).toMatchObject({ inflight: {}, queued: {} });
   });
 });
+
+// ---------------------------------------------------------------------------
+// f031-stab-#6 upstream #299 / #183: answer must survive a failed streaming
+// update. Card mode is covered by the f0.3.1 degrade chain
+// (card-stream-failure.test.ts); this checks the markdown path (group chats
+// reply in markdown) with the same upstream scenario.
+// ---------------------------------------------------------------------------
+describe('f031-stab-#6-299 markdown stream update fails mid-run', () => {
+  it('f031-stab-#6-299 the full answer still arrives when a markdown update fails mid-run', async () => {
+    const events = [
+      { type: 'text', delta: 'part one. ' },
+      { type: 'text', delta: 'part two ANSWER_END' },
+      { type: 'done', terminationReason: 'normal' },
+    ] as AgentEvent[];
+    const h = await start({
+      events,
+      configPatch: (cfg) => ({ ...cfg, preferences: { ...(cfg.preferences as object), messageReply: 'markdown' } }),
+      markdownSetContent: (_md, n) => {
+        if (n === 2) throw Object.assign(new Error('Request failed with status code 400'), { response: { data: { code: 230020 } } });
+      },
+    });
+    await h.handlers.message?.(dmMessage('om_md', 'hi'));
+    await waitFor(() => h.sent.some((s) => JSON.stringify(s.content).includes('ANSWER_END')), 8000);
+  });
+
+  it('f031-stab-#6-299 the answer arrives as a message when the final markdown flush is rejected', async () => {
+    const events = [
+      { type: 'text', delta: 'FINAL_FLUSH_ANSWER' },
+      { type: 'done', terminationReason: 'normal' },
+    ] as AgentEvent[];
+    const h = await start({
+      events,
+      configPatch: (cfg) => ({ ...cfg, preferences: { ...(cfg.preferences as object), messageReply: 'markdown' } }),
+      markdownFailTerminal: Object.assign(new Error('Request failed with status code 400'), { response: { data: { code: 230099 } } }),
+    });
+    await h.handlers.message?.(dmMessage('om_md2', 'hi'));
+    await waitFor(() => h.sent.some((s) => JSON.stringify(s.content).includes('FINAL_FLUSH_ANSWER')), 8000);
+  });
+});
