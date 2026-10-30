@@ -168,4 +168,3 @@ export function accountFailureCard(reason: string): object {
     },
   };
 }
-
