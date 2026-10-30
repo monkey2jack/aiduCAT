@@ -9,6 +9,7 @@ import { claudeCapability, codexCapability } from '../agent/capability';
 import { modelLabel, normalizeModelSelection, resolveModelArg } from '../agent/models';
 import {
   buildAgentPrompt,
+  untrustedText,
   type BridgePromptInteractiveCard,
   type BridgePromptMention,
   type BridgePromptQuotedMessage,
@@ -2065,7 +2066,9 @@ function buildPrompt(
     .map((m) => {
       const text = stripAttachmentRefs(m.content, fileKeys).trim();
       if (!text) return '';
-      return annotate ? `${senderAnnotation(m)} ${text}` : text;
+      // f031-sec-#6: another bot's words in a merged batch are data, not orders.
+      const body = annotate && senderTypeOf(m) === 'bot' ? untrustedText(text) : text;
+      return annotate ? `${senderAnnotation(m)} ${body}` : body;
     })
     .filter(Boolean);
   const userPart =
