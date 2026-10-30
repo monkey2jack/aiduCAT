@@ -4,6 +4,11 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
+patchedDependencies:
+  '@larksuite/channel@0.6.0':
+    hash: 25e241821dc87c1f9fafef6ded57af5df3fd0d2dc33bdb086ebaec09ba35a983
+    path: patches/@larksuite__channel@0.6.0.patch
+
 importers:
 
   .:
@@ -13,7 +18,7 @@ importers:
         version: 1.4.0
       '@larksuite/channel':
         specifier: ^0.6.0
-        version: 0.6.0
+        version: 0.6.0(patch_hash=25e241821dc87c1f9fafef6ded57af5df3fd0d2dc33bdb086ebaec09ba35a983)
       commander:
         specifier: ^12.1.0
         version: 12.1.0
@@ -2358,7 +2363,7 @@ snapshots:
       '@jridgewell/resolve-uri': 3.1.2
       '@jridgewell/sourcemap-codec': 1.5.5
 
-  '@larksuite/channel@0.6.0':
+  '@larksuite/channel@0.6.0(patch_hash=25e241821dc87c1f9fafef6ded57af5df3fd0d2dc33bdb086ebaec09ba35a983)':
     dependencies:
       '@larksuiteoapi/node-sdk': 1.73.0
       https-proxy-agent: 9.0.0
