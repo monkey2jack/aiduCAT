@@ -49,6 +49,17 @@ export interface RunExecution {
 // session transcript on exit, and force-killing it mid-flush left pool
 // residue that made the NEXT run die instantly (the send-twice bug).
 const DEFAULT_POST_DONE_EXIT_GRACE_MS = 15000;
+// f031-stab-#3: once grace + kill are spent, the next round on the scope goes
+// ahead anyway (logged) — a wedged process must not block the chat forever.
+const DRAIN_KILL_BUDGET_MS = 10_000;
+
+/** f031-stab-#3: one per spawned run, until its process has exited. */
+interface ScopeProcess {
+  /** The run's turn is over (terminal event seen, or interrupted). */
+  finished: () => boolean;
+  /** Resolves once the process exited (or was killed). */
+  exited: Promise<void>;
+}
 
 export class RunExecutor {
   private readonly agent: AgentAdapter;
@@ -57,6 +68,13 @@ export class RunExecutor {
   private readonly createRunId: () => string;
   private readonly now: () => number;
   private readonly postDoneExitGraceMs: number;
+  /**
+   * f031-stab-#3: the agent process currently owning each scope. It stays here
+   * after its turn ends (card final, scope idle) until the process exits, and
+   * the next submit on that scope waits for it — so two claude processes never
+   * touch the same session (`--resume`) at once.
+   */
+  private readonly scopeProcs = new Map<string, ScopeProcess>();
 
   constructor(deps: RunExecutorDeps) {
     this.agent = deps.agent;
@@ -69,6 +87,8 @@ export class RunExecutor {
 
   async submit(input: SubmitRunInput): Promise<RunExecution> {
     const submittedAt = this.now();
+    const prev = this.scopeProcs.get(input.scopeId);
+    if (prev?.finished()) await this.waitForPreviousExit(input.scopeId, prev);
     if (input.policy.expiresAt <= this.now()) {
       throw new RunRejected('policy-expired', 'run policy expired before spawn');
     }
@@ -166,34 +186,59 @@ export class RunExecutor {
         err instanceof Error ? err.message : 'another run is already active for this scope',
       );
     }
-    let cleaned = false;
-    const cleanup = async (waitForExit: boolean): Promise<void> => {
-      if (cleaned) return;
-      cleaned = true;
-      this.activeRuns.unregister(input.scopeId, run);
-      release();
-      if (waitForExit) {
-        const exited = await run.waitForExit(this.postDoneExitGraceMs);
-        if (!exited) {
-          log.warn('run', 'post-done-exit-timeout', {
-            ...dimensions,
-            graceMs: this.postDoneExitGraceMs,
-          });
-          await run.stop().catch((err) => {
-            log.warn('run', 'post-done-stop-failed', {
-              ...dimensions,
-              err: err instanceof Error ? err.message : String(err),
-            });
-          });
+    // f031-stab-#3: the scope is handed back only after the process is gone.
+    // The handle is unregistered as soon as the turn ends (/status and
+    // interrupts see it as idle), but `scopeProcs` holds the next submit on
+    // this scope until exit — clean exit within the grace, else stop()
+    // (SIGTERM → SIGKILL). `alreadyStopped` = execution.stop() already did it.
+    let terminalSeen = false;
+    let drained!: () => void;
+    const proc: ScopeProcess = {
+      finished: () => terminalSeen || handle.interrupted || this.activeRuns.get(input.scopeId)?.run !== run,
+      exited: new Promise<void>((resolve) => {
+        drained = resolve;
+      }),
+    };
+    this.scopeProcs.set(input.scopeId, proc);
+    let cleaning: Promise<void> | undefined;
+    const cleanup = (alreadyStopped: boolean): Promise<void> => {
+      cleaning ??= (async () => {
+        this.activeRuns.unregister(input.scopeId, run);
+        try {
+          if (!alreadyStopped) {
+            const exited = await run.waitForExit(this.postDoneExitGraceMs);
+            if (!exited) {
+              log.warn('run', 'post-done-exit-timeout', {
+                ...dimensions,
+                graceMs: this.postDoneExitGraceMs,
+              });
+              await run.stop().catch((err) => {
+                log.warn('run', 'post-done-stop-failed', {
+                  ...dimensions,
+                  err: err instanceof Error ? err.message : String(err),
+                });
+              });
+            }
+          }
+        } finally {
+          release();
+          if (this.scopeProcs.get(input.scopeId) === proc) this.scopeProcs.delete(input.scopeId);
+          drained();
         }
-      }
+      })();
+      return cleaning;
     };
     const fanout = new EventFanout(observeRunEvents(run.events, {
       dimensions,
       startedAt,
       now: this.now,
     }), async () => {
-      await cleanup(!handle.interrupted);
+      await cleanup(false);
+    }, () => {
+      // Runs synchronously before consumers see the terminal event, so a
+      // follow-up submit can never slip in between "card done" and cleanup.
+      terminalSeen = true;
+      void cleanup(false);
     });
 
     return {
@@ -206,9 +251,30 @@ export class RunExecutor {
         handle.interrupted = true;
         await run.stop();
         await run.waitForExit(this.postDoneExitGraceMs);
-        await cleanup(false);
+        await cleanup(true);
       },
     };
+  }
+
+  /** f031-stab-#3: hold a new submit until the scope's previous process exited. */
+  private async waitForPreviousExit(scopeId: string, prev: ScopeProcess): Promise<void> {
+    const startedAt = this.now();
+    log.info('run', 'wait-previous-exit', { scope: scopeId });
+    let timer: NodeJS.Timeout | undefined;
+    const capMs = this.postDoneExitGraceMs + DRAIN_KILL_BUDGET_MS;
+    const outcome = await Promise.race([
+      prev.exited.then(() => 'exited' as const),
+      new Promise<'timeout'>((resolve) => {
+        timer = setTimeout(() => resolve('timeout'), capMs);
+      }),
+    ]);
+    if (timer) clearTimeout(timer);
+    if (outcome === 'timeout') {
+      log.warn('run', 'previous-exit-timeout', { scope: scopeId, capMs });
+      if (this.scopeProcs.get(scopeId) === prev) this.scopeProcs.delete(scopeId);
+    } else {
+      log.info('run', 'previous-exited', { scope: scopeId, waitedMs: this.now() - startedAt });
+    }
   }
 }
 
@@ -251,15 +317,17 @@ function observeRunEvents(
 class EventFanout {
   private readonly source: AsyncIterable<AgentEvent>;
   private readonly onDone: () => Promise<void>;
+  private readonly onTerminal: () => void;
   private readonly buffer: AgentEvent[] = [];
   private readonly waiters = new Set<() => void>();
   private started = false;
   private done = false;
   private error: unknown;
 
-  constructor(source: AsyncIterable<AgentEvent>, onDone: () => Promise<void>) {
+  constructor(source: AsyncIterable<AgentEvent>, onDone: () => Promise<void>, onTerminal: () => void = () => {}) {
     this.source = source;
     this.onDone = onDone;
+    this.onTerminal = onTerminal;
   }
 
   subscribe(): AsyncIterable<AgentEvent> {
@@ -302,8 +370,12 @@ class EventFanout {
     try {
       for await (const event of this.source) {
         this.buffer.push(event);
+        if (isTerminalEvent(event)) {
+          this.onTerminal();
+          this.wakeAll();
+          break;
+        }
         this.wakeAll();
-        if (isTerminalEvent(event)) break;
       }
     } catch (err) {
       this.error = err;
