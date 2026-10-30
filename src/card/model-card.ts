@@ -13,6 +13,7 @@
  * select blocks form submit with a native prompt), plus a client-side hint.
  */
 
+import { GATEWAY_TRANSLATED, isClaudeModelId } from '../agent/claude/model-id';
 import { DEFAULT_PROVIDER, DEFAULT_PROVIDER_VALUE } from '../bot/model-providers';
 
 const CLAUDE_EFFORT_LEVELS = ['low', 'medium', 'high', 'xhigh', 'max'] as const;
@@ -59,9 +60,19 @@ export function modelCard(opts: ModelCardOpts): object {
         ? '_列表来自缓存_'
         : '') + overflowHint;
 
+  // f031-fix-#2: on a Claude profile a non-Claude model is translated by the
+  // gateway (and gets no --effort) — say so instead of passing it off as native.
+  const translated = (model: string | undefined): boolean =>
+    opts.agentKind === 'claude' && Boolean(model) && !isClaudeModelId(model);
   const comboValues =
     opts.combos.length > 0
-      ? opts.combos.map((c) => ({ text: { tag: 'plain_text', content: c.label ?? c.name }, value: c.name }))
+      ? opts.combos.map((c) => ({
+          text: {
+            tag: 'plain_text',
+            content: translated(c.name) ? `${c.label ?? c.name} · ${GATEWAY_TRANSLATED}` : (c.label ?? c.name),
+          },
+          value: c.name,
+        }))
       // Feishu select_static rejects an empty options array — always give the
       // user something, and the unavailable hint above explains why.
       : [{ text: { tag: 'plain_text', content: '（取不到模型列表）' }, value: '__none__' }];
@@ -152,7 +163,9 @@ export function modelCard(opts: ModelCardOpts): object {
   });
 
   const currentBits = [
-    opts.currentModel ? `\`${opts.currentModel}\`` : '跟随默认',
+    opts.currentModel
+      ? `\`${opts.currentModel}\`${translated(opts.currentModel) ? `（${GATEWAY_TRANSLATED}，effort 不生效）` : ''}`
+      : '跟随默认',
     // f0.2: show the configured provider NAME, not the internal id — the
     // default sentinel renders as the default gateway's name (e.g. 10router).
     opts.providers && opts.providers.length > 1
@@ -225,7 +238,12 @@ export function modelSavedCard(
   effort: string,
   provider?: string,
   defaultProviderName?: string,
+  agentKind?: 'claude' | 'codex',
 ): object {
+  const note =
+    agentKind === 'claude' && model !== '跟随默认' && !isClaudeModelId(model)
+      ? `\n\n_非 Claude 模型：${GATEWAY_TRANSLATED}，effort 不生效_`
+      : '';
   const named =
     !provider || provider === 'default'
       ? defaultProviderName?.trim() || '默认'
@@ -239,7 +257,7 @@ export function modelSavedCard(
         {
           tag: 'markdown',
           content:
-            `✅ 已保存：模型 \`${model}\`${providerBit} · effort \`${effortLabel(effort)}\`\n\n_下一轮对话生效; 已在跑的任务不受影响_`,
+            `✅ 已保存：模型 \`${model}\`${providerBit} · effort \`${effortLabel(effort)}\`${note}\n\n_下一轮对话生效; 已在跑的任务不受影响_`,
         },
       ],
     },

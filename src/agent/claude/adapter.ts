@@ -5,6 +5,7 @@ import { createInterface } from 'node:readline';
 import type { Readable, Writable } from 'node:stream';
 import { log } from '../../core/logger';
 import { buildAgentEnv } from '../../platform/agent-env';
+import { isClaudeModelId } from './model-id';
 import { spawnProcess, type SpawnedProcessByStdio } from '../../platform/spawn';
 import { buildBridgeSystemPrompt } from '../bridge-system-prompt';
 import { buildLarkChannelEnv, type LarkChannelEnvContext } from '../lark-channel-env';
@@ -30,15 +31,8 @@ type ClaudeChild = SpawnedProcessByStdio<Writable, Readable, Readable>;
 
 const effortSkipLogged = new Set<string>();
 
-/**
- * f031-stab-#15: is this a Claude model (official id, CLI alias, or a gateway
- * name like `Claude-Opus-4.6` / `cu/claude-opus-5-5`)? `undefined` = CLI
- * default, treated as Claude.
- */
-export function isClaudeModelId(model: string | undefined): boolean {
-  if (!model) return true;
-  return /claude|opus|sonnet|haiku/i.test(model);
-}
+// f031-stab-#15 / f031-fix-#2: shared with the /model card.
+export { isClaudeModelId };
 
 export class ClaudeAdapter implements AgentAdapter {
   readonly id = 'claude';

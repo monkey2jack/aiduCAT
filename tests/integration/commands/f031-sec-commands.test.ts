@@ -48,6 +48,14 @@ describe('f031-sec command hardening', () => {
     expect(h.controls.profileConfig.preferences.model).toBeUndefined();
   });
 
+  it('f031-fix-#2 typed `/model <non-Claude>` says the gateway translates it and effort does not apply', async () => {
+    const h = await createHarness();
+    await expect(h.run('/model Gemini-3.8-Flash')).resolves.toBe(true);
+    expect(lastMarkdown(h.channel)).toContain('经网关翻译');
+    await expect(h.run('/model Claude-Opus-4.6')).resolves.toBe(true);
+    expect(lastMarkdown(h.channel)).not.toContain('经网关翻译');
+  });
+
   it('f031-sec-M2 /config never shows the tokenized console URL; groups get no console line at all', async () => {
     const h = await createHarness();
     const token = 'f'.repeat(64);

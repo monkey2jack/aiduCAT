@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { GATEWAY_TRANSLATED, isClaudeModelId } from '../agent/claude/model-id';
 import { claudeCliWindow, compactPct, resolveModelWindow } from '../bot/context-window';
 import { readFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
@@ -1620,7 +1621,13 @@ async function submitModelCard(ctx: CommandContext): Promise<void> {
     await showResultCardInPlace(
       ctx,
       formMsgId,
-      modelSavedCard(nextModel ?? '跟随默认', nextEffort ?? '默认', nextProvider, ctx.controls.profileConfig.defaultProviderName),
+      modelSavedCard(
+        nextModel ?? '跟随默认',
+        nextEffort ?? '默认',
+        nextProvider,
+        ctx.controls.profileConfig.defaultProviderName,
+        ctx.controls.profileConfig.agentKind,
+      ),
     );
   })();
 }
@@ -1670,7 +1677,11 @@ async function setModelDirect(value: string, ctx: CommandContext): Promise<void>
     ctx,
     next === undefined
       ? '✅ 已恢复默认模型(下次会话不传 --model)。'
-      : `✅ 模型已切换为 \`${next}\`(下次会话生效)。`,
+      : `✅ 模型已切换为 \`${next}\`(下次会话生效)。${
+          ctx.controls.profileConfig.agentKind === 'claude' && !isClaudeModelId(next)
+            ? `\n_非 Claude 模型：${GATEWAY_TRANSLATED}，effort 不生效_`
+            : ''
+        }`,
   );
 }
 
