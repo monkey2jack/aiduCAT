@@ -44,15 +44,13 @@ describe('/status and /doctor diagnostics', () => {
     release();
     expect(h.agent.runOptions).toHaveLength(1);
     const status = JSON.stringify(lastContent(h.channel));
-    expect(status).toContain('旧 cwd');
-    expect(status).toContain('active run');
-    expect(status).toContain('active scopes');
-    expect(status).toContain('1/1 active');
-    expect(status).toContain('owner API');
-    expect(status).toContain('profile');
-    expect(status).toContain('claude');
-    expect(status).toContain('permission');
-    expect(status).toContain('plan');
+    // f0.2+ six-line /status layout (猴哥终版 2026-10-21): no cwd/scope rows;
+    // session · agent · 🛡 permission · 👤 owner · 🔐 lark-cli · 🏃 run · 🚦 queue.
+    expect(status).toContain('`sess-old` ⚠️ 旧 cwd');
+    expect(status).toContain('🏃 1');
+    expect(status).toContain('🚦 1/1 active, 0 waiting');
+    expect(status).toContain('👤 ok owner=present');
+    expect(status).toContain('🛡 plan');
     expect(status).not.toContain('bypassPermissions');
   });
 
@@ -105,7 +103,10 @@ describe('/status and /doctor diagnostics', () => {
 
     await expect(h.run('/status')).resolves.toBe(true);
     const status = JSON.stringify(lastContent(h.channel));
-    expect(status).toContain(jsonStringContent(h.tmp.workspace));
+    // /status (six-line layout) has no cwd row; it must still render without
+    // a bound cwd and without the old picker hint.
+    expect(status).toContain('**Session**');
+    expect(status).toContain('🚦 0/1 active, 0 waiting');
     expect(status).not.toContain('工作目录已选择');
   });
 

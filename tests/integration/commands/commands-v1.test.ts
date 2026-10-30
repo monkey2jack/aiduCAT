@@ -225,27 +225,32 @@ describe('Bridge command contracts', () => {
 
     expect(h.agent.runOptions).toHaveLength(0);
     const status = JSON.stringify(lastContent(h.channel));
+    // f0.2+ six-line /status layout (猴哥终版 2026-10-21): no cwd/scope rows;
+    // session · agent · 🛡 permission · 👤 owner · 🔐 lark-cli · 🏃 run · 🚦 queue.
     expect(status).toContain('Fake Agent');
-    expect(status).toContain('**cwd**');
-    expect(status).toContain('**session**');
-    expect(status).toContain('(无)');
+    expect(status).toContain('**Session**');
+    expect(status).toContain('(待首跑创建)');
     expect(status).not.toContain('**conversation**');
-    expect(status).toContain('permission');
-    expect(status).toContain('plan');
+    expect(status).toContain('🛡 plan');
     expect(status).not.toContain('bypassPermissions');
     expect(status).not.toContain('workspace-write/workspace-write');
-    expect(status).toContain('owner');
-    expect(status).toContain(jsonStringFragment(await realpath(h.tmp.workspace)));
+    expect(status).toContain('👤 ok owner=present');
+    expect(status).toContain('🔐 app');
   });
 
-  it('shows workspace paths in group-visible /status replies', async () => {
+  it('renders the same six-line /status card in group chats', async () => {
     const h = await createHarness();
 
     await expect(h.run('/status', { chatMode: 'group' })).resolves.toBe(true);
 
     const status = JSON.stringify(lastContent(h.channel));
-    expect(status).toContain(jsonStringFragment(await realpath(h.tmp.workspace)));
-    expect(status).toContain('chat-1');
+    // f0.2+ six-line /status layout (猴哥终版 2026-10-21): no cwd/scope rows;
+    // session · agent · 🛡 permission · 👤 owner · 🔐 lark-cli · 🏃 run · 🚦 queue.
+    expect(status).toContain('**Session**');
+    expect(status).toContain('🛡 plan');
+    expect(status).toContain('🚦 0/0 active, 0 waiting');
+    // The six-line layout no longer prints the workspace path in groups.
+    expect(status).not.toContain(jsonStringFragment(await realpath(h.tmp.workspace)));
   });
 
   it('rejects admin-only commands for non owner/admin users', async () => {

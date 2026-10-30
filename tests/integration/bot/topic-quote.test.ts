@@ -294,7 +294,9 @@ describe('topic message quote handling', () => {
   it('does not open a progress stream when the agent produces no content', async () => {
     // The SDK starts a stream eagerly and finishes an empty one with its
     // "(no content)" placeholder, so a content-less run used to post a card and
-    // recall it seconds later. Nothing durable to show → no message at all.
+    // recall it seconds later. No stream is opened; since f0.3/f0.3.1 (#4) a
+    // Claude run with zero output is reported as one error card instead of
+    // silence, so the user knows to resend.
     const h = await createHarness({
       chatMode: 'group',
       agentEvents: [{ type: 'done', terminationReason: 'normal' }],
@@ -309,8 +311,10 @@ describe('topic message quote handling', () => {
     // give the (absent) stream and its recall a chance to fire before asserting
     await new Promise((resolve) => setTimeout(resolve, 80));
 
+    await waitFor(() => h.channel.sent.length === 1);
     expect(h.channel.streams).toHaveLength(0);
-    expect(h.channel.sent).toHaveLength(0);
+    expect(h.channel.sent).toHaveLength(1);
+    expect(JSON.stringify(h.channel.sent[0]?.content)).toContain('没有产出');
     expect(h.channel.recallMessage).not.toHaveBeenCalled();
   });
 
@@ -460,7 +464,11 @@ describe('merge_forward fetch failure', () => {
     await waitFor(() => h.agent.runOptions.length === 1);
 
     expect(h.agent.runOptions).toHaveLength(1);
-    expect(h.channel.sent).toHaveLength(0);
+    // No "re-forward" hint. The fake agent answers with nothing, so the only
+    // message is the empty-run error card (f0.3.1 #4).
+    await waitFor(() => h.channel.sent.length === 1);
+    expect(JSON.stringify(h.channel.sent[0]?.content)).not.toContain('重新转发');
+    expect(JSON.stringify(h.channel.sent[0]?.content)).toContain('没有产出');
   });
 });
 

@@ -18,15 +18,18 @@ describe('doctor/status visible diagnostics', () => {
     await Promise.all(cleanups.splice(0).map((cleanup) => cleanup()));
   });
 
-  it('shows full local cwd and raw scope in status cards', async () => {
+  it('keeps status cards free of local paths and app secrets (six-line layout)', async () => {
     const h = await createHarness();
     h.workspaces.setCwd('chat-1', h.tmp.workspace);
 
     await h.command('/status');
 
     const payload = JSON.stringify(h.channel.sent.at(-1)?.content);
-    expect(payload).toContain(jsonStringFragment(h.tmp.workspace));
-    expect(payload).toContain('chat-1');
+    // f0.2+ six-line /status: cwd and raw scope rows were dropped by design.
+    expect(payload).toContain('**Session**');
+    expect(payload).toContain('🛡 bypassPermissions');
+    expect(payload).not.toContain(jsonStringFragment(h.tmp.workspace));
+    expect(payload).not.toContain('secret');
   });
 
   it('keeps doctor self-check replies free of app secrets while showing local paths', async () => {

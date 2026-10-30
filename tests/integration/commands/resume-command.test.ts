@@ -243,7 +243,7 @@ describe('agent-aware resume commands', () => {
 
     await expect(h.run('/status')).resolves.toBe(true);
     let status = JSON.stringify(lastContent(h.channel));
-    expect(status).toContain('**session**');
+    expect(status).toContain('**Session**');
     expect(status).toContain('未建立');
     expect(status).not.toContain('**thread**');
     expect(status).not.toContain('**conversation**');
@@ -252,7 +252,7 @@ describe('agent-aware resume commands', () => {
     await expect(h.run('/status')).resolves.toBe(true);
 
     status = JSON.stringify(lastContent(h.channel));
-    expect(status).toContain('**session**');
+    expect(status).toContain('**Session**');
     expect(status).toContain('thread-c');
     expect(status).not.toContain('未建立');
   });

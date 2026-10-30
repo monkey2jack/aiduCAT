@@ -152,7 +152,10 @@ describe('sender identity in bridge_context', () => {
     expect(context.botOpenId).toBe('ou_bot');
   });
 
-  it('turns a mention-only message into an explicit wake-up ping', async () => {
+  it('ignores a mention-only message with no text (aiduCAT intake rule)', async () => {
+    // aiduCAT (since f0.1, channel.ts intake): empty / emoji-only text with no
+    // attachments never triggers a run, so the upstream wake-up ping path is
+    // not reached for a bare @mention.
     const h = await createHarness();
     await startTestBridge(h);
 
@@ -163,13 +166,9 @@ describe('sender identity in bridge_context', () => {
         rawSenderType: 'user',
       }),
     );
-    await waitFor(() => h.agent.runOptions.length === 1);
+    await new Promise((resolve) => setTimeout(resolve, 1500));
 
-    const userInput = readSection(h.agent.runOptions[0]?.prompt ?? '', 'user_input') as {
-      text: string;
-    };
-    expect(userInput.text).toContain('唤醒');
-    expect(userInput.text).toContain('没有正文');
+    expect(h.agent.runOptions).toHaveLength(0);
   });
 
   it('annotates each message with its sender when a batch merges multiple senders', async () => {

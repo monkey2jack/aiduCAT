@@ -45,12 +45,14 @@ describe('Claude slash command visible behavior', () => {
 
     await expect(h.run('/new')).resolves.toBe(true);
     expect(lastMarkdown(h.channel)).toMatch(/^已开始新会话（沿用：模型 .+ · effort .+）。$/);
-    expect(h.sessions.getRaw('chat-1')).toBeUndefined();
+    // 6ec7351 "/new keeps stats skeleton": the session id/cwd are gone, a
+    // zeroed stats block stays for /status.
+    expectClearedSession(h.sessions.getRaw('chat-1'));
 
     h.sessions.set('chat-1', 'old-session-2', h.tmp.workspace);
     await expect(h.run('/reset')).resolves.toBe(true);
     expect(lastMarkdown(h.channel)).toMatch(/^已开始新会话（沿用：模型 .+ · effort .+）。$/);
-    expect(h.sessions.getRaw('chat-1')).toBeUndefined();
+    expectClearedSession(h.sessions.getRaw('chat-1'));
   });
 
   it('keeps the per-scope timeout override when /new clears the resumable session', async () => {
@@ -75,7 +77,7 @@ describe('Claude slash command visible behavior', () => {
     const workspaceRealpath = await realpath(h.tmp.workspace);
     expect(lastMarkdown(h.channel)).toContain(`已切换 cwd 到 \`${workspaceRealpath}\``);
     expect(h.workspaces.cwdFor('chat-1')).toBe(workspaceRealpath);
-    expect(h.sessions.getRaw('chat-1')).toBeUndefined();
+    expectClearedSession(h.sessions.getRaw('chat-1'));
   });
 
   it('handles /ws list, save, use, and remove', async () => {
@@ -141,7 +143,7 @@ describe('Claude slash command visible behavior', () => {
 
     await expect(h.run('/status')).resolves.toBe(true);
     expect(lastContent(h.channel)).toHaveProperty('card');
-    expect(JSON.stringify(lastContent(h.channel))).toContain('lark-cli');
+    expect(JSON.stringify(lastContent(h.channel))).toContain('🔐 '); // six-line /status: lark-cli state row
     expect(JSON.stringify(lastContent(h.channel))).toContain('user-ready');
 
     await expect(h.run('/help')).resolves.toBe(true);
@@ -168,7 +170,7 @@ describe('Claude slash command visible behavior', () => {
     await expect(h.run('/status')).resolves.toBe(true);
 
     const status = JSON.stringify(lastContent(h.channel));
-    expect(status).toContain('lark-cli');
+    expect(status).toContain('🔐 '); // six-line /status: lark-cli state row
     expect(status).toContain('user-ready');
     expect(status).not.toContain('user-missing');
   });
@@ -185,7 +187,7 @@ describe('Claude slash command visible behavior', () => {
     await expect(h.run('/status')).resolves.toBe(true);
 
     const status = JSON.stringify(lastContent(h.channel));
-    expect(status).toContain('lark-cli');
+    expect(status).toContain('🔐 '); // six-line /status: lark-cli state row
     expect(status).toContain('user-missing');
     expect(status).not.toContain('user-ready');
   });
@@ -202,7 +204,7 @@ describe('Claude slash command visible behavior', () => {
     await expect(h.run('/status')).resolves.toBe(true);
 
     const status = JSON.stringify(lastContent(h.channel));
-    expect(status).toContain('lark-cli');
+    expect(status).toContain('🔐 '); // six-line /status: lark-cli state row
     expect(status).toContain('user-missing');
     expect(status).not.toContain('user-ready');
   });
@@ -214,7 +216,7 @@ describe('Claude slash command visible behavior', () => {
     await expect(h.run('/status')).resolves.toBe(true);
 
     const status = JSON.stringify(lastContent(h.channel));
-    expect(status).toContain('lark-cli');
+    expect(status).toContain('🔐 '); // six-line /status: lark-cli state row
     expect(status).toContain('user-missing');
     expect(status).not.toContain('user-ready');
   });
@@ -231,7 +233,7 @@ describe('Claude slash command visible behavior', () => {
     await expect(h.run('/status')).resolves.toBe(true);
 
     const status = JSON.stringify(lastContent(h.channel));
-    expect(status).toContain('lark-cli');
+    expect(status).toContain('🔐 '); // six-line /status: lark-cli state row
     expect(status).toContain('user-missing');
     expect(status).not.toContain('user-ready');
   });
@@ -284,7 +286,7 @@ describe('Claude slash command visible behavior', () => {
     expect(lastMarkdown(h.channel)).toContain('已设为 2 分钟');
   });
 
-  it('surfaces active comment scopes in /status for targeted controls', async () => {
+  it('keeps comment-scope runs out of this chat six-line /status', async () => {
     const h = await createHarness();
     const commentScope = 'comment:abc123';
     const activeRun = h.agent.run({ runId: 'run-comment', prompt: 'running' }) as FakeAgentRun;
@@ -292,7 +294,12 @@ describe('Claude slash command visible behavior', () => {
 
     await expect(h.run('/status')).resolves.toBe(true);
 
-    expect(JSON.stringify(lastContent(h.channel))).toContain(commentScope);
+    // f0.2+ six-line /status dropped the active-scope list; a comment-scope run
+    // elsewhere does not count as this chat's run. Targeting it still works via
+    // `/stop comment:<id>` (see the test above). Flagged for Wei in f0.3.1 report.
+    const status = JSON.stringify(lastContent(h.channel));
+    expect(status).toContain('🏃 0');
+    expect(status).not.toContain(commentScope);
   });
 
   it('handles /ps and /exit help text', async () => {
@@ -426,4 +433,10 @@ async function writeLarkCliTarget(
     }),
     'utf8',
   );
+}
+
+function expectClearedSession(entry: ReturnType<SessionStore['getRaw']>): void {
+  expect(entry?.sessionId).toBeUndefined();
+  expect(entry?.cwd).toBeUndefined();
+  expect(entry?.stats).toMatchObject({ tokensIn: 0, tokensOut: 0, userMessages: 0, agentMessages: 0 });
 }

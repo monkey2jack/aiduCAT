@@ -18,17 +18,18 @@ describe('Claude IM regression boundaries', () => {
     expect(getRequireMentionInGroup(cfg)).toBe(true);
   });
 
-  it('keeps markdown as the default reply mode and card as the explicit stop-button mode', () => {
+  it('uses card as the default reply mode (aiduCAT) and honors an explicit markdown choice', () => {
     const defaultCfg = {
       accounts: { app: { id: 'app-id', secret: 'secret', tenant: 'feishu' as const } },
     };
-    const cardCfg = {
+    const markdownCfg = {
       ...defaultCfg,
-      preferences: { messageReply: 'card' as const },
+      preferences: { messageReply: 'markdown' as const },
     };
 
-    expect(getMessageReplyMode(defaultCfg)).toBe('markdown');
-    expect(getMessageReplyMode(cardCfg)).toBe('card');
+    // aiduCAT is the streaming-card fork: src/config/schema.ts defaults to card.
+    expect(getMessageReplyMode(defaultCfg)).toBe('card');
+    expect(getMessageReplyMode(markdownCfg)).toBe('markdown');
   });
 
   it('queues messages that arrive while a run is active and flushes them as the next batch', () => {
