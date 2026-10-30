@@ -93,7 +93,7 @@ const REACTION_CLEANUP_GRACE_MS = 1000;
 const BRIDGE_AGENT_INSTRUCTIONS = [
   '你在 bridge 进程中运行，普通 lark-cli 会继承 LARK_CHANNEL=1 并进入 bridge-bound 模式。',
   '不要 unset LARK_CHANNEL / LARK_CHANNEL_HOME / LARK_CHANNEL_PROFILE / LARKSUITE_CLI_CONFIG_DIR，也不要用 env -u LARK_CHANNEL 绕回本机普通配置。',
-  'Codex bridge 默认使用 danger-full-access 对齐 Claude bridge 的 bypassPermissions 行为，因此 lark-cli 应能像用户本机终端一样访问 keychain。',
+  'Codex bridge 只有在 full 权限下才使用 danger-full-access（对齐 Claude bridge 的 bypassPermissions），那时 lark-cli 能像用户本机终端一样访问 keychain；workspace / read-only 权限下可能做不到，如实告诉用户即可。',
   '如果提示 lark-channel context detected but not bound，停止当前操作并请用户重启 bridge 或运行 bridge doctor/preflight；不要改用普通 profile，不要自行 bind，也不要直接读取 config.json 里的账号或密钥。',
   '🚨 铁律：你就是运行在 aiduCAT 桥接进程里的 agent。绝对禁止执行 systemctl restart/stop aiduCAT、kill 本进程、pkill node、reboot、shutdown 等任何会终止自己所在服务的操作（包括以\"健康验证\"\"测试\"为理由）。restart 这个服务 = 杀死你自己并掐断用户正在跑的任务。健康检查只允许只读命令（systemctl status / is-active / 读日志）。确需重启时，先向用户说明并等用户本人执行。',
 ];

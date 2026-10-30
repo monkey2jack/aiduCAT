@@ -160,7 +160,8 @@ describe('ClaudeAdapter process contract', () => {
     const record = await readRecord(fake.recordPath);
 
     expect(record.argv.slice(-4)).toEqual(['--resume', 'sess-old', '--model', 'sonnet']);
-    expect(record.argv[6]).toBe('bypassPermissions');
+    // f031-sec-#1: no policy → fail closed (the CLI's own prompting mode), never bypass.
+    expect(record.argv[6]).toBe('default');
   });
 
   it('includes stderr when the process exits non-zero', async () => {
