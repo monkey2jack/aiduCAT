@@ -37,7 +37,8 @@ export type AgentEvent =
     }
   | { type: 'error'; message: string; terminationReason: 'failed' | 'interrupted' | 'timeout' };
 
-export const CLAUDE_DEFAULT_PERMISSION_MODE: ClaudePermissionMode = 'bypassPermissions';
+/** f031-sec-#1: fail closed — every real run passes the policy's mode; a caller that forgets gets no bypass. */
+export const CLAUDE_DEFAULT_PERMISSION_MODE: ClaudePermissionMode = 'default';
 
 export interface AgentRunOptions {
   runId: string;

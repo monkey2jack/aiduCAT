@@ -1,3 +1,4 @@
+import { maskConsoleUrl } from '../ui/console-url';
 import { modelLabel, supportedModels } from '../agent/models';
 import type { KnownChat } from '../bot/lark-info';
 import type { AgentKind, LarkCliIdentityPreset, ProfileMode } from '../config/profile-schema';
@@ -125,9 +126,11 @@ export function configFormCard(opts: ConfigFormOpts): object {
           ? [
               {
                 tag: 'markdown',
+                // f031-sec-M2: the console URL carries its access token — never
+                // post it to Feishu. Show the token-free address and how to open it.
                 content:
                   `🖥️ **Web 控制台**（本机 127.0.0.1，可管理所有 profile 的启动/停止与配置）\n` +
-                  `[${opts.consoleUrl}](${opts.consoleUrl})`,
+                  `已在运行：\`${maskConsoleUrl(opts.consoleUrl)}\`；访问 token 不在飞书显示，请在本机运行 \`aiduCAT ui\` 打开。`,
               },
             ]
           : []),

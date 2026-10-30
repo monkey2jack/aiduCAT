@@ -124,13 +124,14 @@ describe('signed card callback dispatch', () => {
   it('runs a help-dropdown pick without recalling the help card', async () => {
     const h = await createHarness();
 
-    await h.dispatch({ cmd: 'help.run' }, undefined, 'model');
+    // f031-sec-M1: /model became admin-only, so the non-admin operator picks /status.
+    await h.dispatch({ cmd: 'help.run' }, undefined, 'status');
 
     expect(h.channel.recalled).not.toContain('om_card');
-    const modelCard = h.channel.sent.find((m) =>
-      JSON.stringify(m.content).includes('模型切换'),
+    const statusCard = h.channel.sent.find((m) =>
+      JSON.stringify(m.content).includes('当前状态'),
     );
-    expect(modelCard).toBeDefined();
+    expect(statusCard).toBeDefined();
   });
 
   it('ignores a help.run callback that carries no selected option', async () => {
@@ -180,7 +181,7 @@ async function createHarness(
     profileConfig: createDefaultProfileConfig({
       agentKind: 'claude',
       accounts: { app: { id: 'app-id', secret: 'secret', tenant: 'feishu' } },
-      access: { allowedChats: ['oc_group'] },
+      access: { allowedChats: ['oc_group'], allowedUsers: ['ou_operator'] },
     }),
     botOwnerId: 'ou_owner',
     ownerRefreshState: 'ok',
@@ -191,7 +192,7 @@ async function createHarness(
     cfg: createDefaultProfileConfig({
       agentKind: 'claude',
       accounts: { app: { id: 'app-id', secret: 'secret', tenant: 'feishu' } },
-      access: { allowedChats: ['oc_group'] },
+      access: { allowedChats: ['oc_group'], allowedUsers: ['ou_operator'] },
     }),
     processId: 'proc-1',
   } satisfies Controls;

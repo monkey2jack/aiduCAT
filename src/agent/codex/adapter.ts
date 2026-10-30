@@ -3,7 +3,8 @@ import type { Readable, Writable } from 'node:stream';
 import { join } from 'node:path';
 import type { SandboxMode } from '../../config/profile-schema';
 import { log } from '../../core/logger';
-import { mergeProcessEnv, spawnProcess, type SpawnedProcessByStdio } from '../../platform/spawn';
+import { buildAgentEnv } from '../../platform/agent-env';
+import { spawnProcess, type SpawnedProcessByStdio } from '../../platform/spawn';
 import { SpawnFailed } from '../../runtime/errors';
 import { prefixBridgeSystemPrompt } from '../bridge-system-prompt';
 import { buildLarkChannelEnv, type LarkChannelEnvContext } from '../lark-channel-env';
@@ -29,6 +30,8 @@ export interface CodexAdapterOptions {
   sandbox?: SandboxMode;
   stopGraceMs?: number;
   larkChannel?: LarkChannelEnvContext;
+  /** f031-sec-#4: daemon env names the owner explicitly passes to the agent. */
+  envPassthrough?: readonly string[];
 }
 
 type CodexChild = SpawnedProcessByStdio<Writable, Readable, Readable>;
@@ -46,6 +49,7 @@ export class CodexAdapter implements AgentAdapter {
   private readonly sandbox: SandboxMode;
   private readonly defaultStopGraceMs: number;
   private readonly larkChannel: LarkChannelEnvContext | undefined;
+  private readonly envPassthrough: readonly string[];
   private botIdentity: AgentBotIdentity | undefined;
 
   constructor(opts: CodexAdapterOptions) {
@@ -55,9 +59,10 @@ export class CodexAdapter implements AgentAdapter {
     this.inheritCodexHome = opts.inheritCodexHome !== false;
     this.ignoreUserConfig = opts.ignoreUserConfig === true;
     this.ignoreRules = opts.ignoreRules !== false;
-    this.sandbox = opts.sandbox ?? 'danger-full-access';
+    this.sandbox = opts.sandbox ?? 'workspace-write';
     this.defaultStopGraceMs = opts.stopGraceMs ?? 5000;
     this.larkChannel = opts.larkChannel;
+    this.envPassthrough = opts.envPassthrough ?? [];
   }
 
   setBotIdentity(identity: AgentBotIdentity): void {
@@ -94,8 +99,11 @@ export class CodexAdapter implements AgentAdapter {
       throw new Error('cwd is required for CodexAdapter.run');
     }
 
+    const larkEnv = buildLarkChannelEnv(this.larkChannel, { forAgent: true });
     const args = buildCodexArgs({
       cwd: opts.cwd,
+      // f031-sec-#4: Codex shells inherit only core vars + the lark-channel env.
+      shellEnv: larkEnv as Record<string, string>,
       sandbox: opts.sandbox ?? this.sandbox,
       threadId: opts.threadId,
       images: opts.images,
@@ -105,7 +113,7 @@ export class CodexAdapter implements AgentAdapter {
       effort: opts.effort,
     });
     const envOverrides: NodeJS.ProcessEnv = {
-      ...buildLarkChannelEnv(this.larkChannel),
+      ...larkEnv,
       // f0.2: per-run provider overrides layer last so /model switches take
       // effect per run without a service restart.
       ...(opts.envOverrides ?? {}),
@@ -117,7 +125,7 @@ export class CodexAdapter implements AgentAdapter {
     }
     const child = spawnProcess(this.binary, args, {
       cwd: opts.cwd,
-      env: mergeProcessEnv(process.env, envOverrides),
+      env: buildAgentEnv({ agent: 'codex', overrides: envOverrides, passthrough: this.envPassthrough }),
       stdio: ['pipe', 'pipe', 'pipe'],
     }) as CodexChild;
 

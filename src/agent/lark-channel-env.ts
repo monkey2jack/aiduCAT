@@ -8,7 +8,10 @@ export interface LarkChannelEnvContext {
   larkCliSourceConfigFile?: string;
 }
 
-export function buildLarkChannelEnv(context?: LarkChannelEnvContext): NodeJS.ProcessEnv {
+export function buildLarkChannelEnv(
+  context?: LarkChannelEnvContext,
+  opts: { forAgent?: boolean } = {},
+): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = {
     LARK_CHANNEL: '1',
   };
@@ -18,10 +21,13 @@ export function buildLarkChannelEnv(context?: LarkChannelEnvContext): NodeJS.Pro
   const rootDir = nonEmpty(context?.rootDir);
   if (rootDir) env.LARK_CHANNEL_HOME = rootDir;
 
-  const configPath =
-    nonEmpty(context?.larkCliSourceConfigFile) ??
-    nonEmpty(context?.configPath) ??
-    (rootDir ? join(rootDir, 'config.json') : undefined);
+  // f031-sec-#4: an agent only ever gets the lark-cli source projection, never
+  // the bridge's own config.json (which holds the app secret / provider keys).
+  const configPath = opts.forAgent
+    ? nonEmpty(context?.larkCliSourceConfigFile)
+    : nonEmpty(context?.larkCliSourceConfigFile) ??
+      nonEmpty(context?.configPath) ??
+      (rootDir ? join(rootDir, 'config.json') : undefined);
   if (configPath) env.LARK_CHANNEL_CONFIG = configPath;
 
   const larkCliConfigDir = nonEmpty(context?.larkCliConfigDir);

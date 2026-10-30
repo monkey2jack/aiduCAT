@@ -64,6 +64,7 @@ import {
   canRunAdminCommand,
   canUseDm,
   canUseGroup,
+  senderFactsOf,
   type OwnerRefreshState,
 } from '../policy/access';
 import { buildEncryptedAccountConfig } from '../config/store';
@@ -99,6 +100,7 @@ import { fetchKnownChats, type KnownChat } from '../bot/lark-info';
 import { describeMeetingError, type MeetingManager } from '../meeting/manager';
 import { isMeetingNo } from '../meeting/api';
 import { answerInMeeting, meetingScopeId } from '../meeting/orchestrator';
+import { fenceBlock } from '../card/sanitize';
 import type { MeetingSession } from '../meeting/session';
 import { hasStructuredLarkCliUserAuth } from '../lark-cli/identity-policy';
 
@@ -224,6 +226,8 @@ const ADMIN_COMMANDS = new Set([
   // Joining a meeting makes the bot visible to every participant and exposes
   // meeting content to the agent — owner/admin only.
   '/meeting',
+  // f031-sec-M1: /model rewrites the profile-wide model/provider for every chat.
+  '/model',
 ]);
 
 function isAdminCommand(cmd: string): boolean {
@@ -344,6 +348,12 @@ async function handleNew(args: string, ctx: CommandContext): Promise<void> {
 
   // /new chat [name]  — spin up a fresh group chat bound to a fresh session
   if (trimmed === 'chat' || trimmed.startsWith('chat ')) {
+    // f031-sec-L7: creating a group (and handing it this chat's cwd) is admin-only.
+    if (!canRunAdminCommand(ctx.controls.profileConfig, ctx.controls, ctx.msg.senderId).ok) {
+      log.info('command', 'admin-deny', { cmd: '/new chat', sender: ctx.msg.senderId.slice(-6) });
+      await reply(ctx, '❌ 此命令仅管理员可用。');
+      return;
+    }
     const rawName = trimmed === 'chat' ? '' : trimmed.slice(5).trim();
     return handleNewChat(rawName, ctx);
   }
@@ -641,6 +651,8 @@ async function handleResume(args: string, ctx: CommandContext): Promise<void> {
   await ctx.channel.send(ctx.msg.chatId, { card }, commandReplyOptions(ctx));
 }
 
+const CLAUDE_SESSION_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 async function applyResume(sessionId: string, ctx: CommandContext): Promise<void> {
   if (ctx.sessionCatalog && ctx.sessionCatalogIdentity) {
     const entry = ctx.sessionCatalog.activeFor(ctx.sessionCatalogIdentity);
@@ -687,6 +699,12 @@ async function applyResume(sessionId: string, ctx: CommandContext): Promise<void
 
   if (ctx.controls.profileConfig.agentKind === 'codex') {
     await reply(ctx, '当前上下文没有可恢复的 Codex thread，请先在当前工作区完成一次运行。');
+    return;
+  }
+  // f031-sec-L1: a raw id goes straight to `claude --resume <id>` — accept a
+  // Claude session UUID only, never something the CLI could read as an option.
+  if (!CLAUDE_SESSION_ID_RE.test(sessionId)) {
+    await reply(ctx, '会话 ID 无效：请用 `/resume` 列表里的按钮，或完整的会话 ID（UUID）。');
     return;
   }
 
@@ -850,6 +868,7 @@ async function larkCliStatus(ctx: CommandContext): Promise<'app' | 'user-ready' 
 
 async function handleStatus(_args: string, ctx: CommandContext): Promise<void> {
   const cwd = effectiveWorkspaceCwd(ctx);
+  const isAdmin = canRunAdminCommand(ctx.controls.profileConfig, ctx.controls, ctx.msg.senderId).ok;
   const sess = ctx.sessions.getRaw(ctx.scope);
   const isCodex = ctx.controls.profileConfig.agentKind === 'codex';
   const catalogEntry =
@@ -866,9 +885,11 @@ async function handleStatus(_args: string, ctx: CommandContext): Promise<void> {
     runtimeAccess: runtimeAccessStatus(ctx.controls.profileConfig),
     larkCliStatus: await larkCliStatus(ctx),
     activeRun: Boolean(ctx.activeRuns.get(ctx.scope)),
-    activeScopes: ctx.activeRuns.scopes().filter((scope) => !scope.startsWith('comment:')),
-    activeCommentScopes: ctx.activeRuns.scopes().filter((scope) => scope.startsWith('comment:')),
-    queue: ctx.processPool?.snapshot(),
+    // f031-sec-L3: other chats' runs / the global queue are admin-only; a
+    // regular user sees their own session (🏃) and nothing about other scopes.
+    ...(isAdmin
+      ? { queue: ctx.processPool?.snapshot() ?? { active: 0, waiting: 0, cap: 0 } }
+      : {}),
     ownerState: formatOwnerState(ctx),
     scope: ctx.scope,
     chatMode: ctx.chatMode,
@@ -1209,6 +1230,7 @@ async function handleDoctor(args: string, ctx: CommandContext): Promise<void> {
   const policy = evaluateRunPolicy({
     scope: {
       source: 'im',
+      chatType: ctx.msg.chatType,
       chatId: ctx.msg.chatId,
       actorId: ctx.msg.senderId,
       ...(ctx.msg.threadId ? { threadId: ctx.msg.threadId } : {}),
@@ -1367,12 +1389,13 @@ function buildDoctorReport(
   const runtimeAccess = runtimeAccessStatus(ctx.controls.profileConfig);
   const access =
     ctx.msg.chatType === 'p2p'
-      ? canUseDm(ctx.controls.profileConfig, ctx.controls, ctx.msg.senderId)
+      ? canUseDm(ctx.controls.profileConfig, ctx.controls, ctx.msg.senderId, senderFactsOf(ctx.msg))
       : canUseGroup(
           ctx.controls.profileConfig,
           ctx.controls,
           ctx.msg.chatId,
           ctx.msg.senderId,
+          senderFactsOf(ctx.msg),
         );
   return [
     'self-check: ok',
@@ -2045,7 +2068,12 @@ async function showConfigForm(ctx: CommandContext): Promise<void> {
   // Surface the local web console URL when the supervisor (`--web-ui`) is
   // running — read from the host sidecar and confirm the owning process is
   // alive so we don't advertise a stale address.
-  const sidecar = await readUiSidecar(commandProfilePaths(ctx).hostUiFile).catch(() => undefined);
+  // f031-sec-M2: never in a group (everyone there would see it); in a DM the
+  // card shows the token-free address only (config-card masks it).
+  const sidecar =
+    ctx.chatMode === 'p2p'
+      ? await readUiSidecar(commandProfilePaths(ctx).hostUiFile).catch(() => undefined)
+      : undefined;
   const consoleUrl = sidecar && isAlive(sidecar.pid) ? sidecar.url : undefined;
   const card = configFormCard({
     agentKind: ctx.controls.profileConfig.agentKind,
@@ -2475,9 +2503,8 @@ async function handleMeeting(args: string, ctx: CommandContext): Promise<void> {
         ctx,
         [
           `字幕缓冲共 ${lines.length} 条${tail.length < lines.length ? `，以下是最近 ${tail.length} 条` : ''}：`,
-          '```',
-          ...tail,
-          '```',
+          // f031-sec-L5: participants' words cannot close the fence or @all.
+          fenceBlock(tail.join('\n')),
         ].join('\n'),
       );
       return;
@@ -2530,7 +2557,12 @@ async function handleMeeting(args: string, ctx: CommandContext): Promise<void> {
           question,
           // Typed privately -> answer only to the caller. Broadcasting a
           // summary somebody asked for in a DM would surprise the meeting.
-          { deliver: 'caller' },
+          {
+            deliver: 'caller',
+            // /meeting is admin-gated: the caller is the owner or an admin.
+            access: canRunAdminCommand(ctx.controls.profileConfig, ctx.controls, ctx.msg.senderId),
+            actorId: ctx.msg.senderId,
+          },
         );
         await reply(ctx, answer || '（没有产生回答）');
       } catch (err) {

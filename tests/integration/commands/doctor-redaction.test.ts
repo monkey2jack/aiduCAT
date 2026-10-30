@@ -27,7 +27,7 @@ describe('doctor/status visible diagnostics', () => {
     const payload = JSON.stringify(h.channel.sent.at(-1)?.content);
     // f0.2+ six-line /status: cwd and raw scope rows were dropped by design.
     expect(payload).toContain('**Session**');
-    expect(payload).toContain('🛡 bypassPermissions');
+    expect(payload).toContain('🛡 acceptEdits');
     expect(payload).not.toContain(jsonStringFragment(h.tmp.workspace));
     expect(payload).not.toContain('secret');
   });

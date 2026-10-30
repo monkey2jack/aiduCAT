@@ -1,5 +1,6 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
-import { createWriteStream, mkdirSync, statSync, type WriteStream } from 'node:fs';
+import { chmodSync, closeSync, createWriteStream, mkdirSync, openSync, statSync, type WriteStream } from 'node:fs';
+import { redactSecretShapes } from './secret-shapes';
 import { open, readdir, rm, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { telemetry } from './telemetry';
@@ -113,7 +114,10 @@ function getStream(): WriteStream | null {
   if (fileSinkDisabledDate === today) return null;
   if (stream) return stream;
   try {
-    mkdirSync(dir, { recursive: true });
+    // f031-sec-M4: logs hold message previews, open_ids and agent stderr —
+    // owner-only (dir 0700, files 0600), tightening dirs/files made before.
+    mkdirSync(dir, { recursive: true, mode: 0o700 });
+    tightenMode(dir, 0o700);
     const path = join(dir, logFileName(today));
     try {
       currentBytes = statSync(path).size;
@@ -121,10 +125,13 @@ function getStream(): WriteStream | null {
       currentBytes = 0;
     }
     if (currentBytes >= loggerOptions.maxFileBytes) {
+      tightenMode(path, 0o600);
       fileSinkDisabledDate = today;
       return null;
     }
-    const next = createWriteStream(path, { flags: 'a' });
+    closeSync(openSync(path, 'a', 0o600));
+    tightenMode(path, 0o600);
+    const next = createWriteStream(path, { flags: 'a', mode: 0o600 });
     stream = next;
     next.on('error', () => {
       // A WriteStream reports open/write failures asynchronously. Never leave
@@ -149,6 +156,15 @@ function disableFileSink(target: WriteStream, date: string): void {
     target.end();
   } catch {
     /* logging failures must never affect runtime behavior */
+  }
+}
+
+function tightenMode(path: string, mode: number): void {
+  if (process.platform === 'win32') return;
+  try {
+    chmodSync(path, mode);
+  } catch {
+    /* not ours / gone — logging must never crash the bot */
   }
 }
 
@@ -252,7 +268,10 @@ function sanitizeLogValue(
   const normalizedKey = key.startsWith('_') ? key.slice(1) : key;
   if (value === undefined) return undefined;
   if (RAW_PAYLOAD_KEYS.has(normalizedKey)) return '[REDACTED]';
-  if (/token|secret|authorization/i.test(normalizedKey)) return '[REDACTED]';
+  // f031-sec-M4: api_key / apiKey / password / credential fields too.
+  if (/token|secret|authorization|api[_-]?key|passw(?:or)?d|credential/i.test(normalizedKey)) {
+    return '[REDACTED]';
+  }
   if (/attachment.*path|media.*path|^(cwd|cwdRealpath|path|absPath)$/i.test(normalizedKey)) {
     return '[REDACTED_PATH]';
   }
@@ -697,7 +716,8 @@ export function redactDiagnosticText(text: string): string {
   );
   out = out.replace(/(^|[\s"'=])(~\/[^\s"',)]+)/g, '$1[REDACTED_PATH]');
   out = out.replace(/[A-Za-z]:\\[^\s"',)]+/g, '[REDACTED_PATH]');
-  return out;
+  // f031-sec-M4: shape-based pass (sk-…, *_API_KEY=…, "apiKey":"…", PEM, JWT…).
+  return redactSecretShapes(out);
 }
 
 function redactJsonCredentialText(text: string): string {

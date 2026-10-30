@@ -406,8 +406,8 @@ describe('profile runtime resolver', () => {
     };
 
     expect(runtime.profileConfig.permissions).toEqual({
-      defaultAccess: 'full',
-      maxAccess: 'full',
+      defaultAccess: 'workspace',
+      maxAccess: 'workspace',
     });
     expect(runtime.profileConfig.access).toEqual({
       allowedUsers: ['ou_allowed'],
@@ -421,8 +421,8 @@ describe('profile runtime resolver', () => {
       maxConcurrentRuns: 3,
     });
     expect(saved.profiles.claude?.permissions).toEqual({
-      defaultAccess: 'full',
-      maxAccess: 'full',
+      defaultAccess: 'workspace',
+      maxAccess: 'workspace',
     });
     expect(saved.profiles.claude).not.toHaveProperty('sandbox');
     expect(saved.profiles.claude?.access).toEqual({
@@ -619,7 +619,7 @@ describe('profile runtime resolver', () => {
     expect(saved.profiles['codex-dev']?.codex?.ignoreUserConfig).toBe(false);
   });
 
-  it('upgrades legacy Claude workspace sandbox default to full access', async () => {
+  it('keeps legacy Claude workspace sandbox at workspace (f031-sec-#1, no silent upgrade to full)', async () => {
     const root = await tmpRoot();
     const legacyClaude = createDefaultProfileConfig({
       agentKind: 'claude',
@@ -646,16 +646,16 @@ describe('profile runtime resolver', () => {
     };
 
     expect(runtime.profileConfig.permissions).toEqual({
-      defaultAccess: 'full',
-      maxAccess: 'full',
+      defaultAccess: 'workspace',
+      maxAccess: 'workspace',
     });
     expect(runtime.profileConfig.sandbox).toMatchObject({
-      defaultMode: 'danger-full-access',
-      maxMode: 'danger-full-access',
+      defaultMode: 'workspace-write',
+      maxMode: 'workspace-write',
     });
     expect(saved.profiles.claude?.permissions).toEqual({
-      defaultAccess: 'full',
-      maxAccess: 'full',
+      defaultAccess: 'workspace',
+      maxAccess: 'workspace',
     });
     expect(saved.profiles.claude).not.toHaveProperty('sandbox');
     expect(saved.profiles.claude).not.toHaveProperty('permissionSource');
@@ -703,7 +703,7 @@ describe('profile runtime resolver', () => {
       expect(saved.profiles.claude).not.toHaveProperty('permissionSource');
   });
 
-  it('upgrades unmarked canonical Claude workspace defaults from internal migrations', async () => {
+  it('keeps unmarked canonical Claude workspace permissions (f031-sec-#1, no silent upgrade to full)', async () => {
     const root = await tmpRoot();
     const claude = createDefaultProfileConfig({
       agentKind: 'claude',
@@ -722,12 +722,12 @@ describe('profile runtime resolver', () => {
     };
 
     expect(runtime.profileConfig.permissions).toEqual({
-      defaultAccess: 'full',
-      maxAccess: 'full',
+      defaultAccess: 'workspace',
+      maxAccess: 'workspace',
     });
     expect(saved.profiles.claude?.permissions).toEqual({
-      defaultAccess: 'full',
-      maxAccess: 'full',
+      defaultAccess: 'workspace',
+      maxAccess: 'workspace',
     });
     expect(saved.profiles.claude).not.toHaveProperty('sandbox');
     expect(saved.migrations?.permissionDefaultsV1).toContain('claude');
@@ -903,8 +903,8 @@ describe('profile runtime resolver', () => {
     };
 
     expect(runtime.profileConfig.sandbox).toMatchObject({
-      defaultMode: 'danger-full-access',
-      maxMode: 'danger-full-access',
+      defaultMode: 'workspace-write',
+      maxMode: 'workspace-write',
     });
     expect(runtime.profileConfig.codex?.inheritCodexHome).toBe(true);
     expect(runtime.profileConfig.codex?.ignoreUserConfig).toBe(false);

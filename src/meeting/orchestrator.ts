@@ -9,6 +9,7 @@ import type { SessionCatalog } from '../session/catalog';
 import type { SessionStore } from '../session/store';
 import type { WorkspaceStore } from '../workspace/store';
 import { startRunFlow } from '../bot/run-flow';
+import { canUseDm, type AccessDecision } from '../policy/access';
 import { describeMeetingError } from './manager';
 import type { MeetingSession } from './session';
 import type { MeetingSummaryTarget } from '../config/profile-schema';
@@ -99,6 +100,20 @@ export function attachMeetingAgent(deps: MeetingAgentDeps): void {
     const question = matchTrigger(chat.content, prefixes);
     if (question === undefined) return; // not addressed to us
     if (!question) return; // addressed but empty
+    // f031-sec-M3: a participant (external guests included) only drives the
+    // agent — or stops it — when the same allowlist as a DM admits them.
+    const askerId = chat.from.id;
+    const access: AccessDecision = askerId
+      ? canUseDm(controls.profileConfig, controls, askerId)
+      : { ok: false, reason: 'denied-user' };
+    if (!askerId || !access.ok) {
+      log.info('meeting', 'trigger-denied', {
+        meetingId: session.meetingId,
+        asker: askerId?.slice(-6) ?? 'unknown',
+        reason: access.reason,
+      });
+      return;
+    }
     const usedPrefix = prefixes.find((p) =>
       chat.content.trim().toLowerCase().startsWith(p.toLowerCase()),
     );
@@ -114,6 +129,8 @@ export function attachMeetingAgent(deps: MeetingAgentDeps): void {
     // Asked from inside the meeting → answer where the conversation is.
     void answerInMeeting(deps, question, {
       deliver: 'broadcast',
+      access,
+      actorId: askerId,
       ...(usedPrefix ? { usedPrefix } : {}),
       ...(chat.from.name ? { askedBy: chat.from.name } : {}),
     }).catch((err) =>
@@ -136,6 +153,12 @@ export interface AnswerOptions {
   deliver: 'broadcast' | 'caller';
   /** Prefix the asker actually typed, so hints quote their wording back. */
   usedPrefix?: string;
+  /**
+   * f031-sec-M3 / H2: who asked and why they were let in. Drives the run's
+   * actor and lark-cli identity; absent (end-of-meeting summary) = not the owner.
+   */
+  access?: AccessDecision;
+  actorId?: string;
 }
 
 /**
@@ -157,7 +180,7 @@ export async function answerInMeeting(
     ...(opts.askedBy ? { askedBy: opts.askedBy } : {}),
   });
 
-  const answer = await runMeetingAgent(deps, prompt, opts.usedPrefix);
+  const answer = await runMeetingAgent(deps, prompt, opts.usedPrefix, opts);
   if (!answer) return '';
   // The caller relays it themselves; never echo into the meeting.
   if (opts.deliver === 'caller') return answer;
@@ -292,6 +315,7 @@ async function runMeetingAgent(
   deps: MeetingAgentDeps,
   prompt: string,
   usedPrefix?: string,
+  who: Pick<AnswerOptions, 'access' | 'actorId'> = {},
 ): Promise<string> {
   const { session, controls } = deps;
   const scopeId = meetingScopeId(session.meetingId);
@@ -303,14 +327,15 @@ async function runMeetingAgent(
     scopeId,
     scope: {
       source: 'meeting',
-      actorId: controls.botOwnerId ?? 'meeting',
+      actorId: who.actorId ?? 'meeting',
       ...(session.originChatId ? { chatId: session.originChatId } : {}),
     },
     prompt,
     attachments: [],
-    // Meeting content is already gated by "the bot was invited into the
-    // meeting"; the per-chat allowlist doesn't apply here.
-    access: { ok: true, reason: 'allowed-chat' },
+    // f031-sec-M3: the asker's own access decision (in-meeting trigger or the
+    // admin who typed /meeting ask). The end-of-meeting summary has no asker
+    // and runs as a non-owner (no lark-cli — f031-sec-H2).
+    access: who.access ?? { ok: true, reason: 'allowed-chat' },
     capability,
     profileConfig: controls.profileConfig,
     sessions: deps.sessions,

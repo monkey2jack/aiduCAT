@@ -83,7 +83,8 @@ export async function writeUnit(profile: string, runArgs: string[] = ['run']): P
   });
   const unitPath = systemdUnitPath(profile);
   await mkdir(dirname(unitPath), { recursive: true });
-  await mkdir(daemonLogDir(profile), { recursive: true });
+  // f031-sec-M4: daemon stdout/stderr logs are owner-only.
+  await mkdir(daemonLogDir(profile), { recursive: true, mode: 0o700 });
   await writeFile(unitPath, content, 'utf8');
 }
 

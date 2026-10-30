@@ -16,7 +16,7 @@ const app = {
 };
 
 describe('profile schema', () => {
-  it('defaults Claude sandbox to danger-full-access through canonical permissions', () => {
+  it('defaults Claude sandbox to workspace-write through canonical permissions (f031-sec-#1)', () => {
     const cfg = createDefaultProfileConfig({
       agentKind: 'claude',
       accounts: { app },
@@ -25,18 +25,18 @@ describe('profile schema', () => {
     expect(cfg.schemaVersion).toBe(2);
     expect(cfg.agentKind).toBe('claude');
     expect(cfg.permissions).toMatchObject({
-      defaultAccess: 'full',
-      maxAccess: 'full',
+      defaultAccess: 'workspace',
+      maxAccess: 'workspace',
     });
     expect(cfg.sandbox).toMatchObject({
-      default: 'danger-full-access',
-      max: 'danger-full-access',
-      defaultMode: 'danger-full-access',
-      maxMode: 'danger-full-access',
+      default: 'workspace-write',
+      max: 'workspace-write',
+      defaultMode: 'workspace-write',
+      maxMode: 'workspace-write',
     });
   });
 
-  it('defaults Codex sandbox to danger-full-access to match Claude bridge local tool access', () => {
+  it('defaults Codex sandbox to workspace-write (f031-sec-#1)', () => {
     const cfg = createDefaultProfileConfig({
       agentKind: 'codex',
       accounts: { app },
@@ -44,10 +44,10 @@ describe('profile schema', () => {
     });
 
     expect(cfg.sandbox).toMatchObject({
-      default: 'danger-full-access',
-      max: 'danger-full-access',
-      defaultMode: 'danger-full-access',
-      maxMode: 'danger-full-access',
+      default: 'workspace-write',
+      max: 'workspace-write',
+      defaultMode: 'workspace-write',
+      maxMode: 'workspace-write',
     });
   });
 
@@ -324,25 +324,25 @@ describe('profile schema', () => {
     expect(cfg.codex?.inheritCodexHome).toBe(false);
   });
 
-  it('defaults Claude permissions to full/full and derives legacy sandbox for runtime compatibility', () => {
+  it('defaults Claude permissions to workspace/workspace and derives legacy sandbox (f031-sec-#1)', () => {
     const cfg = createDefaultProfileConfig({
       agentKind: 'claude',
       accounts: { app },
     });
 
     expect(cfg.permissions).toMatchObject({
-      defaultAccess: 'full',
-      maxAccess: 'full',
+      defaultAccess: 'workspace',
+      maxAccess: 'workspace',
     });
     expect(cfg.sandbox).toMatchObject({
-      default: 'danger-full-access',
-      max: 'danger-full-access',
-      defaultMode: 'danger-full-access',
-      maxMode: 'danger-full-access',
+      default: 'workspace-write',
+      max: 'workspace-write',
+      defaultMode: 'workspace-write',
+      maxMode: 'workspace-write',
     });
   });
 
-  it('defaults Codex permissions to full/full and derives danger-full-access for Codex runtime', () => {
+  it('defaults Codex permissions to workspace/workspace (f031-sec-#1)', () => {
     const cfg = createDefaultProfileConfig({
       agentKind: 'codex',
       accounts: { app },
@@ -350,14 +350,14 @@ describe('profile schema', () => {
     });
 
     expect(cfg.permissions).toMatchObject({
-      defaultAccess: 'full',
-      maxAccess: 'full',
+      defaultAccess: 'workspace',
+      maxAccess: 'workspace',
     });
     expect(cfg.sandbox).toMatchObject({
-      default: 'danger-full-access',
-      max: 'danger-full-access',
-      defaultMode: 'danger-full-access',
-      maxMode: 'danger-full-access',
+      default: 'workspace-write',
+      max: 'workspace-write',
+      defaultMode: 'workspace-write',
+      maxMode: 'workspace-write',
     });
   });
 

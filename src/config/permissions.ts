@@ -5,6 +5,12 @@ export type ClaudePermissionMode = 'default' | 'acceptEdits' | 'bypassPermission
 export interface PermissionConfig {
   defaultAccess: AccessMode;
   maxAccess: AccessMode;
+  /**
+   * f031-sec: ceiling for runs started from a group chat. Defaults to
+   * `workspace`; only an owner editing the config file can raise it to `full`.
+   * Comment / meeting / team-mode runs are always capped at `workspace`.
+   */
+  groupMaxAccess?: AccessMode;
   claude?: {
     permissionMode?: ClaudePermissionMode;
   };
@@ -166,18 +172,41 @@ function normalizeCanonicalPermissions(
   if (claude?.permissionMode) {
     assertClaudePermissionWithinAccess(claude.permissionMode, maxAccess);
   }
+  const groupMaxAccess = readAccess(input.groupMaxAccess, 'groupMaxAccess');
   return {
     defaultAccess,
     maxAccess,
+    ...(groupMaxAccess ? { groupMaxAccess } : {}),
     ...(claude ? { claude } : {}),
   };
 }
 
+// f031-sec-#1: a profile that does not say otherwise runs in `workspace`.
+// `full` (Claude bypassPermissions / Codex danger-full-access) must be written
+// explicitly by the owner in the config file.
 function defaultPermissions(): PermissionConfig {
   return {
-    defaultAccess: 'full',
-    maxAccess: 'full',
+    defaultAccess: 'workspace',
+    maxAccess: 'workspace',
   };
+}
+
+/** The ceiling a run's source puts on access (f031-sec-#1). */
+export function sourceAccessCeiling(input: {
+  mode: 'personal' | 'team';
+  source: 'im' | 'card' | 'comment' | 'meeting';
+  chatType?: string;
+  permissions: PermissionConfig;
+}): AccessMode {
+  if (input.mode === 'team') return 'workspace';
+  if (input.source === 'comment' || input.source === 'meeting') return 'workspace';
+  if (input.chatType === 'p2p') return 'full';
+  const group = input.permissions.groupMaxAccess ?? 'workspace';
+  return group;
+}
+
+export function minAccess(a: AccessMode, b: AccessMode): AccessMode {
+  return ACCESS_ORDER[a] <= ACCESS_ORDER[b] ? a : b;
 }
 
 function assertClaudePermissionWithinAccess(
@@ -196,8 +225,11 @@ function normalizeLegacySandboxPermissions(
     throw new Error('invalid sandbox mode');
   }
 
-  const maxMode = readSandboxMode(input.max ?? input.maxMode, 'maxMode') ?? 'danger-full-access';
-  const defaultMode = readSandboxMode(input.default ?? input.defaultMode, 'defaultMode') ?? maxMode;
+  // f031-sec-#1: an unspecified legacy max no longer means danger-full-access.
+  const explicitDefault = readSandboxMode(input.default ?? input.defaultMode, 'defaultMode');
+  const maxMode =
+    readSandboxMode(input.max ?? input.maxMode, 'maxMode') ?? explicitDefault ?? 'workspace-write';
+  const defaultMode = explicitDefault ?? maxMode;
   const defaultAccess = codexSandboxToAccess(defaultMode);
   const maxAccess = codexSandboxToAccess(maxMode);
   assertAccessPair(defaultAccess, maxAccess, 'sandbox');

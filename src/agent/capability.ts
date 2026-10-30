@@ -22,7 +22,7 @@ export interface AgentCapability {
 }
 
 export function claudeCapability(profile?: Pick<ProfileConfig, 'permissions'>): AgentCapability {
-  const maxAccess = profile?.permissions.maxAccess ?? 'full';
+  const maxAccess = profile?.permissions.maxAccess ?? 'workspace';
   return {
     agentId: 'claude',
     sessionKind: 'claude-session',

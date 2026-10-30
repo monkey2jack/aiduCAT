@@ -71,6 +71,21 @@ describe('Claude cloud-doc comment regression', () => {
     expect(h.reactionActions()).toEqual(['add', 'delete']);
   });
 
+  it('f031-sec-H2 a non-owner commenter run gets no lark-cli config; the owner keeps it', async () => {
+    for (const [owner, disabled] of [['ou-boss', true], ['ou-user', false]] as const) {
+      const h = await createCommentHarness({
+        getResponse: commentGet({ replyId: 'reply-1', question: '@bot hi' }),
+        agentText: 'ok',
+      });
+      const deps = h.deps(event());
+      deps.controls.botOwnerId = owner;
+      await handleCommentMention(deps);
+      const env = (h.agent.runOptions[0] as { envOverrides?: Record<string, string> }).envOverrides ?? {};
+      expect(env.LARKSUITE_CLI_CONFIG_DIR?.includes('aiducat-no-lark-cli') ?? false).toBe(disabled);
+      expect(env.LARKSUITE_CLI_DEFAULT_AS).toBe(disabled ? 'bot' : undefined);
+    }
+  });
+
   it('falls back from comment.get to paginated comment.list', async () => {
     const h = await createCommentHarness({
       getErrorCode: 1069307,

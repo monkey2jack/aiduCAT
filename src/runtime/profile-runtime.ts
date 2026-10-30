@@ -280,12 +280,8 @@ function upgradeLegacyRuntimeDefaults(
   }
 
   const permissionDefaultsMigrated = hasPermissionDefaultsMigration(rootConfig, profile);
-  const shouldUpgradeClaudeDefaultPermissions =
-    !permissionDefaultsMigrated &&
-    profileConfig.agentKind === 'claude' &&
-    !profileConfig.permissions.claude?.permissionMode &&
-    profileConfig.permissions.defaultAccess === 'workspace' &&
-    profileConfig.permissions.maxAccess === 'workspace';
+  // f031-sec-#1: never silently upgrade an explicit workspace profile to full.
+  const shouldUpgradeClaudeDefaultPermissions = false;
   const legacySandboxPolicy = profileConfig.permissionSource === 'sandbox';
   const nextPermissions = shouldUpgradeClaudeDefaultPermissions
     ? { defaultAccess: 'full' as const, maxAccess: 'full' as const }

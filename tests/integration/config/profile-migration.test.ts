@@ -91,8 +91,8 @@ describe('profile v2 migration', () => {
     expect(next.profiles.claude?.preferences).toEqual({ messageReply: 'card' });
     expect(next.profiles.claude?.workspaces).toEqual({});
     expect(next.profiles.claude?.permissions).toEqual({
-      defaultAccess: 'full',
-      maxAccess: 'full',
+      defaultAccess: 'workspace',
+      maxAccess: 'workspace',
     });
     expect(next.profiles.claude).not.toHaveProperty('sandbox');
 
@@ -412,8 +412,8 @@ describe('profile v2 migration', () => {
     expect(next.profiles.codex?.codex?.version).toBeUndefined();
     expect(next.profiles.codex?.codex?.sha256).toBeUndefined();
     expect(next.profiles.codex?.permissions).toEqual({
-      defaultAccess: 'full',
-      maxAccess: 'full',
+      defaultAccess: 'workspace',
+      maxAccess: 'workspace',
     });
     expect(next.profiles.codex).not.toHaveProperty('sandbox');
   });

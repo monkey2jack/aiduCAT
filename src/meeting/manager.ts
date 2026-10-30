@@ -55,6 +55,11 @@ export interface MeetingManagerDeps {
   onSession?: (session: MeetingSession) => void;
   /** Bot was invited to a meeting (push only). */
   onInvited?: (meetingNo: string, inviterId?: string) => void;
+  /**
+   * f031-sec-M3: whether an invite from this inviter may auto-join (owner/admin).
+   * Not wired → never auto-join: anyone could otherwise pull the bot into a meeting.
+   */
+  canAutoJoin?: (inviterId?: string) => boolean;
   /** Meeting ended (push, or observed by the poller). */
   onEnded?: (session: MeetingSession) => void;
 }
@@ -178,6 +183,10 @@ export class MeetingManager {
     log.info('meeting', 'invited', { meetingNo });
     this.deps.onInvited?.(meetingNo, inviterId);
     if (this.deps.config().autoJoinOnInvite) {
+      if (!this.deps.canAutoJoin?.(inviterId)) {
+        log.info('meeting', 'auto-join-denied', { meetingNo, inviter: inviterId?.slice(-6) ?? 'unknown' });
+        return;
+      }
       void this.join(meetingNo).catch((err) =>
         log.warn('meeting', 'auto-join-failed', { meetingNo, err: String(err) }),
       );

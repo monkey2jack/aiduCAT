@@ -108,6 +108,12 @@ export interface AppPreferences {
    */
   showToolCalls?: boolean;
   /**
+   * f031-sec-#4: tool-call blocks (with their output) in group chats. Default
+   * false — a tool that prints a file or `env` would otherwise post it to
+   * every group member. Owner opt-in only.
+   */
+  showToolCallsInGroups?: boolean;
+  /**
    * Model the underlying agent runs with, forwarded as `--model`. The catalog
    * of valid values is agent-kind specific — see `agent/models.ts`. `undefined`
    * or the `'default'` sentinel means "don't pass `--model`" so the agent
@@ -270,8 +276,11 @@ export function getMessageReplyMode(cfg: AppConfig): MessageReplyMode {
 }
 
 /** Resolve the show-tool-calls preference with default fallback. */
-export function getShowToolCalls(cfg: AppConfig): boolean {
-  return cfg.preferences?.showToolCalls !== false;
+export function getShowToolCalls(cfg: AppConfig, chatType?: string): boolean {
+  if (cfg.preferences?.showToolCalls === false) return false;
+  // f031-sec-#4: groups hide tool calls unless the owner opts in.
+  if (chatType !== undefined && chatType !== 'p2p') return cfg.preferences?.showToolCallsInGroups === true;
+  return true;
 }
 
 export function getCotMessages(cfg: AppConfig): CotMessagesMode {

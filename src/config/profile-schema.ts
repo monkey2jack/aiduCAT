@@ -1,3 +1,5 @@
+import { join } from 'node:path';
+import { devNull } from 'node:os';
 import type {
   AppCredentials,
   AppPreferences,
@@ -29,6 +31,12 @@ export interface ProfileAccess {
    * priority over `requireMentionInGroup` for the chats it lists.
    */
   chatRequireMention?: Record<string, boolean>;
+  /**
+   * f031-sec-#3: open_ids of other bots/apps allowed to drive this bot
+   * (bot-at-bot). Empty/absent = every non-human sender is rejected. A listed
+   * bot still has to be in an allowlisted group.
+   */
+  allowedBots?: string[];
 }
 
 export interface SandboxConfig {
@@ -173,6 +181,11 @@ export interface ProfileConfig {
   /** In-meeting agent settings. See {@link MeetingConfig}. */
   meeting: MeetingConfig;
   larkCli: LarkCliConfig;
+  /**
+   * f031-sec-#4: daemon env vars the owner explicitly passes through to the
+   * agent subprocess (the default env is an allowlist). Names only.
+   */
+  agentEnv?: { passthrough: string[] };
 }
 
 /**
@@ -187,6 +200,29 @@ export function effectiveLarkCliIdentity(
   profile: Pick<ProfileConfig, 'mode' | 'larkCli'>,
 ): LarkCliIdentityPreset {
   return profile.mode === 'team' ? 'bot-only' : profile.larkCli.identityPreset;
+}
+
+/**
+ * f031-sec-H2 (#5 hardened, 猴哥授权 2026-10-31): a run started by anyone but
+ * the owner gets NO lark-cli config — neither the profile's lark-cli dir (which
+ * may hold the owner's user token) nor the source projection. Both point at a
+ * path under the null device, which can never exist or be created, so lark-cli
+ * cannot fall back to any credential. DEFAULT_AS/STRICT_MODE=bot stay as a
+ * second lock. The owner's runs are unchanged.
+ */
+export const NO_LARK_CLI_CONFIG_DIR = join(devNull, 'aiducat-no-lark-cli');
+
+export function runLarkCliIdentityEnv(
+  _profile: Pick<ProfileConfig, 'mode' | 'larkCli'>,
+  actorIsOwner: boolean,
+): Record<string, string> {
+  if (actorIsOwner) return {};
+  return {
+    LARKSUITE_CLI_CONFIG_DIR: NO_LARK_CLI_CONFIG_DIR,
+    LARK_CHANNEL_CONFIG: NO_LARK_CLI_CONFIG_DIR,
+    LARKSUITE_CLI_STRICT_MODE: 'bot',
+    LARKSUITE_CLI_DEFAULT_AS: 'bot',
+  };
 }
 
 export interface RootConfig {
@@ -253,6 +289,7 @@ export function normalizeProfileConfig(input: unknown): ProfileConfig {
     comments?: unknown;
     meeting?: unknown;
     larkCli?: unknown;
+    agentEnv?: { passthrough?: unknown };
   };
 
   if (raw.schemaVersion !== 2) {
@@ -302,6 +339,7 @@ export function normalizeProfileConfig(input: unknown): ProfileConfig {
       ? { defaultProviderName: raw.defaultProviderName.trim() }
       : {}),
     ...(raw.codex ? { codex: normalizeCodex(raw.codex) } : {}),
+    ...normalizeAgentEnv(raw.agentEnv),
     attachments: {
       maxCount: numberOr(raw.attachments?.maxCount, 10),
       maxBytes: numberOr(raw.attachments?.maxBytes, 100 * 1024 * 1024),
@@ -356,11 +394,17 @@ function isMessageReply(value: unknown): value is MessageReplyMode {
   return value === 'card' || value === 'markdown' || value === 'text';
 }
 
+function normalizeAgentEnv(input: { passthrough?: unknown } | undefined): Pick<ProfileConfig, 'agentEnv'> {
+  const names = stringArray(input?.passthrough).filter((k) => /^[A-Za-z_][A-Za-z0-9_]*$/.test(k));
+  return names.length > 0 ? { agentEnv: { passthrough: names } } : {};
+}
+
 function normalizeAccess(
   access: Partial<ProfileAccess> | undefined,
   legacyRequireMentionInGroup: boolean | undefined,
 ): ProfileAccess {
   const chatRequireMention = normalizeChatMentionMap(access?.chatRequireMention);
+  const allowedBots = stringArray(access?.allowedBots);
   return {
     allowedUsers: stringArray(access?.allowedUsers),
     allowedChats: stringArray(access?.allowedChats),
@@ -368,6 +412,7 @@ function normalizeAccess(
     requireMentionInGroup: access?.requireMentionInGroup ?? legacyRequireMentionInGroup ?? true,
     // Omit when empty so configs without per-chat overrides stay clean.
     ...(Object.keys(chatRequireMention).length > 0 ? { chatRequireMention } : {}),
+    ...(allowedBots.length > 0 ? { allowedBots } : {}),
   };
 }
 

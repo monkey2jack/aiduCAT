@@ -60,6 +60,7 @@ export { assertReconnectAgentKindUnchanged, createRuntimeAgent };
 import { SessionStore } from '../../session/store';
 import { SessionCatalog } from '../../session/catalog';
 import { WorkspaceStore } from '../../workspace/store';
+import { maskConsoleUrl } from '../../ui/console-url';
 
 // Prefer IPv4 — Node 20+ defaults to "verbatim" which respects whatever
 // the resolver returns first; in IPv6-broken networks (WSL2, certain VPNs,
@@ -187,7 +188,7 @@ async function runSupervisorConsole(opts: StartOptions): Promise<void> {
     const sidecar = await readUiSidecar(appPaths.hostUiFile);
     console.log(
       sidecar
-        ? `控制面已在运行：${sidecar.url}`
+        ? `控制面已在运行：${maskConsoleUrl(sidecar.url)}（用 \`aiduCAT ui\` 打开）`
         : '控制面已在运行（另一个 supervisor 进程持有锁）。',
     );
     return;
@@ -208,7 +209,8 @@ async function runSupervisorConsole(opts: StartOptions): Promise<void> {
   try {
     uiServer = await startUiServer({ supervisor, version: pkg.version, rootDir: appPaths.rootDir });
     await writeUiSidecar(appPaths.hostUiFile, uiServer, new Date().toISOString());
-    console.log(`✓ 控制台：${uiServer.url}`);
+    // f031-sec-M2: stdout lands in journald / daemon logs — no token there.
+    console.log(`✓ 控制台：${maskConsoleUrl(uiServer.url)}（用 \`aiduCAT ui\` 打开）`);
   } catch (err) {
     log.warn('ui', 'server-start-failed', { err: String(err) });
   }

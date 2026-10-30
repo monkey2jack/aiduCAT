@@ -63,7 +63,7 @@ type StoredProfileConfig = Pick<
   | 'larkCli'
 > &
   // f0.2: optional extension block survives save cycles.
-  Partial<Pick<ProfileConfig, 'modelProviders' | 'defaultProviderName'>>;
+  Partial<Pick<ProfileConfig, 'modelProviders' | 'defaultProviderName' | 'agentEnv'>>;
 
 type StoredRootConfig = Omit<RootConfig, 'preferences' | 'profiles'> & {
   preferences: Record<string, never>;
@@ -106,6 +106,7 @@ function serializeProfileConfig(profile: ProfileConfig): StoredProfileConfig {
     // omission silently dropped them on the first service restart.
     ...(profile.modelProviders ? { modelProviders: profile.modelProviders } : {}),
     ...(profile.defaultProviderName ? { defaultProviderName: profile.defaultProviderName } : {}),
+    ...(profile.agentEnv ? { agentEnv: profile.agentEnv } : {}),
   };
 }
 

@@ -4,7 +4,8 @@ import { join } from 'node:path';
 import { createInterface } from 'node:readline';
 import type { Readable, Writable } from 'node:stream';
 import { log } from '../../core/logger';
-import { mergeProcessEnv, spawnProcess, type SpawnedProcessByStdio } from '../../platform/spawn';
+import { buildAgentEnv } from '../../platform/agent-env';
+import { spawnProcess, type SpawnedProcessByStdio } from '../../platform/spawn';
 import { buildBridgeSystemPrompt } from '../bridge-system-prompt';
 import { buildLarkChannelEnv, type LarkChannelEnvContext } from '../lark-channel-env';
 import { checkAgentAvailability, type AgentAvailability } from '../preflight';
@@ -21,6 +22,8 @@ import { translateEvent } from './stream-json';
 export interface ClaudeAdapterOptions {
   binary?: string;
   larkChannel?: LarkChannelEnvContext;
+  /** f031-sec-#4: daemon env names the owner explicitly passes to the agent. */
+  envPassthrough?: readonly string[];
 }
 
 type ClaudeChild = SpawnedProcessByStdio<Writable, Readable, Readable>;
@@ -43,11 +46,13 @@ export class ClaudeAdapter implements AgentAdapter {
 
   private readonly binary: string;
   private readonly larkChannel: LarkChannelEnvContext | undefined;
+  private readonly envPassthrough: readonly string[];
   private botIdentity: AgentBotIdentity | undefined;
 
   constructor(opts: ClaudeAdapterOptions = {}) {
     this.binary = opts.binary ?? 'claude';
     this.larkChannel = opts.larkChannel;
+    this.envPassthrough = opts.envPassthrough ?? [];
   }
 
   setBotIdentity(identity: AgentBotIdentity): void {
@@ -97,7 +102,11 @@ export class ClaudeAdapter implements AgentAdapter {
       '--append-system-prompt-file',
       systemPromptFile.path,
     ];
-    if (opts.sessionId) args.push('--resume', opts.sessionId);
+    // f031-sec-L1: belt and braces — a session id is never passed if the CLI
+    // could parse it as an option.
+    if (opts.sessionId && /^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(opts.sessionId)) {
+      args.push('--resume', opts.sessionId);
+    }
     if (opts.model) args.push('--model', opts.model);
     if (opts.effort) {
       // f031-stab-#15: --effort is an Anthropic setting. Behind a gateway a
@@ -119,9 +128,14 @@ export class ClaudeAdapter implements AgentAdapter {
       cwd: opts.cwd,
       // f0.2: per-run provider overrides (envOverrides) layer last, on top of
       // the Lark channel env — /model provider switches take effect per run.
-      env: mergeProcessEnv(process.env, {
-        ...buildLarkChannelEnv(this.larkChannel),
-        ...(opts.envOverrides ?? {}),
+      // f031-sec-#4: allowlisted env only (no daemon secrets, no bridge config path).
+      env: buildAgentEnv({
+        agent: 'claude',
+        overrides: {
+          ...buildLarkChannelEnv(this.larkChannel, { forAgent: true }),
+          ...(opts.envOverrides ?? {}),
+        },
+        passthrough: this.envPassthrough,
       }),
       stdio: ['pipe', 'pipe', 'pipe'],
     }) as ClaudeChild;

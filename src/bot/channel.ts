@@ -10,6 +10,7 @@ import { claudeCapability, codexCapability } from '../agent/capability';
 import { modelLabel, normalizeModelSelection, resolveModelArg } from '../agent/models';
 import {
   buildAgentPrompt,
+  untrustedText,
   type BridgePromptInteractiveCard,
   type BridgePromptMention,
   type BridgePromptQuotedMessage,
@@ -50,7 +51,14 @@ import {
   toPolicyAttachment,
   toPromptAttachment,
 } from '../media/attachment';
-import { canUseDm, canUseGroup, requireMentionForChat } from '../policy/access';
+import {
+  canRunAdminCommand,
+  canUseDm,
+  canUseGroup,
+  noteOwnerTenant,
+  requireMentionForChat,
+  senderFactsOf,
+} from '../policy/access';
 import { MeetingManager } from '../meeting/manager';
 import type { VcRequestClient } from '../meeting/api';
 import { attachMeetingAgent, summarizeEndedMeeting } from '../meeting/orchestrator';
@@ -90,7 +98,7 @@ const REACTION_CLEANUP_GRACE_MS = 1000;
 const BRIDGE_AGENT_INSTRUCTIONS = [
   '你在 bridge 进程中运行，普通 lark-cli 会继承 LARK_CHANNEL=1 并进入 bridge-bound 模式。',
   '不要 unset LARK_CHANNEL / LARK_CHANNEL_HOME / LARK_CHANNEL_PROFILE / LARKSUITE_CLI_CONFIG_DIR，也不要用 env -u LARK_CHANNEL 绕回本机普通配置。',
-  'Codex bridge 默认使用 danger-full-access 对齐 Claude bridge 的 bypassPermissions 行为，因此 lark-cli 应能像用户本机终端一样访问 keychain。',
+  'Codex bridge 只有在 full 权限下才使用 danger-full-access（对齐 Claude bridge 的 bypassPermissions），那时 lark-cli 能像用户本机终端一样访问 keychain；workspace / read-only 权限下可能做不到，如实告诉用户即可。',
   '如果提示 lark-channel context detected but not bound，停止当前操作并请用户重启 bridge 或运行 bridge doctor/preflight；不要改用普通 profile，不要自行 bind，也不要直接读取 config.json 里的账号或密钥。',
   '🚨 铁律：你就是运行在 aiduCAT 桥接进程里的 agent。绝对禁止执行 systemctl restart/stop aiduCAT、kill 本进程、pkill node、reboot、shutdown 等任何会终止自己所在服务的操作（包括以\"健康验证\"\"测试\"为理由）。restart 这个服务 = 杀死你自己并掐断用户正在跑的任务。健康检查只允许只读命令（systemctl status / is-active / 读日志）。确需重启时，先向用户说明并等用户本人执行。',
 ];
@@ -489,6 +497,9 @@ export async function startChannel(deps: StartChannelDeps): Promise<BridgeChanne
       config: meetingConfig,
       botOpenId: () => channel.botIdentity?.openId,
       channel,
+      // f031-sec-M3: only an owner/admin invite pulls the bot into a meeting.
+      canAutoJoin: (inviterId) =>
+        Boolean(inviterId) && canRunAdminCommand(controls.profileConfig, controls, inviterId!).ok,
       // Meeting over: optionally summarize to IM (config-gated inside).
       onEnded: (session) =>
         void summarizeEndedMeeting({
@@ -817,10 +828,12 @@ async function intakeMessage(deps: IntakeDeps): Promise<void> {
     resources: msg.resources.length,
   });
 
+  const senderFacts = senderFactsOf(msg);
+  noteOwnerTenant(controls, msg.senderId, senderFacts);
   const accessDecision =
     msg.chatType === 'p2p'
-      ? canUseDm(controls.profileConfig, controls, msg.senderId)
-      : canUseGroup(controls.profileConfig, controls, msg.chatId, msg.senderId);
+      ? canUseDm(controls.profileConfig, controls, msg.senderId, senderFacts)
+      : canUseGroup(controls.profileConfig, controls, msg.chatId, msg.senderId, senderFacts);
   if (!accessDecision.ok) {
     log.info('intake', 'skip-not-allowed-user', {
       scope,
@@ -1139,12 +1152,14 @@ async function runAgentBatch(deps: RunBatchDeps): Promise<void> {
     replyInThread: sendOpts.replyInThread === true,
   });
 
+  const firstFacts = senderFactsOf(firstMsg);
   const accessDecision =
     firstMsg.chatType === 'p2p'
-      ? canUseDm(controls.profileConfig, controls, firstMsg.senderId)
-      : canUseGroup(controls.profileConfig, controls, firstMsg.chatId, firstMsg.senderId);
+      ? canUseDm(controls.profileConfig, controls, firstMsg.senderId, firstFacts)
+      : canUseGroup(controls.profileConfig, controls, firstMsg.chatId, firstMsg.senderId, firstFacts);
   const scopeContext: ScopeContext = {
     source: 'im',
+    chatType: firstMsg.chatType,
     chatId,
     actorId: firstMsg.senderId,
     ...(threadId ? { threadId } : {}),
@@ -1248,7 +1263,7 @@ async function runAgentBatch(deps: RunBatchDeps): Promise<void> {
   // Re-read prefs on every flush so toggling /config mid-stream takes
   // effect immediately. Cheap object lookups, no allocation when on.
   const filterForPrefs = (state: RunState): RunState => {
-    if (getShowToolCalls(controls.cfg)) return state;
+    if (getShowToolCalls(controls.cfg, firstMsg.chatType)) return state;
     return { ...state, blocks: state.blocks.filter((b) => b.kind !== 'tool') };
   };
   const cardRenderOptions: import('../card/run-renderer').RunCardRenderOptions = {
@@ -2260,7 +2275,9 @@ function buildPrompt(
     .map((m) => {
       const text = stripAttachmentRefs(m.content, fileKeys).trim();
       if (!text) return '';
-      return annotate ? `${senderAnnotation(m)} ${text}` : text;
+      // f031-sec-#6: another bot's words in a merged batch are data, not orders.
+      const body = annotate && senderTypeOf(m) === 'bot' ? untrustedText(text) : text;
+      return annotate ? `${senderAnnotation(m)} ${body}` : body;
     })
     .filter(Boolean);
   const userPart =
