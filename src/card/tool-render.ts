@@ -16,13 +16,13 @@ const BODY_TOTAL_MAX = 2500;
 export function toolHeaderPlain(tool: ToolEntry): string {
   const summary = summarizeInput(tool.name, tool.input);
   const base = summary ? `**${tool.name}** — ${summary}` : `**${tool.name}**`;
-  return tool.status === 'error' ? `${base} ❌` : base;
+  return tool.status === 'error' ? `${base} ❌` : tool.status === 'stopped' ? `${base} ⏹` : base;
 }
 
 export function toolHeaderText(tool: ToolEntry): string {
   // aiduCAT: per-tool emoji aligned with Hangzhou aiduPOP layout.
   const emoji = toolEmoji(tool.name);
-  const stateIcon = tool.status === 'error' ? '❌' : '';
+  const stateIcon = tool.status === 'error' ? '❌' : tool.status === 'stopped' ? '⏹' : '';
   const summary = summarizeInput(tool.name, tool.input);
   const base = summary ? `${emoji} **${tool.name}** — ${summary}` : `${emoji} **${tool.name}**`;
   return stateIcon ? `${base} ${stateIcon}` : base;

@@ -1,7 +1,8 @@
 import type { AgentEvent } from '../agent/types';
 import { stripLeakedThinking } from './thinking-leak';
 
-export type ToolStatus = 'running' | 'done' | 'error';
+/** 'stopped' = the round ended (stop/timeout/error) before this tool returned. */
+export type ToolStatus = 'running' | 'done' | 'error' | 'stopped';
 
 export interface ToolEntry {
   id: string;
@@ -94,6 +95,19 @@ export function parseClarifyMarker(
   } catch {
     return null;
   }
+}
+
+/**
+ * f031-stab-#289: a round that ends abnormally (stop, timeout, error) closes
+ * every tool still waiting for its result as 'stopped' — otherwise the
+ * finished card lists it exactly like a completed call.
+ */
+function stopRunningTools(blocks: Block[]): Block[] {
+  return blocks.map((b) =>
+    b.kind === 'tool' && b.tool.status === 'running'
+      ? { ...b, tool: { ...b.tool, status: 'stopped' as const } }
+      : b,
+  );
 }
 
 function closeStreamingText(blocks: Block[]): Block[] {
@@ -235,6 +249,7 @@ export function reduce(state: RunState, evt: AgentEvent): RunState {
             : 'error';
       return {
         ...state,
+        blocks: stopRunningTools(state.blocks),
         terminal,
         errorMsg: terminal === 'error' ? evt.message : state.errorMsg,
         footer: null,
@@ -248,9 +263,10 @@ export function reduce(state: RunState, evt: AgentEvent): RunState {
           : evt.terminationReason === 'timeout'
             ? 'idle_timeout'
             : 'done';
+      const closed = closeStreamingText(state.blocks);
       return {
         ...state,
-        blocks: closeStreamingText(state.blocks),
+        blocks: terminal === 'done' ? closed : stopRunningTools(closed),
         reasoning: { ...state.reasoning, active: false },
         terminal,
         footer: null,
@@ -265,7 +281,7 @@ export function reduce(state: RunState, evt: AgentEvent): RunState {
 export function markInterrupted(state: RunState): RunState {
   return {
     ...state,
-    blocks: closeStreamingText(state.blocks),
+    blocks: stopRunningTools(closeStreamingText(state.blocks)),
     reasoning: { ...state.reasoning, active: false },
     terminal: 'interrupted',
     footer: null,
@@ -275,7 +291,7 @@ export function markInterrupted(state: RunState): RunState {
 export function markIdleTimeout(state: RunState, minutes: number, toolName?: string): RunState {
   return {
     ...state,
-    blocks: closeStreamingText(state.blocks),
+    blocks: stopRunningTools(closeStreamingText(state.blocks)),
     reasoning: { ...state.reasoning, active: false },
     terminal: 'idle_timeout',
     footer: null,
@@ -304,7 +320,7 @@ export const EMPTY_RUN_MESSAGE = 'agent 没有产出任何内容（可能进程�
 export function markEmptyRun(state: RunState): RunState {
   return {
     ...state,
-    blocks: closeStreamingText(state.blocks),
+    blocks: stopRunningTools(closeStreamingText(state.blocks)),
     reasoning: { ...state.reasoning, active: false },
     terminal: 'error',
     // f0.3.1 #4: keep a real error from the agent; otherwise say why it's red.
