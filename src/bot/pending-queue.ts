@@ -8,6 +8,12 @@ interface PendingEntry {
 
 export type FlushHandler = (scope: string, batch: NormalizedMessage[]) => void;
 
+/** f031-stab-#5: lets the run journal mirror what is queued (not flushed). */
+export interface PendingQueueHooks {
+  onPush?(scope: string, msg: NormalizedMessage): void;
+  onDrop?(scope: string, msgs: readonly NormalizedMessage[]): void;
+}
+
 /**
  * Per-scope debounce queue. `scope` is the session scope string (typically
  * `chatId` for p2p / regular group, `chatId:threadId` for topic groups).
@@ -25,13 +31,16 @@ export class PendingQueue {
   private readonly blocked = new Set<string>();
   private readonly delayMs: number;
   private readonly onFlush: FlushHandler;
+  private readonly hooks: PendingQueueHooks;
 
-  constructor(delayMs: number, onFlush: FlushHandler) {
+  constructor(delayMs: number, onFlush: FlushHandler, hooks: PendingQueueHooks = {}) {
     this.delayMs = delayMs;
     this.onFlush = onFlush;
+    this.hooks = hooks;
   }
 
   push(scope: string, msg: NormalizedMessage): number {
+    this.hooks.onPush?.(scope, msg);
     const existing = this.map.get(scope);
     if (existing) {
       if (existing.timer) clearTimeout(existing.timer);
@@ -51,9 +60,11 @@ export class PendingQueue {
     if (!entry) return [];
     if (entry.timer) clearTimeout(entry.timer);
     this.map.delete(scope);
+    this.hooks.onDrop?.(scope, entry.messages);
     return entry.messages;
   }
 
+  /** Drop in-memory state only (shutdown): the journal keeps the hand-over. */
   cancelAll(): void {
     for (const entry of this.map.values()) {
       if (entry.timer) clearTimeout(entry.timer);

@@ -5,6 +5,7 @@ import type {
 } from '@larksuite/channel';
 import { createLarkChannel } from '@larksuite/channel';
 import { dirname, join } from 'node:path';
+import { randomUUID } from 'node:crypto';
 import { claudeCapability, codexCapability } from '../agent/capability';
 import { modelLabel, normalizeModelSelection, resolveModelArg } from '../agent/models';
 import {
@@ -56,6 +57,7 @@ import type { ScopeContext } from '../policy/run-policy';
 import { createOwnerRefreshController } from '../policy/owner';
 import { RunExecutor } from '../runtime/run-executor';
 import { RunWatchdog, type RunTimeouts } from './run-watchdog';
+import { RunJournal, type JournalSnapshot } from './run-journal';
 import type { SessionCatalog } from '../session/catalog';
 import type { SessionStore } from '../session/store';
 import type { WorkspaceStore } from '../workspace/store';
@@ -297,12 +299,27 @@ export async function startChannel(deps: StartChannelDeps): Promise<BridgeChanne
   // unblock arms a fresh quiet-window timer. Net effect: at most one run per
   // chat in flight, and everything sent during a run merges into the next
   // batch (only flushed once 600ms of silence has passed *after* the run).
+  // f031-stab-#5: queued messages + in-flight runs mirrored on disk (0600,
+  // next to sessions.json) so a restart can close orphan cards and re-queue.
+  const journal = new RunJournal(
+    deps.appPaths?.mediaDir ? join(dirname(deps.appPaths.mediaDir), RUN_JOURNAL_FILE) : undefined,
+  );
+  const leftover = await journal.takeOver();
   const pending = new PendingQueue(DEBOUNCE_MS, (scope, batch) => {
     const firstMsg = batch[0];
     if (!firstMsg) return;
     // f0.2+ /status: count every incoming user message batch as one user turn.
     sessions.recordMessage(scope, 'user');
     pending.block(scope);
+    const lastMsg = batch[batch.length - 1]!;
+    const runKey = randomUUID();
+    journal.dequeue(scope, batch.map((m) => m.messageId));
+    journal.startRun(scope, {
+      runKey,
+      chatId: firstMsg.chatId,
+      replyTo: lastMsg.messageId,
+      ...(firstMsg.threadId ? { replyInThread: true } : {}),
+    });
     void withTrace({ chatId: firstMsg.chatId }, async () => {
       log.info('flush', 'start', {
         scope,
@@ -341,14 +358,19 @@ export async function startChannel(deps: StartChannelDeps): Promise<BridgeChanne
           lastRunModelByScope,
           scope,
           mode,
+          onCardOpened: (messageId) => journal.setCard(scope, runKey, messageId),
         });
       } catch (err) {
         log.fail('flush', err);
       } finally {
+        journal.endRun(scope, runKey);
         pending.unblock(scope);
         log.info('flush', 'end');
       }
     });
+  }, {
+    onPush: (scope, msg) => journal.queue(scope, msg),
+    onDrop: (scope, msgs) => journal.dequeue(scope, msgs.map((m) => m.messageId)),
   });
 
   // Counter for stdout reconnect escalation; reset on `reconnected`.
@@ -528,6 +550,9 @@ export async function startChannel(deps: StartChannelDeps): Promise<BridgeChanne
     forceReconnect: () => controls.restart(),
   });
 
+  // f031-stab-#5: settle what the previous process left behind.
+  await recoverAfterRestart({ channel, pending, journal, snapshot: leftover });
+
   return {
     channel,
     disconnect: async () => {
@@ -540,6 +565,9 @@ export async function startChannel(deps: StartChannelDeps): Promise<BridgeChanne
       // reconnect would be surprising.
       meetingManager?.dispose();
       controls.meeting = undefined;
+      // f031-stab-#5: freeze the journal first — what is queued / in flight
+      // right now is exactly what the next start must recover.
+      await journal.close();
       pending.cancelAll();
       const [disconnectResult, stopAllResult, ...flushResults] = await Promise.allSettled([
         channel.disconnect(),
@@ -562,6 +590,63 @@ export async function startChannel(deps: StartChannelDeps): Promise<BridgeChanne
       }
     },
   };
+}
+
+/** f031-stab-#5 */
+const RUN_JOURNAL_FILE = 'run-journal.json';
+/** Re-queue messages only if the restart was quick; older ones get a notice. */
+const REPLAY_MAX_AGE_MS = 10 * 60_000;
+export const RESTART_INTERRUPTED_MESSAGE = '服务重启，这一轮被中断了，请重发一次。';
+
+async function recoverAfterRestart(input: {
+  channel: LarkChannel;
+  pending: PendingQueue;
+  journal: RunJournal;
+  snapshot: JournalSnapshot;
+}): Promise<void> {
+  const { channel, pending, snapshot } = input;
+  if (snapshot.inflight.length === 0 && snapshot.queued.length === 0) return;
+  log.warn('journal', 'recover', {
+    inflight: snapshot.inflight.length,
+    queuedScopes: snapshot.queued.length,
+  });
+  const notify = async (chatId: string, text: string, replyTo?: string, replyInThread?: boolean): Promise<void> => {
+    try {
+      await channel.send(chatId, { text }, replyTo ? { replyTo, ...(replyInThread ? { replyInThread } : {}) } : undefined);
+    } catch (err) {
+      log.warn('journal', 'notify-failed', { chatId, err: err instanceof Error ? err.message : String(err) });
+    }
+  };
+  for (const [scope, e] of snapshot.inflight) {
+    let closed = false;
+    if (e.cardMessageId) {
+      try {
+        const state: RunState = { ...initialState, terminal: 'error', footer: null, errorMsg: RESTART_INTERRUPTED_MESSAGE };
+        await channel.updateCard(e.cardMessageId, renderCard(state));
+        closed = true;
+      } catch (err) {
+        log.warn('journal', 'orphan-card-close-failed', { scope, err: err instanceof Error ? err.message : String(err) });
+      }
+    }
+    if (!closed) await notify(e.chatId, `⚠️ ${RESTART_INTERRUPTED_MESSAGE}`, e.replyTo, e.replyInThread);
+    log.info('journal', 'orphan-closed', { scope, card: Boolean(e.cardMessageId), viaCard: closed });
+  }
+  const now = Date.now();
+  for (const [scope, entries] of snapshot.queued) {
+    const fresh = entries.filter((q) => now - q.storedAt <= REPLAY_MAX_AGE_MS);
+    const stale = entries.filter((q) => now - q.storedAt > REPLAY_MAX_AGE_MS);
+    for (const q of fresh) pending.push(scope, q.msg);
+    if (stale.length > 0) {
+      const last = stale[stale.length - 1]!.msg;
+      await notify(
+        last.chatId,
+        `⚠️ 服务重启前收到的 ${stale.length} 条消息没来得及处理（已超过 ${REPLAY_MAX_AGE_MS / 60_000} 分钟），请重发。`,
+        last.messageId,
+        Boolean(last.threadId),
+      );
+    }
+    log.info('journal', 'queued-recovered', { scope, replayed: fresh.length, stale: stale.length });
+  }
 }
 
 function startKnownChatsRefreshTimer(
@@ -841,6 +926,8 @@ interface RunBatchDeps {
   lastRunModelByScope: Map<string, string>;
   scope: string;
   mode: ChatMode;
+  /** f031-stab-#5: the streaming card exists — record its id for restart recovery. */
+  onCardOpened?: (messageId: string) => void;
 }
 
 async function runAgentBatch(deps: RunBatchDeps): Promise<void> {
@@ -1242,6 +1329,7 @@ async function runAgentBatch(deps: RunBatchDeps): Promise<void> {
                 producerStarted = true;
                 if (progress.abandoned()) return;
                 cardCtrl = ctrl;
+                if (ctrl.messageId) deps.onCardOpened?.(ctrl.messageId);
                 await ctrl.update(renderCard(filterForPrefs(latestState), cardRenderOptions));
                 await renderDone;
               },

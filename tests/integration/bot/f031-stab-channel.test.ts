@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { AgentEvent } from '../../../src/agent/types.js';
 import { log } from '../../../src/core/logger.js';
-import { dmMessage, setupStabChannel, waitFor, stabSdkMock, type StabHarness } from '../../helpers/stab-channel-harness.js';
+import { dmMessage, settle, setupStabChannel, waitFor, stabSdkMock, type StabHarness } from '../../helpers/stab-channel-harness.js';
 
 vi.mock('@larksuite/channel', async (orig) => ({
   ...(await orig<typeof import('@larksuite/channel')>()),
@@ -56,5 +56,111 @@ describe('f031-stab-#4 watchdog defaults reach the run', () => {
     await waitFor(() => info.mock.calls.some((c) => c[0] === 'flush' && c[1] === 'idle-watchdog'));
     const call = info.mock.calls.find((c) => c[0] === 'flush' && c[1] === 'idle-watchdog')!;
     expect(call[2]).toMatchObject({ idleTimeoutMs: 15 * 60_000, toolTimeoutMs: 30 * 60_000 });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// f031-stab-#5: restart recovery (in-flight cards + queued messages on disk)
+// ---------------------------------------------------------------------------
+import { readFile, stat, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
+import { createTmpProfile } from '../../helpers/tmp-profile.js';
+import { FakeAgentAdapter } from '../../helpers/fake-agent.js';
+
+function journalPath(h: StabHarness): string {
+  return join(h.tmp.profile, 'run-journal.json');
+}
+
+describe('f031-stab-#5 restart recovery', () => {
+  it('f031-stab-#5 an in-flight card left by the previous process is closed as "服务重启，请重发"', async () => {
+    const tmp = await createTmpProfile('stab-restart-');
+    await writeFile(
+      join(tmp.profile, 'run-journal.json'),
+      JSON.stringify({
+        v: 1,
+        inflight: {
+          oc_dm: { runKey: 'k1', chatId: 'oc_dm', replyTo: 'om_old', cardMessageId: 'om_card_old', startedAt: Date.now() - 5_000 },
+          oc_md: { runKey: 'k2', chatId: 'oc_md', replyTo: 'om_old2', startedAt: Date.now() - 5_000 },
+        },
+        queued: {},
+      }),
+    );
+    const h = await start({ tmp, withAppPaths: true, events: doneOnly });
+    await waitFor(() => h.updateCardCalls.length >= 1 && h.sent.length >= 1);
+    const patched = h.updateCardCalls.find((c) => c.messageId === 'om_card_old');
+    expect(patched).toBeDefined();
+    expect(JSON.stringify(patched!.card)).toContain('服务重启');
+    expect(JSON.stringify(patched!.card)).toContain('请重发');
+    // no card yet (markdown/text mode, or died before the card opened) → a text notice
+    const notice = h.sent.find((s) => s.chatId === 'oc_md');
+    expect(String(notice?.content.text ?? '')).toContain('服务重启');
+    expect(notice?.options).toMatchObject({ replyTo: 'om_old2' });
+    // handled → gone from the journal
+    await h.disconnect();
+    const after = JSON.parse(await readFile(join(tmp.profile, 'run-journal.json'), 'utf8'));
+    expect(after.inflight).toEqual({});
+    harnesses.splice(harnesses.indexOf(h), 1);
+    await tmp.cleanup();
+  });
+
+  it('f031-stab-#5 fresh queued messages are re-queued and answered; stale ones get an explicit 请重发', async () => {
+    const tmp = await createTmpProfile('stab-restart-');
+    const msg = (id: string, chatId: string, content: string) => ({
+      messageId: id, chatId, chatType: 'p2p', senderId: 'ou_user', senderName: 'User', content,
+      rawContentType: 'text', resources: [], mentions: [], mentionAll: false, mentionedBot: false, createTime: Date.now(),
+    });
+    await writeFile(
+      join(tmp.profile, 'run-journal.json'),
+      JSON.stringify({
+        v: 1,
+        inflight: {},
+        queued: {
+          oc_dm: [{ storedAt: Date.now() - 2_000, msg: msg('om_q1', 'oc_dm', 'REPLAY_SENTINEL 问题') }],
+          oc_old: [{ storedAt: Date.now() - 3 * 3_600_000, msg: msg('om_q2', 'oc_old', 'too old') }],
+        },
+      }),
+    );
+    const agent = new FakeAgentAdapter({ id: 'claude', displayName: 'Claude', events: doneOnly });
+    const h = await start({ tmp, withAppPaths: true, agent });
+    await waitFor(() => agent.runOptions.length >= 1 && h.sent.some((s) => s.chatId === 'oc_old'));
+    expect(agent.runOptions[0]!.prompt).toContain('REPLAY_SENTINEL');
+    expect(agent.runOptions.some((o) => o.prompt.includes('too old'))).toBe(false);
+    const stale = h.sent.find((s) => s.chatId === 'oc_old')!;
+    expect(String(stale.content.text)).toContain('请重发');
+    harnesses.splice(harnesses.indexOf(h), 1);
+    await h.disconnect();
+    await tmp.cleanup();
+  });
+
+  it('f031-stab-#5 queued messages and the in-flight card are on disk (0600) while a run is going, and cleared after', async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((r) => {
+      release = r;
+    });
+    let paused = false;
+    const h = await start({
+      withAppPaths: true,
+      events: [doneOnly, doneOnly],
+      onUpdate: async () => {
+        if (!paused) {
+          paused = true;
+          await gate;
+        }
+      },
+    });
+    await h.handlers.message?.(dmMessage('om_a', 'first'));
+    await waitFor(() => paused);
+    await h.handlers.message?.(dmMessage('om_b', 'QUEUED_SENTINEL'));
+    await settle(200);
+    const during = JSON.parse(await readFile(journalPath(h), 'utf8'));
+    expect(during.inflight.oc_dm).toMatchObject({ chatId: 'oc_dm', cardMessageId: 'om_stream_1' });
+    expect(JSON.stringify(during.queued)).toContain('QUEUED_SENTINEL');
+    expect((await stat(journalPath(h))).mode & 0o777).toBe(0o600);
+    release();
+    await waitFor(() => h.agent.runOptions.length >= 2);
+    await settle(400);
+    await settle(300);
+    const after = JSON.parse(await readFile(journalPath(h), 'utf8'));
+    expect(after).toMatchObject({ inflight: {}, queued: {} });
   });
 });
