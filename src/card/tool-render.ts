@@ -86,4 +86,3 @@ function summarizeInput(name: string, input: unknown): string {
 function shortenPath(p: string): string {
   return p;
 }
-

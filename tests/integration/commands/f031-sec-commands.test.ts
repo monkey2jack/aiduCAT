@@ -200,4 +200,3 @@ function lastMarkdown(channel: FakeChannel): string {
   expect(content.markdown).toBeTypeOf('string');
   return content.markdown as string;
 }
-
