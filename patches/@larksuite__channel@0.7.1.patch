@@ -1,14 +1,15 @@
 diff --git a/dist/index.cjs b/dist/index.cjs
-index 923b5355b4460746f1f047f7c64500ce719c8a63..2c9ab080f7602a6771efc19334d8cabbf8aee284 100644
+index 989d2fcaee8d47d01d7e235c6995d538771404ec..82e839f63fab3087ff1cf0e225602acfce209d7c 100644
 --- a/dist/index.cjs
 +++ b/dist/index.cjs
-@@ -3830,7 +3830,13 @@ var Throttle = class {
+@@ -3869,7 +3869,14 @@ var Throttle = class {
  		if (this.timer) clearTimeout(this.timer);
  		this.timer = setTimeout(() => {
  			this.timer = void 0;
 -			this.doFire();
-+			// aiduCAT patch (f0.3.1): a timer-driven fire has no awaiting caller;
-+			// hand failures to opts.onError instead of an unhandled rejection.
++			// aiduCAT patch (f0.3.1, redone on 0.7.1): a timer-driven fire has no
++			// awaiting caller; hand failures to opts.onError instead of an
++			// unhandled rejection.
 +			this.doFire().catch((err) => {
 +				try {
 +					this.opts.onError?.(err);
@@ -17,7 +18,7 @@ index 923b5355b4460746f1f047f7c64500ce719c8a63..2c9ab080f7602a6771efc19334d8cabb
  		}, delay);
  	}
  	/**
-@@ -3920,7 +3926,10 @@ var CardStreamControllerImpl = class {
+@@ -3959,7 +3966,10 @@ var CardStreamControllerImpl = class {
  		const cfg = sender.config;
  		this.throttle = new Throttle({
  			ms: cfg.streamThrottleMs ?? DEFAULT_THROTTLE_MS$1,
@@ -29,7 +30,7 @@ index 923b5355b4460746f1f047f7c64500ce719c8a63..2c9ab080f7602a6771efc19334d8cabb
  		}, () => this.patch());
  	}
  	get messageId() {
-@@ -3929,6 +3938,8 @@ var CardStreamControllerImpl = class {
+@@ -3968,6 +3978,8 @@ var CardStreamControllerImpl = class {
  	get current() {
  		return this._current;
  	}
@@ -38,7 +39,7 @@ index 923b5355b4460746f1f047f7c64500ce719c8a63..2c9ab080f7602a6771efc19334d8cabb
  	async update(next) {
  		const nextCard = typeof next === "function" ? next(this._current) : next;
  		this._current = nextCard;
-@@ -3961,6 +3972,7 @@ var CardStreamControllerImpl = class {
+@@ -4000,6 +4012,7 @@ var CardStreamControllerImpl = class {
  		const snapshot = this._current;
  		await this.queue.enqueue(async () => {
  			await this.sender.patchCard(this._messageId, snapshot);
@@ -47,16 +48,17 @@ index 923b5355b4460746f1f047f7c64500ce719c8a63..2c9ab080f7602a6771efc19334d8cabb
  	}
  	async completeTerminal() {
 diff --git a/dist/index.mjs b/dist/index.mjs
-index 708ddbcf0c43b79f01b72d39ba88cd507ff9a02b..8f6ef9ee8e84620b666af35e9d2c5d9dfaa7bdbb 100644
+index 6cf990f0a7499178016e151e3545bc4626d6ab65..a9a10ef36dd51d02410963beef6ae2943647afa5 100644
 --- a/dist/index.mjs
 +++ b/dist/index.mjs
-@@ -3803,7 +3803,13 @@ var Throttle = class {
+@@ -3842,7 +3842,14 @@ var Throttle = class {
  		if (this.timer) clearTimeout(this.timer);
  		this.timer = setTimeout(() => {
  			this.timer = void 0;
 -			this.doFire();
-+			// aiduCAT patch (f0.3.1): a timer-driven fire has no awaiting caller;
-+			// hand failures to opts.onError instead of an unhandled rejection.
++			// aiduCAT patch (f0.3.1, redone on 0.7.1): a timer-driven fire has no
++			// awaiting caller; hand failures to opts.onError instead of an
++			// unhandled rejection.
 +			this.doFire().catch((err) => {
 +				try {
 +					this.opts.onError?.(err);
@@ -65,7 +67,7 @@ index 708ddbcf0c43b79f01b72d39ba88cd507ff9a02b..8f6ef9ee8e84620b666af35e9d2c5d9d
  		}, delay);
  	}
  	/**
-@@ -3893,7 +3899,10 @@ var CardStreamControllerImpl = class {
+@@ -3932,7 +3939,10 @@ var CardStreamControllerImpl = class {
  		const cfg = sender.config;
  		this.throttle = new Throttle({
  			ms: cfg.streamThrottleMs ?? DEFAULT_THROTTLE_MS$1,
@@ -77,7 +79,7 @@ index 708ddbcf0c43b79f01b72d39ba88cd507ff9a02b..8f6ef9ee8e84620b666af35e9d2c5d9d
  		}, () => this.patch());
  	}
  	get messageId() {
-@@ -3902,6 +3911,8 @@ var CardStreamControllerImpl = class {
+@@ -3941,6 +3951,8 @@ var CardStreamControllerImpl = class {
  	get current() {
  		return this._current;
  	}
@@ -86,7 +88,7 @@ index 708ddbcf0c43b79f01b72d39ba88cd507ff9a02b..8f6ef9ee8e84620b666af35e9d2c5d9d
  	async update(next) {
  		const nextCard = typeof next === "function" ? next(this._current) : next;
  		this._current = nextCard;
-@@ -3934,6 +3945,7 @@ var CardStreamControllerImpl = class {
+@@ -3973,6 +3985,7 @@ var CardStreamControllerImpl = class {
  		const snapshot = this._current;
  		await this.queue.enqueue(async () => {
  			await this.sender.patchCard(this._messageId, snapshot);

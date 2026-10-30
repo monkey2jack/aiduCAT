@@ -267,13 +267,19 @@ export async function startChannel(deps: StartChannelDeps): Promise<BridgeChanne
     },
     // SDK 1.65.0-alpha.3+ knobs.
     wsConfig: {
-      // 3s liveness watchdog: if no inbound message arrives within 3s after
-      // the last ping, SDK presumes connection dead and forces a reconnect.
-      pingTimeout: 3,
+      // f031-stab-#2 (upstream #252): liveness watchdog — no inbound frame
+      // within N s after our ping ⇒ presumed dead ⇒ reconnect. 3s tripped on
+      // a single late pong, and every reconnect killed in-flight runs. 20s
+      // still catches a half-dead socket well before the 15s keepalive ×3.
+      pingTimeout: 20,
     },
     // 8s handshake timeout (replaces hardcoded 15s). Fast-fail + fast-retry
     // beats slow-fail in unstable networks.
     handshakeTimeoutMs: 8_000,
+    // f031-stab-#1: since @larksuite/channel 0.6.1 forceReconnect waits on
+    // connectTimeoutMs (default 15s) instead of the handshake timeout; pin it
+    // to 8s so reconnects behave as before the upgrade.
+    connectTimeoutMs: 8_000,
     // Per-request REST timeout — without a cap a slow API can hang the
     // event-handling thread.
     httpTimeoutMs: 30_000,

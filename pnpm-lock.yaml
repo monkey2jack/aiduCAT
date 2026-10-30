@@ -5,9 +5,9 @@ settings:
   excludeLinksFromLockfile: false
 
 patchedDependencies:
-  '@larksuite/channel@0.6.0':
-    hash: 25e241821dc87c1f9fafef6ded57af5df3fd0d2dc33bdb086ebaec09ba35a983
-    path: patches/@larksuite__channel@0.6.0.patch
+  '@larksuite/channel@0.7.1':
+    hash: c4de853d4d3988d5154dacacfdcb243b7ab4672009f4b70fc6c7a7fda13f552a
+    path: patches/@larksuite__channel@0.7.1.patch
 
 importers:
 
@@ -17,8 +17,8 @@ importers:
         specifier: ^1.4.0
         version: 1.4.0
       '@larksuite/channel':
-        specifier: ^0.6.0
-        version: 0.6.0(patch_hash=25e241821dc87c1f9fafef6ded57af5df3fd0d2dc33bdb086ebaec09ba35a983)
+        specifier: ^0.7.1
+        version: 0.7.1(patch_hash=c4de853d4d3988d5154dacacfdcb243b7ab4672009f4b70fc6c7a7fda13f552a)
       commander:
         specifier: ^12.1.0
         version: 12.1.0
@@ -473,12 +473,12 @@ packages:
   '@jridgewell/trace-mapping@0.3.31':
     resolution: {integrity: sha512-zzNR+SdQSDJzc8joaeP8QQoCQr8NuYx2dIIytl1QeBEZHJ9uW6hebsrYgbz8hJwUQao3TWCMtmfV8Nu1twOLAw==}
 
-  '@larksuite/channel@0.6.0':
-    resolution: {integrity: sha512-nCxhGo/fOTNY6XRIRC8fGLdJlqhZnsygKnlO8iDZxsbAYvuR1Y3/0+YLxKI9435jzMWsNRwSl368J8UmMe9Zqw==}
+  '@larksuite/channel@0.7.1':
+    resolution: {integrity: sha512-wtfpVl8fOZz6H+O93r7ZKQtXTAuZrCv+CVFkX/E77R+qK2hx7Slr1emfq5tqJ9h/iwUez/pcmo2mMUw85+Xv1A==}
     engines: {node: '>=18'}
 
-  '@larksuiteoapi/node-sdk@1.73.0':
-    resolution: {integrity: sha512-gs4EiupJ6RdYAEJGtuYrCVsB7wSMBwtUDK+ilpmOHD6RTvbtciW6AWciQO9coOQVuBZfh7hvAi25dPfCsny/nA==}
+  '@larksuiteoapi/node-sdk@1.76.0':
+    resolution: {integrity: sha512-v/bxQNCugwAmMPbZtBGJtSu8hdQLiB1/29Jr+GBIG18DyQ4LYyp7gxQ74pkhXVSuoUeH4v+/ZHAw/SW+KMrj2g==}
 
   '@napi-rs/wasm-runtime@1.1.6':
     resolution: {integrity: sha512-ZLv/JdUfkvOy9eCnnBaGfiO+XimbjebAeO+MRQqD/B+FR1tnRN0tpKSJHRbE8sFfS6aqsXZ67TQjfwfsxULVbg==}
@@ -1517,10 +1517,6 @@ packages:
     resolution: {integrity: sha512-NqADB8VjPFLM2V0VvHUewwwsw0ZWBaIdgo+ieHtK3hasLz4qeCRjYcqfB6AQrBggRKppKF8L52/VqdVsO47Dlw==}
     engines: {node: '>= 0.4'}
 
-  hasown@2.0.3:
-    resolution: {integrity: sha512-ej4AhfhfL2Q2zpMmLo7U1Uv9+PyhIZpgQLGT1F9miIGmiCJIoCgSmczFdrc97mWT4kVY72KA+WnnhJ5pghSvSg==}
-    engines: {node: '>= 0.4'}
-
   hasown@2.0.4:
     resolution: {integrity: sha512-T2UbfbBEF32wiepXIsMlTW9+dDYC6wMh/t/vYA4tuOMKqWz/n3vr1NFSxQiyP+zk2mXsoMA/i/7qV6LKut1t1A==}
     engines: {node: '>= 0.4'}
@@ -2363,9 +2359,9 @@ snapshots:
       '@jridgewell/resolve-uri': 3.1.2
       '@jridgewell/sourcemap-codec': 1.5.5
 
-  '@larksuite/channel@0.6.0(patch_hash=25e241821dc87c1f9fafef6ded57af5df3fd0d2dc33bdb086ebaec09ba35a983)':
+  '@larksuite/channel@0.7.1(patch_hash=c4de853d4d3988d5154dacacfdcb243b7ab4672009f4b70fc6c7a7fda13f552a)':
     dependencies:
-      '@larksuiteoapi/node-sdk': 1.73.0
+      '@larksuiteoapi/node-sdk': 1.76.0
       https-proxy-agent: 9.0.0
     transitivePeerDependencies:
       - bufferutil
@@ -2373,7 +2369,7 @@ snapshots:
       - supports-color
       - utf-8-validate
 
-  '@larksuiteoapi/node-sdk@1.73.0':
+  '@larksuiteoapi/node-sdk@1.76.0':
     dependencies:
       axios: 1.20.0
       lodash.identity: 3.0.0
@@ -3276,7 +3272,7 @@ snapshots:
       get-proto: 1.0.1
       gopd: 1.2.0
       has-symbols: 1.1.0
-      hasown: 2.0.3
+      hasown: 2.0.4
       math-intrinsics: 1.1.0
 
   get-nonce@1.0.1: {}
@@ -3295,10 +3291,6 @@ snapshots:
   has-tostringtag@1.0.2:
     dependencies:
       has-symbols: 1.1.0
-
-  hasown@2.0.3:
-    dependencies:
-      function-bind: 1.1.2
 
   hasown@2.0.4:
     dependencies:
