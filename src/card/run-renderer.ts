@@ -267,8 +267,8 @@ function errorText(msg: string): string {
 
 /**
  * aiduCAT single panel (aiduPOP layout): the collapsed header carries only
- * `☤ model · 🌊 thinking-count · 🫧 tool-count · ✨ elapsed`, and the body
- * holds the thinking text plus one entry per tool call. Rendered below the
+ * `model · 💭 thinking-count · 🛠️ tool-count · ⏱️ elapsed` (see metaHeader),
+ * and the body holds the thinking text plus one entry per tool call. Rendered below the
  * answer; omitted entirely for a run with no reasoning, tools, or meta.
  *
  * While running, the footer already carries the live status line, so the
@@ -324,10 +324,7 @@ function panelBorderColor(state: RunState): 'grey' | 'green' | 'yellow' | 'red' 
 }
 
 /**
- * aiduPOP header, two lines (猴哥点单 f0.1):
- *   top line:    🌊 thinking-n · 🫧 tool-n · ✨ elapsed
- *   bottom line: model · effort · 23k/1M (2%)   (plain text, no emoji)
- * Each piece only appears when it has a value; separators are the aiduPOP `·`.
+ * Collapsed panel header, one line: `model · 💭 n · 🛠️ n · ⏱️ elapsed`.
  * Elapsed keeps ticking across card updates because renderCard is re-run on
  * every streaming update with the fixed `options.startedAt`.
  */
