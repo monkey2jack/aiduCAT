@@ -10,6 +10,7 @@
  *     (outside code spans / fences, where `<div>` is just text)
  *   - byte-capped truncation with a visible note (`truncateUtf8`)
  */
+import { redactSecretShapes } from '../core/secret-shapes';
 
 const IMAGE_RE = /!\[([^\]\n]*)\]\(\s*<?([^)\s>]*)>?(?:\s+"[^"\n]*")?\s*\)/g;
 const IMG_TAG_RE = /<img\b[^>]*?\bsrc\s*=\s*["']?([^"'\s>]+)["']?[^>]*>/gi;
@@ -48,7 +49,8 @@ function splitCode(md: string): Array<{ code: boolean; text: string }> {
  */
 export function sanitizeCardMarkdown(md: string, opts: { withLinks?: boolean } = {}): string {
   const withLinks = opts.withLinks ?? true;
-  return splitCode(md)
+  // f031-sec-#4: credential-shaped strings never reach a card (code included).
+  return redactSecretShapes(splitCode(md)
     .map((seg) => {
       // Images are converted everywhere, code included: it is unclear whether
       // Feishu's img_key check skips code, and an image is never load-bearing there.
@@ -61,7 +63,7 @@ export function sanitizeCardMarkdown(md: string, opts: { withLinks?: boolean } =
       t = t.replace(TAG_RE, '');
       return t;
     })
-    .join('');
+    .join(''));
 }
 
 /** Same cleaning for the plain-text fallback message: images become `alt (url)`. */
@@ -72,9 +74,11 @@ export function sanitizePlainText(md: string): string {
     )
     .replace(IMG_TAG_RE, (_m, url: string) => (isHttp(url) ? `图片 (${url})` : '图片'))
     .replace(BR_RE, '\n');
-  return splitCode(t)
-    .map((seg) => (seg.code ? seg.text : seg.text.replace(TAG_RE, '')))
-    .join('');
+  return redactSecretShapes(
+    splitCode(t)
+      .map((seg) => (seg.code ? seg.text : seg.text.replace(TAG_RE, '')))
+      .join(''),
+  );
 }
 
 export function utf8Bytes(s: string): number {

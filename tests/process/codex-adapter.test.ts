@@ -67,7 +67,7 @@ describe('CodexAdapter process contract', () => {
     const record = await readRecord(fake.recordPath);
 
     expect(await realpath(record.cwd)).toBe(cwd);
-    expect(record.argv).toEqual(buildCodexArgs({ cwd, sandbox: 'read-only' }));
+    expect(record.argv).toEqual(buildCodexArgs({ cwd, sandbox: 'read-only', shellEnv: { LARK_CHANNEL: '1' } }));
     expect(record.argv).not.toContain('--ignore-user-config');
     expect(record.argv).toContain('--skip-git-repo-check');
     expect(record.argv).not.toContain('hello from lark');
@@ -83,7 +83,8 @@ describe('CodexAdapter process contract', () => {
       LARK_CHANNEL: '1',
       CODEX_HOME: '/outer/codex-home',
     });
-    expect(record.env.APP_SECRET).toBe('inherited-secret');
+    // f031-sec-#4: daemon secrets are no longer inherited by the agent.
+    expect(record.env.APP_SECRET).toBeUndefined();
   });
 
   it('injects the active bridge profile env while preserving Codex env overrides', async () => {
@@ -177,6 +178,7 @@ describe('CodexAdapter process contract', () => {
         sandbox: 'workspace-write',
         threadId: 'thread-old',
         images: [image],
+        shellEnv: { LARK_CHANNEL: '1' },
       }),
     );
   });
@@ -201,7 +203,7 @@ describe('CodexAdapter process contract', () => {
 
     await collect(run.events);
     const record = await readRecord(fake.recordPath);
-    expect(record.argv).toEqual(buildCodexArgs({ cwd, sandbox: 'read-only' }));
+    expect(record.argv).toEqual(buildCodexArgs({ cwd, sandbox: 'read-only', shellEnv: { LARK_CHANNEL: '1' } }));
   });
 
   it('honors a profile-configured Codex home', async () => {

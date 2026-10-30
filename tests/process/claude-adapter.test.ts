@@ -104,6 +104,42 @@ describe('ClaudeAdapter process contract', () => {
     });
   });
 
+  it('f031-sec-#4 spawns with an allowlisted env: no daemon secrets, no bridge config.json', async () => {
+    const fake = await createFakeClaude({ lines: [{ type: 'result', session_id: 'sess-env' }] });
+    cleanup.push(fake.dir);
+    const saved = { ...process.env };
+    process.env.GH_TOKEN = 'ghp_fake_daemon_secret';
+    process.env.AIDU_10ROUTER_TOKEN = 'fake-router-token';
+    process.env.OPENAI_API_KEY = 'fake-openai';
+    process.env.ANTHROPIC_BASE_URL = 'https://gw.example';
+    process.env.MY_PASSTHROUGH = 'kept';
+    try {
+      const rootDir = join(fake.dir, 'channel-home');
+      const run = new ClaudeAdapter({
+        binary: fake.path,
+        larkChannel: { profile: 'claude', rootDir, configPath: join(rootDir, 'config.json') },
+        envPassthrough: ['MY_PASSTHROUGH'],
+      } as ConstructorParameters<typeof ClaudeAdapter>[0]).run({
+        runId: 'run-env',
+        prompt: 'env',
+        cwd: fake.dir,
+      });
+      await collect(run.events);
+      const record = await readRecord(fake.recordPath);
+      expect(record.env.GH_TOKEN).toBeUndefined();
+      expect(record.env.AIDU_10ROUTER_TOKEN).toBeUndefined();
+      expect(record.env.OPENAI_API_KEY).toBeUndefined();
+      expect(record.env.LARK_CHANNEL_CONFIG).toBeUndefined();
+      expect(record.env.ANTHROPIC_BASE_URL).toBe('https://gw.example');
+      expect(record.env.MY_PASSTHROUGH).toBe('kept');
+      expect(record.env.PATH).toBe(process.env.PATH);
+      expect(record.env.LARK_CHANNEL).toBe('1');
+    } finally {
+      for (const k of Object.keys(process.env)) if (!(k in saved)) delete process.env[k];
+      Object.assign(process.env, saved);
+    }
+  });
+
   it('passes resume and model after the base CLI contract', async () => {
     const fake = await createFakeClaude({
       lines: [{ type: 'result', session_id: 'sess-resumed' }],
@@ -244,13 +280,7 @@ async function createFakeClaude(options: {
       '    stdin,',
       '    systemPrompt,',
       '    cwd: process.cwd(),',
-      '    env: {',
-      '      LARK_CHANNEL: process.env.LARK_CHANNEL,',
-      '      LARK_CHANNEL_PROFILE: process.env.LARK_CHANNEL_PROFILE,',
-      '      LARK_CHANNEL_HOME: process.env.LARK_CHANNEL_HOME,',
-      '      LARK_CHANNEL_CONFIG: process.env.LARK_CHANNEL_CONFIG,',
-      '      LARKSUITE_CLI_CONFIG_DIR: process.env.LARKSUITE_CLI_CONFIG_DIR,',
-      '    },',
+      '    env: { ...process.env },',
       '  }));',
       `  const lines = ${JSON.stringify(options.lines)};`,
       '  for (const line of lines) console.log(JSON.stringify(line));',
@@ -269,13 +299,7 @@ async function readRecord(path: string): Promise<{
   stdin: string;
   systemPrompt: string | null;
   cwd: string;
-  env: {
-    LARK_CHANNEL?: string;
-    LARK_CHANNEL_PROFILE?: string;
-    LARK_CHANNEL_HOME?: string;
-    LARK_CHANNEL_CONFIG?: string;
-    LARKSUITE_CLI_CONFIG_DIR?: string;
-  };
+  env: Record<string, string | undefined>;
 }> {
   return JSON.parse(await readFile(path, 'utf8')) as {
     argv: string[];

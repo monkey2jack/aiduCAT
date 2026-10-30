@@ -1095,7 +1095,7 @@ async function runAgentBatch(deps: RunBatchDeps): Promise<void> {
   // Re-read prefs on every flush so toggling /config mid-stream takes
   // effect immediately. Cheap object lookups, no allocation when on.
   const filterForPrefs = (state: RunState): RunState => {
-    if (getShowToolCalls(controls.cfg)) return state;
+    if (getShowToolCalls(controls.cfg, firstMsg.chatType)) return state;
     return { ...state, blocks: state.blocks.filter((b) => b.kind !== 'tool') };
   };
   const cardRenderOptions: import('../card/run-renderer').RunCardRenderOptions = {

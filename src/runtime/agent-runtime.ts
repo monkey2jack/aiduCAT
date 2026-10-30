@@ -47,9 +47,10 @@ export function createRuntimeAgent(
       ignoreRules: codex.ignoreRules !== false,
       sandbox: profileConfig.sandbox.defaultMode,
       larkChannel,
+      envPassthrough: profileConfig.agentEnv?.passthrough ?? [],
     });
   }
-  return new ClaudeAdapter({ larkChannel });
+  return new ClaudeAdapter({ larkChannel, envPassthrough: profileConfig.agentEnv?.passthrough ?? [] });
 }
 
 export async function checkRuntimeAgentAvailability(agent: AgentAdapter): Promise<AgentAvailability> {

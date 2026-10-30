@@ -179,6 +179,11 @@ export interface ProfileConfig {
   /** In-meeting agent settings. See {@link MeetingConfig}. */
   meeting: MeetingConfig;
   larkCli: LarkCliConfig;
+  /**
+   * f031-sec-#4: daemon env vars the owner explicitly passes through to the
+   * agent subprocess (the default env is an allowlist). Names only.
+   */
+  agentEnv?: { passthrough: string[] };
 }
 
 /**
@@ -259,6 +264,7 @@ export function normalizeProfileConfig(input: unknown): ProfileConfig {
     comments?: unknown;
     meeting?: unknown;
     larkCli?: unknown;
+    agentEnv?: { passthrough?: unknown };
   };
 
   if (raw.schemaVersion !== 2) {
@@ -308,6 +314,7 @@ export function normalizeProfileConfig(input: unknown): ProfileConfig {
       ? { defaultProviderName: raw.defaultProviderName.trim() }
       : {}),
     ...(raw.codex ? { codex: normalizeCodex(raw.codex) } : {}),
+    ...normalizeAgentEnv(raw.agentEnv),
     attachments: {
       maxCount: numberOr(raw.attachments?.maxCount, 10),
       maxBytes: numberOr(raw.attachments?.maxBytes, 100 * 1024 * 1024),
@@ -360,6 +367,11 @@ function normalizePreferences(
 
 function isMessageReply(value: unknown): value is MessageReplyMode {
   return value === 'card' || value === 'markdown' || value === 'text';
+}
+
+function normalizeAgentEnv(input: { passthrough?: unknown } | undefined): Pick<ProfileConfig, 'agentEnv'> {
+  const names = stringArray(input?.passthrough).filter((k) => /^[A-Za-z_][A-Za-z0-9_]*$/.test(k));
+  return names.length > 0 ? { agentEnv: { passthrough: names } } : {};
 }
 
 function normalizeAccess(

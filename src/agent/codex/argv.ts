@@ -11,6 +11,15 @@ export interface BuildCodexArgsInput {
   model?: string;
   /** Forwarded to `codex exec -c model_reasoning_effort="..."`. */
   effort?: string;
+  /** f031-sec-#4: explicit vars for Codex shells on top of `inherit="core"`. */
+  shellEnv?: Record<string, string>;
+}
+
+function tomlInlineTable(env: Record<string, string>): string {
+  const entries = Object.entries(env)
+    .filter(([k, v]) => /^[A-Za-z_][A-Za-z0-9_]*$/.test(k) && typeof v === 'string')
+    .map(([k, v]) => `${k}=${JSON.stringify(v)}`);
+  return `{${entries.join(',')}}`;
 }
 
 export function buildCodexArgs(input: BuildCodexArgsInput): string[] {
@@ -30,7 +39,10 @@ export function buildCodexArgs(input: BuildCodexArgsInput): string[] {
     '-c',
     'approval_policy="never"',
     '-c',
-    'shell_environment_policy.inherit="all"',
+    'shell_environment_policy.inherit="core"',
+    ...(input.shellEnv && Object.keys(input.shellEnv).length > 0
+      ? ['-c', `shell_environment_policy.set=${tomlInlineTable(input.shellEnv)}`]
+      : []),
     ...(input.ignoreUserConfig === true ? ['--ignore-user-config'] : []),
     ...(input.ignoreRules === false ? [] : ['--ignore-rules']),
     '--skip-git-repo-check',

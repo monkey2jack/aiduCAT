@@ -4,7 +4,8 @@ import { join } from 'node:path';
 import { createInterface } from 'node:readline';
 import type { Readable, Writable } from 'node:stream';
 import { log } from '../../core/logger';
-import { mergeProcessEnv, spawnProcess, type SpawnedProcessByStdio } from '../../platform/spawn';
+import { buildAgentEnv } from '../../platform/agent-env';
+import { spawnProcess, type SpawnedProcessByStdio } from '../../platform/spawn';
 import { buildBridgeSystemPrompt } from '../bridge-system-prompt';
 import { buildLarkChannelEnv, type LarkChannelEnvContext } from '../lark-channel-env';
 import { checkAgentAvailability, type AgentAvailability } from '../preflight';
@@ -21,6 +22,8 @@ import { translateEvent } from './stream-json';
 export interface ClaudeAdapterOptions {
   binary?: string;
   larkChannel?: LarkChannelEnvContext;
+  /** f031-sec-#4: daemon env names the owner explicitly passes to the agent. */
+  envPassthrough?: readonly string[];
 }
 
 type ClaudeChild = SpawnedProcessByStdio<Writable, Readable, Readable>;
@@ -31,11 +34,13 @@ export class ClaudeAdapter implements AgentAdapter {
 
   private readonly binary: string;
   private readonly larkChannel: LarkChannelEnvContext | undefined;
+  private readonly envPassthrough: readonly string[];
   private botIdentity: AgentBotIdentity | undefined;
 
   constructor(opts: ClaudeAdapterOptions = {}) {
     this.binary = opts.binary ?? 'claude';
     this.larkChannel = opts.larkChannel;
+    this.envPassthrough = opts.envPassthrough ?? [];
   }
 
   setBotIdentity(identity: AgentBotIdentity): void {
@@ -97,9 +102,14 @@ export class ClaudeAdapter implements AgentAdapter {
       cwd: opts.cwd,
       // f0.2: per-run provider overrides (envOverrides) layer last, on top of
       // the Lark channel env — /model provider switches take effect per run.
-      env: mergeProcessEnv(process.env, {
-        ...buildLarkChannelEnv(this.larkChannel),
-        ...(opts.envOverrides ?? {}),
+      // f031-sec-#4: allowlisted env only (no daemon secrets, no bridge config path).
+      env: buildAgentEnv({
+        agent: 'claude',
+        overrides: {
+          ...buildLarkChannelEnv(this.larkChannel, { forAgent: true }),
+          ...(opts.envOverrides ?? {}),
+        },
+        passthrough: this.envPassthrough,
       }),
       stdio: ['pipe', 'pipe', 'pipe'],
     }) as ClaudeChild;

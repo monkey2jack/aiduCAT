@@ -1,3 +1,4 @@
+import { redactSecretShapes } from '../core/secret-shapes';
 import { maskEmails } from './mask-email';
 import type { Block, RunState, ToolEntry } from './run-state';
 import { toolHeaderText } from './tool-render';
@@ -34,7 +35,8 @@ export function renderText(state: RunState): string {
   // Strip raw emails so the Feishu tenant audit doesn't reject the message
   // (see mask-email.ts). Never removes content, so emptiness checks upstream
   // still behave.
-  return maskEmails(parts.join('\n\n'));
+  // f031-sec-#4: never post credential-shaped strings to chat.
+  return redactSecretShapes(maskEmails(parts.join('\n\n')));
 }
 
 function renderBlock(block: Block): string {
