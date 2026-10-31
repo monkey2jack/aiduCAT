@@ -10,7 +10,7 @@
 >
 > Dress your Claude Code / Codex CLI in a Bubble-Wave Feishu card: deep-blue veins on paper white, one cat, zero noise.
 
-[![Version](https://img.shields.io/badge/version-f0.3.1-blue.svg)](https://github.com/monkey2jack/aiduCAT)
+[![Version](https://img.shields.io/badge/version-f0.3%2B-blue.svg)](https://github.com/monkey2jack/aiduCAT)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Node 20+](https://img.shields.io/badge/node-20.12%2B-brightgreen.svg)](https://nodejs.org/)
 [![Claude Code](https://img.shields.io/badge/agent-Claude%20Code%20%7C%20Codex-orange.svg)](https://docs.anthropic.com/en/docs/claude-code/quickstart)
@@ -130,12 +130,12 @@ One card, top to bottom:
 - **Empty run** (the agent exits without output): a red error card with the reason, asking you to resend
 - **Too long / rejected**: answers over 25KB are truncated in the card and sent in full as plain text; if Feishu rejects the card, a strict card (no image links, 12KB answer) is retried, then plain text, then a one-line "card failed" notice
 
-## Changelog (f0.3.1)
+## Changelog (f0.3+)
 
-- Rejected cards degrade automatically, answers are sanitized and kept under 30KB, SDK throttled updates no longer raise unhandledRejection, the empty-run guard really works, patch throttle 250ms
-- `/status` numbers are real (context = input + cache, stats survive restarts, 🚩 from the Claude transcript's first entry)
-- 60% auto-compact fixed: the 10router window lookup uses `AIDU_10ROUTER_TOKEN`; when unresolved it logs a warn and keeps the CLI `settings.json`
-- `/help` lists all 20 commands; hints say `aiduCAT …`; ~300 lines of dead code removed
+- New per-profile `features` switches (meeting / web console / Codex / CoT): a module that is off is not loaded, its commands are hidden from `/help` and answer 「此功能未开启」 (feature not enabled); all on by default
+- Meeting, CoT, Codex and the web console load on demand; code loaded at startup down ~46%
+- The `unrecognized_model` notice is logged once per model
+- Infrastructure (graceful restart, auto-resume after restart, data dir moves to `~/.aiducat`, owner-only token, self-tightening permissions, `/cd` allowlist): see CHANGELOG
 
 Full details in [CHANGELOG.md](./CHANGELOG.md).
 
@@ -292,6 +292,20 @@ Access is controlled by the canonical `"permissions"` block. **Omitted = `worksp
 - The agent subprocess env is an allowlist: PATH/HOME/LANG/LC_*/proxy/certs, plus `ANTHROPIC_*`/`CLAUDE_*` for Claude or `OPENAI_*`/`CODEX_*` for Codex. Any other service variable (e.g. `AIDU_10ROUTER_URL`, `SSH_AUTH_SOCK`) must be listed in `agentEnv.passthrough`.
 - Tool calls are hidden in groups by default; set `preferences.showToolCallsInGroups: true` to show them.
 - Timeouts: `preferences.runIdleTimeoutMinutes` (default 15 min without output), `preferences.runToolTimeoutMinutes` (one tool call, default 30 min). After a restart, queued messages younger than 10 minutes are replayed, older ones get a "please resend"; in-flight cards are marked "service restarted, please resend".
+
+### Feature switches (features)
+
+Modules you don't use can be switched off per profile. No `features` block = everything on; only an explicit `false` turns a module off:
+
+```json
+{
+  "features": { "meeting": false, "webConsole": false, "codex": false, "cot": false }
+}
+```
+
+- A module that is off is not loaded (less startup memory); its commands are hidden from `/help` and answer 「此功能未开启」 (feature not enabled).
+- `"meeting"`: `/meeting`, meeting pushes and auto-join; `"webConsole"`: `run/start --web-ui`, `aiduCAT ui`, the console line in `/config`; `"codex"`: Codex profiles and Codex session history; `"cot"`: CoT process messages and their `/config` option (the preference is kept).
+- Restart the service after changing it.
 
 ### Development
 

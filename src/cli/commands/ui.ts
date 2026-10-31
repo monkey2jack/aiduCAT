@@ -3,6 +3,8 @@ import { resolveAppPaths } from '../../config/app-paths';
 import { isAlive } from '../../runtime/registry';
 import { spawnProcess } from '../../platform/spawn';
 import { readUiSidecar } from '../../ui/sidecar';
+import { FEATURE_OFF_REPLY, featureEnabled } from '../../config/profile-schema';
+import { loadRootConfig, readActiveProfile } from '../../config/profile-store';
 
 export interface RunUiOptions {
   /** Accepted for compatibility; the console is a single machine-wide process. */
@@ -20,6 +22,13 @@ export interface RunUiOptions {
 export async function runUi(opts: RunUiOptions = {}): Promise<void> {
   const rootDir = process.env.LARK_CHANNEL_HOME;
   const appPaths = resolveAppPaths({ rootDir });
+
+  // f03p-slim-#6: the profile switched the web console off.
+  if (!(await webConsoleEnabled(appPaths, opts.profile))) {
+    console.error(`${FEATURE_OFF_REPLY}：Web 控制台（profile features.webConsole=false）`);
+    process.exitCode = 1;
+    return;
+  }
 
   const sidecar = await readUiSidecar(appPaths.hostUiFile);
   if (sidecar && isAlive(sidecar.pid)) {
@@ -46,6 +55,16 @@ export async function runUi(opts: RunUiOptions = {}): Promise<void> {
     ].join('\n'),
   );
   process.exitCode = 1;
+}
+
+async function webConsoleEnabled(
+  appPaths: { configFile: string; rootDir: string },
+  profile: string | undefined,
+): Promise<boolean> {
+  const root = await loadRootConfig(appPaths.configFile).catch(() => undefined);
+  if (!root) return true;
+  const name = profile ?? (await readActiveProfile(appPaths.rootDir).catch(() => undefined)) ?? root.activeProfile;
+  return featureEnabled(root.profiles[name], 'webConsole');
 }
 
 /** Best-effort cross-platform "open this URL in the default browser". */

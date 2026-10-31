@@ -54,6 +54,8 @@ export interface StabHarness {
   };
   agent: FakeAgentAdapter;
   sessions: SessionStore;
+  /** f03p-slim: the controls object startChannel late-binds into (e.g. `meeting`). */
+  controls: Record<string, unknown>;
   disconnect(): Promise<void>;
   /** f03p: graceful drain before disconnect */
   drain(timeoutMs: number, signal?: AbortSignal): Promise<{ drained: boolean; remaining: number }>;
@@ -186,6 +188,7 @@ export async function setupStabChannel(opts: {
     processId: 'proc_test',
     ...(opts.botOwnerId ? { botOwnerId: opts.botOwnerId } : {}),
   };
+  h.controls = controls as unknown as Record<string, unknown>;
   const { startChannel } = await import('../../src/bot/channel.js');
   const appPaths = opts.withAppPaths
     ? {

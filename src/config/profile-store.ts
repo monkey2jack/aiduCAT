@@ -5,6 +5,8 @@ import { writeFileAtomic } from '../platform/atomic-write';
 import { resolveAppPaths } from './app-paths';
 import {
   normalizeProfileConfig,
+  storedFeatures,
+  type ProfileFeatures,
   type AgentKind,
   type ProfileConfig,
   type RootConfig,
@@ -63,7 +65,10 @@ type StoredProfileConfig = Pick<
   | 'larkCli'
 > &
   // f0.2: optional extension block survives save cycles.
-  Partial<Pick<ProfileConfig, 'modelProviders' | 'defaultProviderName' | 'agentEnv'>>;
+  Partial<Pick<ProfileConfig, 'modelProviders' | 'defaultProviderName' | 'agentEnv'>> & {
+    /** f03p-slim-#1: only the switched-off modules are written. */
+    features?: Partial<ProfileFeatures>;
+  };
 
 type StoredRootConfig = Omit<RootConfig, 'preferences' | 'profiles'> & {
   preferences: Record<string, never>;
@@ -107,6 +112,7 @@ function serializeProfileConfig(profile: ProfileConfig): StoredProfileConfig {
     ...(profile.modelProviders ? { modelProviders: profile.modelProviders } : {}),
     ...(profile.defaultProviderName ? { defaultProviderName: profile.defaultProviderName } : {}),
     ...(profile.agentEnv ? { agentEnv: profile.agentEnv } : {}),
+    ...(storedFeatures(profile.features) ? { features: storedFeatures(profile.features) } : {}),
   };
 }
 

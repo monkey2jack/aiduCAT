@@ -1,9 +1,8 @@
 import { ClaudeAdapter } from '../agent/claude/adapter';
-import { CodexAdapter } from '../agent/codex/adapter';
 import { AgentPreflightError, type AgentAvailability } from '../agent/preflight';
 import type { AgentAdapter } from '../agent/types';
 import type { AppPaths } from '../config/app-paths';
-import type { AgentKind, ProfileConfig } from '../config/profile-schema';
+import { FEATURE_OFF_REPLY, featureEnabled, type AgentKind, type ProfileConfig } from '../config/profile-schema';
 import type { AcquiredRuntimeLock } from './locks';
 
 /**
@@ -12,14 +11,17 @@ import type { AcquiredRuntimeLock } from './locks';
  * Shared by the foreground run path and the supervisor so both produce an
  * identically-configured adapter. Each profile MUST get its own adapter — the
  * adapter stores bot identity on itself (see `setBotIdentity`).
+ *
+ * f03p-slim-#5/#7: async because the Codex adapter is imported on demand; a
+ * codex profile whose `features.codex` is false is refused.
  */
-export function createRuntimeAgent(
+export async function createRuntimeAgent(
   profileConfig: ProfileConfig,
   appPaths: Pick<AppPaths, 'profileDir'> &
     Partial<Pick<AppPaths, 'rootDir' | 'profile' | 'configFile' | 'larkCliConfigDir' | 'larkCliSourceConfigFile'>> & {
       configPath?: string;
     },
-): AgentAdapter {
+): Promise<AgentAdapter> {
   const larkChannelConfigPath = appPaths.configPath ?? appPaths.configFile;
   const larkChannel =
     appPaths.rootDir && appPaths.profile
@@ -34,6 +36,10 @@ export function createRuntimeAgent(
         }
       : undefined;
   if (profileConfig.agentKind === 'codex') {
+    if (!featureEnabled(profileConfig, 'codex')) {
+      throw new Error(`${FEATURE_OFF_REPLY}：codex（profile features.codex=false）`);
+    }
+    const { CodexAdapter } = await import('../agent/codex/adapter');
     const codex = profileConfig.codex;
     if (!codex?.binaryPath) {
       throw new Error('codex profile requires codex.binaryPath');

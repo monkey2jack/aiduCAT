@@ -117,6 +117,53 @@ export interface MeetingConfig {
   summaryTarget: MeetingSummaryTarget;
 }
 
+/**
+ * f03p-slim-#1: optional modules, switched per profile. Every module is on
+ * unless the profile says `false` explicitly, so an old config keeps today's
+ * behavior. A module that is off is not loaded at all (lazy import), its
+ * commands are hidden from /help and answer {@link FEATURE_OFF_REPLY}.
+ *  - meeting:    in-meeting agent (/meeting, vc.bot.* pushes)
+ *  - webConsole: local web console (`run/start --web-ui`, `aiduCAT ui`, /config console line)
+ *  - codex:      Codex CLI agent (agentKind codex, codex /resume history)
+ *  - cot:        Feishu CoT process messages (/config「COT 过程消息」)
+ */
+export interface ProfileFeatures {
+  meeting: boolean;
+  webConsole: boolean;
+  codex: boolean;
+  cot: boolean;
+}
+export type FeatureName = keyof ProfileFeatures;
+export const FEATURE_NAMES: readonly FeatureName[] = ['meeting', 'webConsole', 'codex', 'cot'];
+/** What a switched-off module answers. */
+export const FEATURE_OFF_REPLY = '此功能未开启';
+
+/** True unless the profile switched the module off explicitly. */
+export function featureEnabled(
+  profile: { features?: Partial<ProfileFeatures> } | undefined,
+  name: FeatureName,
+): boolean {
+  return profile?.features?.[name] !== false;
+}
+
+function normalizeFeatures(input: unknown): ProfileFeatures {
+  const raw = (input && typeof input === 'object' ? input : {}) as Record<string, unknown>;
+  return {
+    meeting: raw.meeting !== false,
+    webConsole: raw.webConsole !== false,
+    codex: raw.codex !== false,
+    cot: raw.cot !== false,
+  };
+}
+
+/** Stored form: only the switched-off modules (undefined when all on). */
+export function storedFeatures(features: Partial<ProfileFeatures> | undefined): Partial<ProfileFeatures> | undefined {
+  if (!features) return undefined;
+  const off: Partial<ProfileFeatures> = {};
+  for (const name of FEATURE_NAMES) if (features[name] === false) off[name] = false;
+  return Object.keys(off).length > 0 ? off : undefined;
+}
+
 export type LarkCliIdentityPreset = 'bot-only' | 'user-default';
 
 /**
@@ -192,6 +239,8 @@ export interface ProfileConfig {
    * agent subprocess (the default env is an allowlist). Names only.
    */
   agentEnv?: { passthrough: string[] };
+  /** f03p-slim-#1: optional module switches (normalized: all four keys). */
+  features?: ProfileFeatures;
 }
 
 /**
@@ -255,6 +304,7 @@ export interface CreateDefaultProfileConfigInput {
   permissions?: Partial<PermissionConfig>;
   codex?: CodexConfig;
   secrets?: SecretsConfig;
+  features?: Partial<ProfileFeatures>;
 }
 
 export function createDefaultProfileConfig(
@@ -297,6 +347,7 @@ export function normalizeProfileConfig(input: unknown): ProfileConfig {
     meeting?: unknown;
     larkCli?: unknown;
     agentEnv?: { passthrough?: unknown };
+    features?: unknown;
   };
 
   if (raw.schemaVersion !== 2) {
@@ -358,6 +409,7 @@ export function normalizeProfileConfig(input: unknown): ProfileConfig {
     comments,
     meeting,
     larkCli,
+    features: normalizeFeatures(raw.features),
   };
 }
 

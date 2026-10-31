@@ -339,3 +339,15 @@ export function finalizeIfRunning(state: RunState): RunState {
     footer: null,
   };
 }
+
+/** The final answer only: text blocks (or finalText), no tools/reasoning/footer. */
+export function finalAnswerOnlyState(state: RunState): RunState {
+  return {
+    ...state,
+    blocks: state.finalText
+      ? [{ kind: 'text', content: state.finalText, streaming: false }]
+      : state.blocks.filter((b) => b.kind === 'text'),
+    reasoning: { content: '', active: false, segments: 0 },
+    footer: null,
+  };
+}

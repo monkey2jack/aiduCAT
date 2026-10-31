@@ -27,6 +27,7 @@ import {
   initialState,
   markEmptyRun,
   markIdleTimeout,
+  finalAnswerOnlyState,
   markInterrupted,
   reduce,
   type RunState,
@@ -36,7 +37,7 @@ import { tryHandleCommand, type Controls } from '../commands';
 import type { AppConfig } from '../config/schema';
 import {
   getAgentStopGraceMs,
-  getCotMessages,
+  getEffectiveCotMessages,
   getMaxConcurrentRuns,
   getMessageReplyMode,
   getRunIdleTimeoutMs,
@@ -44,6 +45,7 @@ import {
   getShowToolCalls,
 } from '../config/schema';
 import type { KeystorePaths } from '../config/keystore';
+import { featureEnabled } from '../config/profile-schema';
 import { resolveAppSecret } from '../config/secret-resolver';
 import { log, reportMetric, withTrace } from '../core/logger';
 import { DOWNLOAD_FAILED, MediaCache, type LocalAttachment } from '../media/cache';
@@ -59,9 +61,10 @@ import {
   requireMentionForChat,
   senderFactsOf,
 } from '../policy/access';
-import { MeetingManager } from '../meeting/manager';
+// f03p-slim-#3/#7: meeting modules are imported only when the feature is on
+// and meeting.enabled is set.
+import type { MeetingManager } from '../meeting/manager';
 import type { VcRequestClient } from '../meeting/api';
-import { attachMeetingAgent, summarizeEndedMeeting } from '../meeting/orchestrator';
 import type { ScopeContext } from '../policy/run-policy';
 import { createOwnerRefreshController } from '../policy/owner';
 import { RunExecutor } from '../runtime/run-executor';
@@ -84,12 +87,8 @@ import { addWorkingReaction, removeReaction } from './reaction';
 import { fetchKnownChats } from './lark-info';
 import { contextWindowForModel, resolveModelWindow } from './context-window';
 import type { AppPaths } from '../config/app-paths';
-import {
-  consumeCotEvents,
-  CotClient,
-  CotPublisher,
-  finalAnswerOnlyState,
-} from './cot';
+// f03p-slim-#7: the CoT module is loaded only when a run actually uses CoT.
+import type { CotClient } from './cot';
 
 const DEBOUNCE_MS = 600;
 const STREAM_TERMINAL_GRACE_MS = 3000;
@@ -243,11 +242,13 @@ export async function startChannel(deps: StartChannelDeps): Promise<BridgeChanne
   // switch can inject a one-time "model changed" note into the next (resumed)
   // prompt. In-memory only: on restart the first run re-seeds silently.
   const lastRunModelByScope = new Map<string, string>();
-  const cotClient = new CotClient({
-    tenant: cfg.accounts.app.tenant,
-    appId: cfg.accounts.app.id,
-    appSecret,
-  });
+  // f03p-slim-#4/#7: built on first CoT use (never when CoT is off).
+  let cotClientPromise: Promise<CotClient> | undefined;
+  const cotClient = (): Promise<CotClient> =>
+    (cotClientPromise ??= import('./cot').then(
+      ({ CotClient: Client }) =>
+        new Client({ tenant: cfg.accounts.app.tenant, appId: cfg.accounts.app.id, appSecret }),
+    ));
   const threadModeOverrideWarnedChats = new Set<string>();
   const logThreadModeOverride: LogThreadModeOverride = ({ chatId, resolvedMode, threadId }) => {
     const fields = { chatId, cachedMode: resolvedMode, threadId };
@@ -546,8 +547,12 @@ export async function startChannel(deps: StartChannelDeps): Promise<BridgeChanne
   // botOpenId getter is resolved by then.
   const meetingConfig = () => controls.profileConfig.meeting;
   let meetingManager: MeetingManager | undefined;
-  if (meetingConfig().enabled) {
-    meetingManager = new MeetingManager({
+  if (featureEnabled(controls.profileConfig, 'meeting') && meetingConfig().enabled) {
+    const [{ MeetingManager: Manager }, { attachMeetingAgent, summarizeEndedMeeting }] = await Promise.all([
+      import('../meeting/manager'),
+      import('../meeting/orchestrator'),
+    ]);
+    meetingManager = new Manager({
       client: channel.rawClient as unknown as VcRequestClient,
       config: meetingConfig,
       botOpenId: () => channel.botIdentity?.openId,
@@ -1080,7 +1085,8 @@ interface RunBatchDeps {
   media: MediaCache;
   batch: NormalizedMessage[];
   controls: Controls;
-  cotClient: CotClient;
+  /** f03p-slim-#7: lazy — resolves the shared CotClient on first use. */
+  cotClient: () => Promise<CotClient>;
   callbackAuth?: CallbackAuth;
   activePolicyFingerprints: Map<string, string>;
   lastRunModelByScope: Map<string, string>;
@@ -1400,7 +1406,8 @@ async function runAgentBatch(deps: RunBatchDeps): Promise<void> {
   // mention; DMs keep the configured mode.
   const replyMode = firstMsg.chatType !== 'p2p' ? 'markdown' : getMessageReplyMode(controls.cfg);
   log.info('flush', 'reply-mode', { mode: replyMode });
-  const cotMessages = getCotMessages(controls.cfg);
+  // f03p-slim-#4: a profile with features.cot=false never uses CoT.
+  const cotMessages = getEffectiveCotMessages(controls.cfg, controls.profileConfig);
   const cotEnabled = cotMessages !== 'off';
 
   // Re-read prefs on every flush so toggling /config mid-stream takes
@@ -1452,8 +1459,9 @@ async function runAgentBatch(deps: RunBatchDeps): Promise<void> {
 
   try {
     if (cotEnabled) {
+      const { CotPublisher, consumeCotEvents } = await import('./cot');
       const cotPublisher = new CotPublisher({
-        client: cotClient,
+        client: await cotClient(),
         chatId,
         // The CoT bubble follows this origin message's thread. In a topic the
         // triggering message is itself in-topic, so the bubble lands in the

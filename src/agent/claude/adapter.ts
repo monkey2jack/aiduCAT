@@ -180,12 +180,10 @@ export class ClaudeAdapter implements AgentAdapter {
       while (nl !== -1) {
         const line = stderrBuffer.slice(0, nl);
         stderrBuffer = stderrBuffer.slice(nl + 1);
-        // f031-stab-#15: Claude Code warns `[claude-code:unrecognized_model]`
-        // on every run with a gateway model id — expected, not a fault.
-        if (line.trim()) {
-          if (line.includes('unrecognized_model')) log.info('agent', 'stderr', { line });
-          else log.warn('agent', 'stderr', { line });
-        }
+        // f031-stab-#15 / f03p-slim-#8: see classifyClaudeStderrLine.
+        const level = classifyClaudeStderrLine(line);
+        if (level === 'info') log.info('agent', 'stderr', { line });
+        else if (level === 'warn') log.warn('agent', 'stderr', { line });
         if (isWindowsCommandNotFoundLine(line)) {
           runtimeError = new Error(`failed to spawn claude: ${line.trim()}`);
           child.stdout.destroy();
@@ -380,3 +378,39 @@ function isWindowsCommandNotFoundLine(line: string): boolean {
     /is not recognized as an internal or external command|operable program or batch file/i.test(line)
   );
 }
+
+/**
+ * f031-stab-#15 / f03p-slim-#8: Claude Code writes
+ * `[claude-code:unrecognized_model] {"model":…}` once per *claude process* for
+ * a gateway model id (e.g. Gemini-3.8-Flash via 10router). Each run is a new
+ * process, so the bridge used to log it on every run. It is documented,
+ * harmless behavior (the request still goes out with our id), so keep one
+ * info line per model per bridge process and drop the repeats. Silencing it
+ * at the source would need a `modelOverrides` entry that makes Claude Code
+ * treat the gateway model as a Claude model (effort/thinking/window), which
+ * f031-stab-#15 deliberately avoids for non-Claude models.
+ */
+export type ClaudeStderrLevel = 'info' | 'warn' | 'skip';
+
+export function createClaudeStderrClassifier(): (line: string) => ClaudeStderrLevel {
+  const seenModels = new Set<string>();
+  return (line) => {
+    if (!line.trim()) return 'skip';
+    if (!line.includes('[claude-code:unrecognized_model]')) return 'warn';
+    const json = line.slice(line.indexOf(']') + 1).trim();
+    let model: string | undefined;
+    try {
+      const parsed = JSON.parse(json) as { model?: unknown };
+      if (typeof parsed.model === 'string') model = parsed.model;
+    } catch {
+      // unexpected shape: still informational, just not deduplicated
+    }
+    if (model === undefined) return 'info';
+    if (seenModels.has(model)) return 'skip';
+    seenModels.add(model);
+    return 'info';
+  };
+}
+
+/** Shared by every ClaudeAdapter run in this bridge process. */
+export const classifyClaudeStderrLine = createClaudeStderrClassifier();

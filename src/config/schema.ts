@@ -298,6 +298,19 @@ export function getCotMessages(cfg: AppConfig): CotMessagesMode {
   return 'off';
 }
 
+/**
+ * f03p-slim-#4: the CoT mode a run actually uses — `off` whenever the profile
+ * switched the CoT module off, whatever the stored preference says (the
+ * preference is kept, so switching the module back on restores it).
+ */
+export function getEffectiveCotMessages(
+  cfg: AppConfig,
+  profile: { features?: { cot?: boolean } } | undefined,
+): CotMessagesMode {
+  if (profile?.features?.cot === false) return 'off';
+  return getCotMessages(cfg);
+}
+
 /** Resolve the max-concurrent-runs preference with default + sanity clamp. */
 export function getMaxConcurrentRuns(cfg: AppConfig): number {
   const raw = cfg.preferences?.maxConcurrentRuns;
