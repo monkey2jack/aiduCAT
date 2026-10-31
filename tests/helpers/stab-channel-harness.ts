@@ -55,6 +55,8 @@ export interface StabHarness {
   agent: FakeAgentAdapter;
   sessions: SessionStore;
   disconnect(): Promise<void>;
+  /** f03p: graceful drain before disconnect */
+  drain(timeoutMs: number, signal?: AbortSignal): Promise<{ drained: boolean; remaining: number }>;
 }
 
 export async function setupStabChannel(opts: {
@@ -71,6 +73,8 @@ export async function setupStabChannel(opts: {
   markdownSetContent?: (markdown: string, n: number) => Promise<void> | void;
   /** markdown-mode stream: reject after the producer finished (final flush failed) */
   markdownFailTerminal?: Error;
+  /** f03p: the bot owner's open_id (unset = nobody is the owner) */
+  botOwnerId?: string;
 }): Promise<StabHarness> {
   const tmp = opts.tmp ?? (await createTmpProfile('stab-channel-'));
   const workspace = await realpath(tmp.workspace);
@@ -180,6 +184,7 @@ export async function setupStabChannel(opts: {
     configPath: join(tmp.profile, 'config.json'),
     cfg: profileConfig,
     processId: 'proc_test',
+    ...(opts.botOwnerId ? { botOwnerId: opts.botOwnerId } : {}),
   };
   const { startChannel } = await import('../../src/bot/channel.js');
   const appPaths = opts.withAppPaths
@@ -190,6 +195,7 @@ export async function setupStabChannel(opts: {
       }
     : undefined;
   const bridge = await startChannel({ cfg: profileConfig, agent, sessions, workspaces, controls, appPaths } as never);
+  h.drain = (timeoutMs, signal) => bridge.drain!(timeoutMs, signal);
   h.disconnect = async () => {
     await bridge.disconnect();
     await Promise.all([sessions.flush(), workspaces.flush()]);

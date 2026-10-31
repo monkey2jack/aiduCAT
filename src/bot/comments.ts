@@ -168,6 +168,7 @@ export async function handleCommentMention(deps: CommentDeps): Promise<void> {
     workspaces.cwdFor(docSessionScopeId) ?? workspaces.cwdFor(legacyDocSessionScopeId),
     controls.profileConfig.workspaces.default,
     managedDefaultWorkspaceForComments(controls),
+    controls.profileConfig.workspaces.roots,
   );
   const requestedCwd = workspace.requestedCwd;
   const cwdRealpath = workspace.cwdRealpath;
@@ -292,6 +293,7 @@ export async function handleCommentMention(deps: CommentDeps): Promise<void> {
           ...runLarkCliIdentityEnv(controls.profileConfig, access.reason === 'owner'),
         },
         stopGraceMs: getAgentStopGraceMs(controls.cfg),
+        ownerRun: access.reason === 'owner',
         observability: {
           profile: controls.profile,
           agent: capability.agentId,
@@ -604,6 +606,7 @@ async function resolveCommentWorkingDirectory(
   configuredCwd: string | undefined,
   defaultCwd: string | undefined,
   managedFallbackCwd: string,
+  roots?: readonly string[],
 ): Promise<
   | {
       ok: true;
@@ -621,7 +624,8 @@ async function resolveCommentWorkingDirectory(
 > {
   const failures: string[] = [];
   if (configuredCwd) {
-    const configured = await resolveWorkingDirectory(configuredCwd);
+    // f03p-infra-#3: a document's own cwd obeys workspaces.roots like /cd.
+    const configured = await resolveWorkingDirectory(configuredCwd, { roots });
     if (configured.ok) return configured;
     failures.push(configured.userVisible);
     if (defaultCwd) {

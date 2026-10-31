@@ -2,7 +2,8 @@ import dns from 'node:dns';
 import os from 'node:os';
 import { createInterface } from 'node:readline';
 import pkg from '../../../package.json';
-import type { AppPaths } from '../../config/app-paths';
+import { legacyDataDirNotice, type AppPaths } from '../../config/app-paths';
+import { tightenDataDirPermissions } from '../../config/data-dir-perms';
 import { configureLogger, gcOldLogs, log, reportError } from '../../core/logger';
 import { createProcessErrorHandlers } from '../../core/process-errors';
 import { loadTelemetryAdapter, telemetry } from '../../core/telemetry';
@@ -93,6 +94,7 @@ async function runClassic(opts: StartOptions): Promise<void> {
   });
   const { cfg, configPath, appPaths } = runtime;
   configureLogger({ logsDir: appPaths.logsDir });
+  scheduleDataDirTightening(appPaths.rootDir);
   await loadTelemetryAdapter({
     version: pkg.version,
     appId: cfg.accounts.app.id,
@@ -138,6 +140,7 @@ async function runSupervisorConsole(opts: StartOptions): Promise<void> {
   const configPath = runtime.configPath;
   const appPaths = runtime.appPaths;
   configureLogger({ logsDir: appPaths.hostLogsDir });
+  scheduleDataDirTightening(appPaths.rootDir);
 
   // One supervisor per machine. If one is already running, print its console
   // URL and exit instead of launching a duplicate.
@@ -200,15 +203,26 @@ function parkWithShutdown(
   hostLock: { release(): Promise<void> } | undefined,
 ): Promise<void> {
   let shuttingDown = false;
+  // f03p-infra-#5: the first SIGTERM/SIGINT drains (no new rounds, the ones in
+  // flight finish, up to shutdownDrainMinutes); a second one stops at once.
+  const drainAbort = new AbortController();
   const shutdown = async (sig: string): Promise<void> => {
-    if (shuttingDown) return;
+    if (shuttingDown) {
+      if (!drainAbort.signal.aborted) {
+        console.log(`\n再次收到 ${sig}，不再等待在途轮次，立即停止。`);
+        drainAbort.abort();
+      }
+      return;
+    }
     shuttingDown = true;
-    console.log(`\n收到 ${sig}，正在关闭...`);
+    console.log(
+      `\n收到 ${sig}：不再接新轮次，等在途轮次跑完再关闭（最多 shutdownDrainMinutes，默认 10 分钟；再发一次信号立即停止）...`,
+    );
     if (uiServer) {
       await uiServer.close().catch(() => {});
       await removeUiSidecar(appPaths.hostUiFile);
     }
-    await supervisor.shutdown();
+    await supervisor.shutdown({ graceful: true, signal: drainAbort.signal });
     if (hostLock) await hostLock.release().catch(() => {});
     await flushTelemetry();
     process.exit(0);
@@ -283,6 +297,24 @@ async function confirmStopRuntimeLockProcess(err: RuntimeLockConflictError): Pro
   } finally {
     rl.close();
   }
+}
+
+/**
+ * f03p-infra-#1: owner-only data dir (0700 dirs / 0600 files), in the
+ * background — it never delays going online and never fails the start.
+ */
+function scheduleDataDirTightening(rootDir: string): void {
+  // f03p-infra-#4: still on the old ~/.lark-channel → say so once per start.
+  const notice = legacyDataDirNotice(rootDir);
+  if (notice) {
+    console.log(notice);
+    log.info('data-dir', 'legacy-in-use', { rootDir });
+  }
+  void tightenDataDirPermissions(rootDir)
+    .then((r) => {
+      if (r.changed > 0 || r.failed > 0) log.info('perms', 'data-dir-tightened', { ...r });
+    })
+    .catch(() => undefined);
 }
 
 async function flushTelemetry(timeoutMs = 2000): Promise<void> {

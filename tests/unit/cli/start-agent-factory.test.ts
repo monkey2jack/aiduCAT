@@ -87,7 +87,7 @@ describe('start runtime agent factory', () => {
     // profile's locks) before the process exits.
     const source = await readFile(join(process.cwd(), 'src/cli/commands/start.ts'), 'utf8');
     const stopStart = source.indexOf('const shutdown = async');
-    const shutdownIndex = source.indexOf('await supervisor.shutdown()', stopStart);
+    const shutdownIndex = source.indexOf('await supervisor.shutdown(', stopStart);
     const exitIndex = source.indexOf('process.exit(0)', stopStart);
 
     expect(stopStart).toBeGreaterThanOrEqual(0);

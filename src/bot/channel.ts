@@ -183,9 +183,23 @@ function stringifyArgs(args: unknown[]): string {
     .join(' ');
 }
 
+export interface DrainResult {
+  /** true = every round that was running has finished */
+  drained: boolean;
+  /** rounds still running when the drain gave up (timeout or abort) */
+  remaining: number;
+}
+
 export interface BridgeChannel {
   channel: LarkChannel;
   disconnect(): Promise<void>;
+  /**
+   * f03p-infra-#5: graceful shutdown, step 1 — stop starting rounds (new
+   * messages are still accepted, journalled, and replayed by the next
+   * process) and wait up to `timeoutMs` for the rounds in flight to end.
+   * Call disconnect() afterwards. Optional so test doubles may omit it.
+   */
+  drain?(timeoutMs: number, signal?: AbortSignal): Promise<DrainResult>;
 }
 
 export interface StartChannelDeps {
@@ -314,6 +328,22 @@ export async function startChannel(deps: StartChannelDeps): Promise<BridgeChanne
     deps.appPaths?.mediaDir ? join(dirname(deps.appPaths.mediaDir), RUN_JOURNAL_FILE) : undefined,
   );
   const leftover = await journal.takeOver();
+  // f03p-infra-#5: rounds between flush and their end (pre-run steps
+  // included), so a graceful shutdown knows when it may stop.
+  let inflightBatches = 0;
+  const inflightWaiters = new Set<() => void>();
+  let draining = false;
+  const drainNoticed = new Set<string>();
+  /** f03p-infra-#6: message ids of the synthetic "接着刚才的继续" messages. */
+  const autoResumeIds = new Set<string>();
+  const noteQueuedWhileDraining = (scope: string, msg: NormalizedMessage): void => {
+    if (!draining || drainNoticed.has(scope)) return;
+    drainNoticed.add(scope);
+    const opts = msg.threadId ? { replyTo: msg.messageId, replyInThread: true } : undefined;
+    void channel
+      .send(msg.chatId, { text: DRAIN_QUEUED_NOTICE }, opts)
+      .catch((err: unknown) => log.warn('shutdown', 'drain-notice-failed', { scope, err: String(err) }));
+  };
   const pending = new PendingQueue(DEBOUNCE_MS, (scope, batch) => {
     const firstMsg = batch[0];
     if (!firstMsg) return;
@@ -322,13 +352,19 @@ export async function startChannel(deps: StartChannelDeps): Promise<BridgeChanne
     pending.block(scope);
     const lastMsg = batch[batch.length - 1]!;
     const runKey = randomUUID();
+    // f03p-infra-#6: this batch carries the automatic post-restart continuation.
+    const autoResume = batch.some((m) => autoResumeIds.delete(m.messageId));
     journal.dequeue(scope, batch.map((m) => m.messageId));
     journal.startRun(scope, {
       runKey,
       chatId: firstMsg.chatId,
       replyTo: lastMsg.messageId,
       ...(firstMsg.threadId ? { replyInThread: true } : {}),
+      resumeMsg: lastMsg,
+      ...(autoResume ? { autoResumed: true } : {}),
     });
+    inflightBatches++;
+    let terminal: string | undefined;
     void withTrace({ chatId: firstMsg.chatId }, async () => {
       log.info('flush', 'start', {
         scope,
@@ -368,9 +404,18 @@ export async function startChannel(deps: StartChannelDeps): Promise<BridgeChanne
           scope,
           mode,
           onCardOpened: (messageId) => journal.setCard(scope, runKey, messageId),
+          onTerminal: (t) => {
+            terminal = t;
+          },
         });
+        if (autoResume && !draining && (terminal === undefined || terminal === 'error' || terminal === 'idle_timeout')) {
+          await notifyAutoResumeFailed(channel, lastMsg);
+        }
       } catch (err) {
         log.fail('flush', err);
+        if (autoResume && !(err instanceof PreRunError) && !draining) {
+          await notifyAutoResumeFailed(channel, lastMsg);
+        }
         // f031-stab-#16: a pre-run step failed before anything reached the
         // user — say so instead of staying silent.
         if (err instanceof PreRunError) {
@@ -379,13 +424,23 @@ export async function startChannel(deps: StartChannelDeps): Promise<BridgeChanne
           );
         }
       } finally {
-        journal.endRun(scope, runKey);
+        // f03p-infra-#5/#6: a round that ended as "interrupted" while we drain
+        // was killed by the stop itself (e.g. systemd signalled the whole
+        // cgroup) — keep it in the journal so the next start continues it.
+        // Unless someone stopped it on purpose (/stop, /cd, /new …).
+        const stoppedOnPurpose = activeRuns.consumeStoppedOnPurpose(scope);
+        if (!(draining && terminal === 'interrupted' && !stoppedOnPurpose)) journal.endRun(scope, runKey);
         pending.unblock(scope);
         log.info('flush', 'end');
+        inflightBatches--;
+        if (inflightBatches === 0) for (const wake of [...inflightWaiters]) wake();
       }
     });
   }, {
-    onPush: (scope, msg) => journal.queue(scope, msg),
+    onPush: (scope, msg) => {
+      journal.queue(scope, msg);
+      noteQueuedWhileDraining(scope, msg);
+    },
     onDrop: (scope, msgs) => journal.dequeue(scope, msgs.map((m) => m.messageId)),
   });
 
@@ -570,10 +625,43 @@ export async function startChannel(deps: StartChannelDeps): Promise<BridgeChanne
   });
 
   // f031-stab-#5: settle what the previous process left behind.
-  await recoverAfterRestart({ channel, pending, journal, snapshot: leftover });
+  await recoverAfterRestart({
+    channel,
+    pending,
+    journal,
+    snapshot: leftover,
+    // f03p-infra-#6: only a Claude scope with a recorded session can be resumed.
+    canResume: (scope) => agent.id === 'claude' && Boolean(sessions.getRaw(scope)?.sessionId),
+    autoResumeIds,
+  });
 
   return {
     channel,
+    drain: async (timeoutMs: number, signal?: AbortSignal): Promise<DrainResult> => {
+      draining = true;
+      pending.freeze();
+      const startedAt = Date.now();
+      log.info('shutdown', 'drain-start', { inflight: inflightBatches, timeoutMs });
+      if (inflightBatches > 0 && !signal?.aborted) {
+        await new Promise<void>((resolve) => {
+          const done = (): void => {
+            clearTimeout(timer);
+            inflightWaiters.delete(check);
+            signal?.removeEventListener('abort', done);
+            resolve();
+          };
+          const check = (): void => {
+            if (inflightBatches === 0) done();
+          };
+          const timer = setTimeout(done, Math.max(0, timeoutMs));
+          inflightWaiters.add(check);
+          signal?.addEventListener('abort', done, { once: true });
+        });
+      }
+      const remaining = inflightBatches;
+      log.info('shutdown', 'drain-end', { drained: remaining === 0, remaining, waitedMs: Date.now() - startedAt });
+      return { drained: remaining === 0, remaining };
+    },
     disconnect: async () => {
       activeRuns.pauseNewRuns('bridge-disconnect');
       ownerRefresh.stop();
@@ -616,12 +704,29 @@ const RUN_JOURNAL_FILE = 'run-journal.json';
 /** Re-queue messages only if the restart was quick; older ones get a notice. */
 const REPLAY_MAX_AGE_MS = 10 * 60_000;
 export const RESTART_INTERRUPTED_MESSAGE = '服务重启，这一轮被中断了，请重发一次。';
+/** f03p-infra-#5: once per chat for messages that arrive while the service drains. */
+export const DRAIN_QUEUED_NOTICE = '⏳ 服务正在重启，这条消息已记下，重启后会自动接着处理。';
+
+/** f03p-infra-#6 */
+const RESUME_MAX_AGE_MS = 10 * 60_000;
+export const AUTO_RESUME_PROMPT = '（服务重启，接着刚才的继续）';
+export const AUTO_RESUME_CARD_MESSAGE = '🔄 服务重启后自动继续（见下一张卡片）';
+export const AUTO_RESUME_FAILED_MESSAGE = '⚠️ 服务重启后自动继续没成功，请重发一次。';
+
+async function notifyAutoResumeFailed(channel: LarkChannel, msg: NormalizedMessage): Promise<void> {
+  const opts = msg.threadId ? { replyTo: msg.messageId, replyInThread: true } : { replyTo: msg.messageId };
+  await channel
+    .send(msg.chatId, { text: AUTO_RESUME_FAILED_MESSAGE }, opts)
+    .catch((err: unknown) => log.warn('journal', 'auto-resume-failed-notice-failed', { err: String(err) }));
+}
 
 async function recoverAfterRestart(input: {
   channel: LarkChannel;
   pending: PendingQueue;
   journal: RunJournal;
   snapshot: JournalSnapshot;
+  canResume?: (scope: string) => boolean;
+  autoResumeIds?: Set<string>;
 }): Promise<void> {
   const { channel, pending, snapshot } = input;
   if (snapshot.inflight.length === 0 && snapshot.queued.length === 0) return;
@@ -636,7 +741,32 @@ async function recoverAfterRestart(input: {
       log.warn('journal', 'notify-failed', { chatId, err: err instanceof Error ? err.message : String(err) });
     }
   };
+  const downSince = snapshot.closedAt ?? snapshot.savedAt;
   for (const [scope, e] of snapshot.inflight) {
+    // f03p-infra-#6: continue once, by itself, when the restart was quick,
+    // the round was not already a continuation, and its session can resume.
+    const interruptedAt = downSince ?? e.startedAt;
+    const resumable =
+      e.resumeMsg !== undefined &&
+      e.autoResumed !== true &&
+      Date.now() - interruptedAt <= RESUME_MAX_AGE_MS &&
+      input.canResume?.(scope) === true &&
+      input.autoResumeIds !== undefined;
+    if (resumable) {
+      if (e.cardMessageId) {
+        try {
+          const state: RunState = { ...initialState, terminal: 'interrupted', footer: null, errorMsg: AUTO_RESUME_CARD_MESSAGE };
+          await channel.updateCard(e.cardMessageId, renderCard(state));
+        } catch (err) {
+          log.warn('journal', 'orphan-card-close-failed', { scope, err: err instanceof Error ? err.message : String(err) });
+        }
+      }
+      const msg: NormalizedMessage = { ...e.resumeMsg!, content: AUTO_RESUME_PROMPT, createTime: Date.now() };
+      input.autoResumeIds!.add(msg.messageId);
+      pending.push(scope, msg);
+      log.info('journal', 'auto-resume', { scope, card: Boolean(e.cardMessageId), downMs: Date.now() - interruptedAt });
+      continue;
+    }
     let closed = false;
     if (e.cardMessageId) {
       try {
@@ -651,9 +781,14 @@ async function recoverAfterRestart(input: {
     log.info('journal', 'orphan-closed', { scope, card: Boolean(e.cardMessageId), viaCard: closed });
   }
   const now = Date.now();
+  // f03p-infra-#5: after an orderly shutdown, what matters is how long the
+  // service was down — a message that waited out a 10-minute drain is still
+  // fresh if the restart itself was quick.
+  const ageOf = (q: { storedAt: number }): number =>
+    now - (snapshot.closedAt !== undefined ? Math.max(q.storedAt, snapshot.closedAt) : q.storedAt);
   for (const [scope, entries] of snapshot.queued) {
-    const fresh = entries.filter((q) => now - q.storedAt <= REPLAY_MAX_AGE_MS);
-    const stale = entries.filter((q) => now - q.storedAt > REPLAY_MAX_AGE_MS);
+    const fresh = entries.filter((q) => ageOf(q) <= REPLAY_MAX_AGE_MS);
+    const stale = entries.filter((q) => ageOf(q) > REPLAY_MAX_AGE_MS);
     for (const q of fresh) pending.push(scope, q.msg);
     if (stale.length > 0) {
       const last = stale[stale.length - 1]!.msg;
@@ -953,6 +1088,8 @@ interface RunBatchDeps {
   mode: ChatMode;
   /** f031-stab-#5: the streaming card exists — record its id for restart recovery. */
   onCardOpened?: (messageId: string) => void;
+  /** f03p-infra-#6: how the agent's turn ended (done / error / interrupted / idle_timeout). */
+  onTerminal?: (terminal: string) => void;
 }
 
 /**
@@ -1028,6 +1165,12 @@ async function runAgentBatch(deps: RunBatchDeps): Promise<void> {
     mode,
   } = deps;
   if (batch.length === 0) return;
+  // f03p-infra-#6: report how the turn ended, whichever reply path runs.
+  const trackedAgentStream = async (...args: Parameters<typeof processAgentStream>): Promise<RunState> => {
+    const state = await processAgentStream(...args);
+    deps.onTerminal?.(state.terminal);
+    return state;
+  };
   const firstMsg = batch[0];
   const lastMsg = batch[batch.length - 1];
   if (!firstMsg || !lastMsg) return;
@@ -1326,7 +1469,7 @@ async function runAgentBatch(deps: RunBatchDeps): Promise<void> {
         const cotDone = consumeCotEvents(execution.subscribe(), cotPublisher, {
           detail: cotMessages,
         });
-        const finalState = await processAgentStream(
+        const finalState = await trackedAgentStream(
           handle,
           eventStream,
           scope,
@@ -1419,7 +1562,7 @@ async function runAgentBatch(deps: RunBatchDeps): Promise<void> {
           sendOpts,
         ),
       );
-      const renderDone = processAgentStream(
+      const renderDone = trackedAgentStream(
         handle,
         eventStream,
         scope,
@@ -1555,7 +1698,7 @@ async function runAgentBatch(deps: RunBatchDeps): Promise<void> {
           sendOpts,
         );
       };
-      const renderDone = processAgentStream(
+      const renderDone = trackedAgentStream(
         handle,
         eventStream,
         scope,
@@ -1622,7 +1765,7 @@ async function runAgentBatch(deps: RunBatchDeps): Promise<void> {
       // text mode: drain the agent stream without sending anything during
       // the run, then post the final rendered text once as a plain markdown
       // (msg_type=post) message — no card, no streaming, no typewriter.
-      const finalState = await processAgentStream(
+      const finalState = await trackedAgentStream(
         handle,
         eventStream,
         scope,

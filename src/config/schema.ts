@@ -155,6 +155,14 @@ export interface AppPreferences {
    */
   runToolTimeoutMinutes?: number;
   /**
+   * f03p-infra-#5: on SIGTERM/SIGINT, stop taking new rounds and wait this
+   * many minutes at most for the rounds in flight to finish (queued messages
+   * go to the run journal). Undefined = 10; 0 = stop at once (old behaviour);
+   * clamp 0..60. The service manager's stop timeout must be longer
+   * (systemd TimeoutStopSec, see docs).
+   */
+  shutdownDrainMinutes?: number;
+  /**
    * Whether the bot only responds to messages that @-mention it in groups
    * (regular and topic groups). p2p is always unrestricted. Default true:
    * groups are quiet unless the user @bot. Set false to let any group
@@ -343,6 +351,15 @@ export function getRunIdleTimeoutMs(cfg: AppConfig): number | undefined {
   if (typeof raw !== 'number' || !Number.isFinite(raw) || raw <= 0) return undefined;
   const clamped = Math.min(Math.max(Math.floor(raw), 1), 120);
   return clamped * 60_000;
+}
+
+export const DEFAULT_SHUTDOWN_DRAIN_MINUTES = 10;
+
+/** f03p-infra-#5: graceful-shutdown drain cap (see `shutdownDrainMinutes`). 0 = off. */
+export function getShutdownDrainMs(cfg: AppConfig): number {
+  const raw = cfg.preferences?.shutdownDrainMinutes ?? DEFAULT_SHUTDOWN_DRAIN_MINUTES;
+  if (typeof raw !== 'number' || !Number.isFinite(raw) || raw <= 0) return 0;
+  return Math.min(Math.floor(raw), 60) * 60_000;
 }
 
 /** f031-stab-#4: per-tool-call hard cap (see `runToolTimeoutMinutes`). */

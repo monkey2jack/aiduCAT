@@ -66,6 +66,12 @@ export interface AgentRunOptions {
    * are adapter-specific.
   */
   stopGraceMs?: number;
+  /**
+   * f03p-infra-#2: true only when the bot owner started this run. Anything
+   * else (undefined included) is treated as a non-owner run: no owner-only
+   * settings tokens, no owner passthrough env.
+   */
+  ownerRun?: boolean;
 }
 
 export interface AgentRun {

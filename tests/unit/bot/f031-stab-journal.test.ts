@@ -48,7 +48,8 @@ describe('f031-stab-#5 RunJournal', () => {
     expect(snap.queued[0]![1].map((q) => q.msg.messageId)).toEqual(['m1']);
     await b.flush();
     const c = new RunJournal(path);
-    expect(await c.takeOver()).toEqual({ inflight: [], queued: [] });
+    // f03p-infra-#6: the snapshot may also carry savedAt (last write time)
+    expect(await c.takeOver()).toMatchObject({ inflight: [], queued: [] });
   });
 
   it('f031-stab-#5 endRun only clears the matching run', async () => {

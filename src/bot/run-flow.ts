@@ -80,9 +80,15 @@ export interface RecordRunSessionEventInput {
 }
 
 export async function startRunFlow(input: StartRunFlowInput): Promise<StartRunFlowResult> {
-  const requestedCwd =
-    input.workspaces.cwdFor(input.scopeId) ?? input.profileConfig.workspaces.default ?? '';
-  const workspace = await resolveWorkingDirectory(requestedCwd);
+  const scopeCwd = input.workspaces.cwdFor(input.scopeId);
+  const requestedCwd = scopeCwd ?? input.profileConfig.workspaces.default ?? '';
+  // f03p-infra-#3: a chat's own cwd (set by /cd or /ws use, maybe before the
+  // allowlist existed) must be under workspaces.roots; the profile default is
+  // the owner's own choice and is not re-checked.
+  const workspace = await resolveWorkingDirectory(
+    requestedCwd,
+    scopeCwd ? { roots: input.profileConfig.workspaces.roots } : {},
+  );
   if (!workspace.ok) {
     return {
       ok: false,
@@ -201,6 +207,8 @@ export async function startRunFlow(input: StartRunFlowInput): Promise<StartRunFl
               .filter((path): path is string => Boolean(path))
           : undefined,
       stopGraceMs: input.stopGraceMs,
+      // f03p-infra-#2: settings.json tokens / owner passthrough only for the owner.
+      ownerRun: input.access.reason === 'owner',
       observability: input.observability,
     });
   } catch (err) {

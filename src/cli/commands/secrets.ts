@@ -95,7 +95,7 @@ export async function runSecretsSet(
     process.exit(1);
   }
   await setAppSecret(appId, plaintext, opts);
-  console.log(`✓ 已加密存到 ~/.lark-channel/secrets.enc`);
+  console.log(`✓ 已加密存到数据目录（~/.aiducat 或旧的 ~/.lark-channel）下该 profile 的 secrets.enc`);
 }
 
 export async function runSecretsList(opts: SecretProfileOptions = {}): Promise<void> {
