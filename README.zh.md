@@ -56,9 +56,9 @@ pnpm build                         # 改过代码后重新构建
 node bin/lark-channel-bridge.mjs run
 ```
 
-首次运行会做三件事：渲染绑定二维码 → 让你扫码并选择/创建 PersonalAgent 应用 → 把配置写入 `~/.lark-channel/config.json`。
+首次运行会做三件事：渲染绑定二维码 → 让你扫码并选择/创建 PersonalAgent 应用 → 把配置写入 `~/.aiducat/config.json`（f0.3+ 之前的机器沿用 `~/.lark-channel`，见下文「数据目录与迁移」）。
 
-想直接敲 `aiduCAT …`：`pnpm setup` 后执行 `pnpm link --global`（或 `alias aiduCAT="node $PWD/bin/lark-channel-bridge.mjs"`）。入口文件名 `bin/lark-channel-bridge.mjs` 和数据目录 `~/.lark-channel` 沿用上游命名，暂未改名（改名需要迁移，见 CHANGELOG）。
+想直接敲 `aiduCAT …`：`pnpm setup` 后执行 `pnpm link --global`（或 `alias aiduCAT="node $PWD/bin/lark-channel-bridge.mjs"`）。入口文件名 `bin/lark-channel-bridge.mjs` 和服务名沿用上游命名；数据目录 f0.3+ 起改为 `~/.aiducat`，旧目录 `~/.lark-channel` 兼容读取，用 `aiduCAT migrate-home` 迁移。
 
 可选环境变量（写在 bot 的服务环境里）：
 
@@ -80,7 +80,7 @@ node bin/lark-channel-bridge.mjs run
 | `/status` | 六行状态卡：会话 id、模型 · 强度 · 🗜️ 压缩点、权限/owner、lark-cli/运行/队列、🚩 会话开始时间 · 时长 · 消息数、⏳ 上下文与 token 统计 |
 | `/model` | 查看 / 切换模型与推理强度（支持任意 gateway combo id；`/model default` 还原默认；非 Claude 模型标「经网关翻译」，不传强度）（管理员） |
 | `/resume` | 列出并恢复本工作目录的历史会话 |
-| `/cd <path>` | 切换工作目录（管理员；拒绝 `~/.ssh`、`~/.claude`、`~/.lark-channel`、`/etc` 等凭据/系统目录及其子目录） |
+| `/cd <path>` | 切换工作目录（管理员；拒绝 `~/.ssh`、`~/.claude`、`~/.aiducat`、`~/.lark-channel`、`/etc` 等凭据/系统目录及其子目录） |
 | `/ws` | 管理命名工作区：`list` / `save <name>` / `use <name>` / `remove <name>`（管理员） |
 | `/config` | 偏好、访问控制与身份策略（管理员） |
 | `/timeout [N\|off]` | 设置会话空闲超时 |
@@ -105,6 +105,7 @@ aiduCAT restart
 aiduCAT ps
 aiduCAT kill <id|#>
 aiduCAT ui               # 本地 web 控制台
+aiduCAT migrate-home --dry-run   # 数据目录 ~/.lark-channel → ~/.aiducat（先停服务；去掉 --dry-run 正式迁移）
 aiduCAT secrets set --app-id <id>
 ```
 
@@ -135,7 +136,9 @@ aiduCAT secrets set --app-id <id>
 - 新增 profile 级功能开关 `features`（会议 / Web 控制台 / Codex / CoT），关掉的模块不加载，命令在 `/help` 隐藏并回「此功能未开启」；默认全开
 - 会议、CoT、Codex、Web 控制台改为按需加载，启动加载的代码减少约 46%
 - `unrecognized_model` 提示每个模型只记一次
-- 基础设施（优雅重启、重启自动续跑、数据目录迁移 `~/.aiducat`、token 仅 owner、权限自收紧、`/cd` 白名单）见 CHANGELOG
+- 优雅重启：停服务时先等在途轮次跑完（`shutdownDrainMinutes`，默认 10 分钟）；被重启打断的轮次 10 分钟内自动「接着刚才的继续」一次
+- 数据目录改为 `~/.aiducat`，`aiduCAT migrate-home [--dry-run]` 一键迁移，旧目录不动
+- `settings.json` 里的 token 只给 owner 的轮次；启动时数据目录自收紧 0700/0600；`/cd` 可选白名单 `workspaces.roots`
 
 完整明细见 [CHANGELOG.md](./CHANGELOG.md)。
 
@@ -186,7 +189,7 @@ Cloud-doc comments use the DM allowlist: 云文档评论与私聊同一白名单
 
 每个 profile 使用 profile-local lark-cli directory：身份与凭据落在该 profile 自己的目录内。
 
-每个 profile 使用独立的**当前 profile 的 lark-cli 目录**：`~/.lark-channel/profiles/<profile>/lark-cli`。agent 进程会拿到指向该目录的 `LARKSUITE_CLI_CONFIG_DIR`，因此一个 profile 里的个人授权不会被另一个 profile 共享。默认策略 `bot-only`；`/config` 可把已授权用户切到 `user-default`。`/status` 显示摘要（`lark-cli: app` / `lark-cli: user-ready`）。
+每个 profile 使用独立的**当前 profile 的 lark-cli 目录**：`~/.aiducat/profiles/<profile>/lark-cli`。agent 进程会拿到指向该目录的 `LARKSUITE_CLI_CONFIG_DIR`，因此一个 profile 里的个人授权不会被另一个 profile 共享。默认策略 `bot-only`；`/config` 可把已授权用户切到 `user-default`。`/status` 显示摘要（`lark-cli: app` / `lark-cli: user-ready`）。
 
 这套 **lark-cli 身份策略**是按 profile 隔离的，不是全局的。
 
@@ -196,7 +199,7 @@ Cloud-doc comments use the DM allowlist: 云文档评论与私聊同一白名单
 
 ### 多 Provider（多网关）配置
 
-`/model` 卡支持三类下拉（Provider / Model / Effort）。默认网关走服务环境变量（`ANTHROPIC_BASE_URL` / `ANTHROPIC_API_KEY`）；额外的 provider 写在 `~/.lark-channel/config.json` 的 `profiles.<name>.modelProviders`：
+`/model` 卡支持三类下拉（Provider / Model / Effort）。默认网关走服务环境变量（`ANTHROPIC_BASE_URL` / `ANTHROPIC_API_KEY`）；额外的 provider 写在 `~/.aiducat/config.json`（旧机器为 `~/.lark-channel/config.json`） 的 `profiles.<name>.modelProviders`：
 
 ```json
 {
@@ -276,6 +279,12 @@ export ANTHROPIC_API_KEY="sk-ant-..."
 
 每个 profile 可通过 `workspaces.default` 定义默认工作目录。`/cd` 切换当前目录并重置会话；`/ws` 保存并复用命名工作区（`/ws list`、`/ws save <name>`、`/ws use <name>`、`/ws remove <name>`）。工作目录只是 agent 的当前目录，不是文件系统沙箱 —— 实际文件访问仍取决于本地 agent 进程及其权限模式。
 
+可选白名单 `workspaces.roots`（绝对路径或 `~/…`）：配了以后 `/cd`、`/ws use` 和会话的工作目录必须在其中某个目录下，否则回「这个目录不在允许的工作目录范围内」；黑名单照样生效，`workspaces.default` 不检查。不配 = 只有黑名单（默认）。
+
+```json
+{ "workspaces": { "default": "~/proj/main", "roots": ["~/proj", "/srv/work"] } }
+```
+
 ### 权限（permissions）
 
 访问由标准的 `"permissions"` 块控制。**不写 = `workspace`**；`full` 只能由 owner 在配置文件里显式写：
@@ -295,6 +304,14 @@ export ANTHROPIC_API_KEY="sk-ant-..."
 - agent 子进程的环境变量是白名单：PATH/HOME/LANG/LC_*/代理/证书，Claude 另给 `ANTHROPIC_*`/`CLAUDE_*`，Codex 另给 `OPENAI_*`/`CODEX_*`。服务环境里其他变量（如 `AIDU_10ROUTER_URL`、`SSH_AUTH_SOCK`）要在 `agentEnv.passthrough` 里显式放行。
 - 群里默认不显示工具调用，`preferences.showToolCallsInGroups: true` 可打开。
 - 超时：`preferences.runIdleTimeoutMinutes`（默认 15 分钟无输出即停）、`preferences.runToolTimeoutMinutes`（单个工具默认最长 30 分钟）。重启后 10 分钟内的排队消息会自动重放，更早的回一句「请重发」；在途卡片标「服务重启，请重发」。
+- 优雅重启：收到停止信号后不接新轮次，先等在途轮次跑完，最多 `preferences.shutdownDrainMinutes` 分钟（默认 10，`0` = 立即停）；期间新消息记下，重启后自动处理。被打断的轮次若 10 分钟内重启完成，会在同一会话里自动发一次「（服务重启，接着刚才的继续）」，只续一次。systemd 单元需要 `KillMode=mixed` 和 `TimeoutStopSec=660`（`aiduCAT start` 安装的单元已自带，手写的要自己加）。
+- token 只给 owner：`~/.claude/settings.json` 里 `env` 的凭据（`GH_TOKEN`、`CLOUDFLARE_*` 等）只在 owner 发起的轮次里可用；别人发起的轮次会被置空（`ANTHROPIC_*`/`CLAUDE_*` 保留）。owner 体验不变。
+
+### 数据目录与迁移（migrate-home）
+
+- f0.3+ 起数据目录是 `~/.aiducat`。只有旧 `~/.lark-channel` 的机器照常用旧目录（启动时提示一行）；两个都在时用新的；`LARK_CHANNEL_HOME` 最优先。
+- 迁移：先停服务 → `aiduCAT migrate-home --dry-run` 看计划 → `aiduCAT migrate-home`。会复制全部内容、改写配置里指向旧目录的路径、校验（含 keystore 在新位置能解密）后再改名到位；`~/.aiducat-workspaces` 链接到旧工作目录，会话照常续。**旧目录不动**，确认没问题后再手动删除。
+- 启动时数据目录自动收紧为目录 0700、文件 0600。
 
 ### 功能开关（features）
 

@@ -18,13 +18,14 @@ aiduCAT 的版本号用 `f` 前缀（f0.1、f0.2+ …），`package.json` 里是
 - **`[claude-code:unrecognized_model]` 提示每个模型每个进程只记一次**：网关模型（如 Gemini-3.8-Flash）每轮都会触发这条 Claude Code 官方说明的提示，f0.3.1 已降为 info，但每轮仍写一行；现在同一模型只记第一次。没有用 `modelOverrides` 消掉它，因为那会让 Claude Code 把 Gemini 当成某个 Claude 模型（effort/thinking/窗口都跟着变）。
 - 删除没人引用的 `src/agent/index.ts`；模型 logo 表在 cwd 不是仓库根时也能从 `dist/` 找到。
 
-### 基础设施（X 路，占位，合并时补全）
-- 优雅重启：收到停止信号先等在途轮次跑完（有上限）再退出。
-- 重启自动续跑：被重启打断的轮次 10 分钟内自动用「继续」续跑一次。
-- 数据目录迁移 `~/.lark-channel` → `~/.aiducat`（带 dry-run 迁移命令，旧目录兼容读取）。
-- `settings.json` 里的 token 仅在 owner 发起的运行中注入（非 owner 拿不到）。
-- 权限自收紧：启动时把 `profiles/`、`registry/` 等收紧为 0700/0600。
-- `/cd` 可选白名单 `workspaces.roots`（默认仍是黑名单，体验不变）。
+### 基础设施（X 路）
+- **优雅重启**：收到 SIGTERM/SIGINT（`systemctl --user restart/stop`）后不再接新轮次，先等在途轮次跑完再退出，最多等 `preferences.shutdownDrainMinutes` 分钟（默认 10，`0` = 立即停 = 旧行为，上限 60）。排空期间新来的消息记进 run journal，每个会话回一次「⏳ 服务正在重启，这条消息已记下，重启后会自动接着处理」，重启后自动接着处理；排空期间 `/stop` 的轮次不会被续跑。systemd 单元需要 `KillMode=mixed`（SIGTERM 只发给 bridge，不直接杀它跑着的 agent）和 `TimeoutStopSec=660`（比排空上限长），`aiduCAT` 安装的单元已自带；手写的单元要自己加。
+- **重启自动续跑**：被重启打断的轮次（排空超时或 agent 被一起杀掉），如果服务 10 分钟内回来、会话能恢复，就在**同一个 Claude 会话**里自动发一次「（服务重启，接着刚才的继续）」：旧卡片标「🔄 服务重启后自动继续（见下一张卡片）」，新卡片接着答。只续一次（续跑那轮再被打断就回「请重发」），超过 10 分钟或会话没了也回「请重发」。journal 只记消息 id 等元数据，不存原话。
+- **数据目录 `~/.lark-channel` → `~/.aiducat`**：新装默认 `~/.aiducat`；只有旧目录的机器照常用旧目录（启动时提示一行），两个都有时新的优先；`LARK_CHANNEL_HOME` 仍然最优先。迁移命令 `aiduCAT migrate-home [--dry-run] [--from <dir>] [--to <dir>]`：先停服务；复制全部内容（保留权限和时间）→ 改写小配置文件里指向旧目录的绝对路径（日志、媒体逐字节复制不改）→ 在临时目录里校验（逐字节比对、JSON 能解析、keystore 在新位置能解密）→ 改名到位；`~/.aiducat-workspaces` 做成指向旧工作目录的链接，会话 cwd 不变、Claude 会话照常续。**旧目录一字不动**；旧目录的 bridge 还活着或目标已有内容时拒绝。命令按需加载，不进启动包。`/cd` 黑名单同时拒绝 `~/.aiducat` 和 `~/.lark-channel`。
+- **`settings.json` 里的 token 只给 owner 的轮次**：`~/.claude/settings.json` 的 `env`（如 `GH_TOKEN`、`CLOUDFLARE_*`、`AIDU_*_TOKEN`）Claude Code 会注入给所有工具。现在非 owner 发起的轮次额外带一个 `--settings` 临时文件（0600）把这些凭据键置空（`ANTHROPIC_*`/`CLAUDE_*` 保留，否则 Claude 无法应答），并设 `CLAUDE_CODE_SUBPROCESS_ENV_SCRUB=1`、禁止 Read/Edit 凭据文件。**owner（猴哥/嘟嘟）的轮次零变化**，`gh`/Cloudflare 照常可用。只读键名，不读值，不改 summer 上的 settings.json。限制：给非 owner 开 `full` 权限时仍能直接 cat 文件，所以非 owner 保持 `workspace`。
+- **权限自收紧**：启动时后台把数据目录收紧为目录 0700、文件 0600（带执行位的如 `secrets-getter` 为 0700）；幂等、不跟随链接、失败不阻塞启动；数据目录误指 `~` 或 `/` 时不动；`<数据目录>-workspaces` 不动。
+- **`/cd` 可选白名单 `workspaces.roots`**：profile 里 `"workspaces": { "roots": ["~/proj", "/srv/work"] }`（绝对路径或 `~/…`）后，`/cd`、`/ws use` 和会话自己的 cwd 必须在其中某个目录下（按真实路径判断，黑名单照样生效），否则回「这个目录不在允许的工作目录范围内」；profile 的 `workspaces.default` 是 owner 自己定的，不检查。不配 = 原行为（只有黑名单）。
+- 与功能开关的交叉：四个开关全关时，优雅重启、自动续跑、migrate-home 均不受影响；`features.cot=false` 时自动续跑的卡片照常（不发 CoT 过程消息）；migrate-home 原样保留 `features`、`workspaces.roots`、`shutdownDrainMinutes`（f03p-fix 测试）。
 
 ### 设计如此（不改）
 - **keystore 同用户可解**：`secrets.enc` 用同目录 `.keystore.key`（0600）加密，防的是别的用户和误传文件；同一系统用户下的进程（包括 agent 自己）能解开，这是本机单用户部署的取舍。

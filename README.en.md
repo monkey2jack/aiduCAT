@@ -56,9 +56,9 @@ pnpm build                         # rebuild after code changes
 node bin/lark-channel-bridge.mjs run
 ```
 
-The first run renders a binding QR code, lets you scan and pick/create a PersonalAgent app, then writes `~/.lark-channel/config.json`.
+The first run renders a binding QR code, lets you scan and pick/create a PersonalAgent app, then writes `~/.aiducat/config.json` (machines set up before f0.3+ keep `~/.lark-channel`, see "Data dir and migration" below).
 
-To type `aiduCAT …` directly: run `pnpm setup`, then `pnpm link --global` (or `alias aiduCAT="node $PWD/bin/lark-channel-bridge.mjs"`). The entry file `bin/lark-channel-bridge.mjs` and the data dir `~/.lark-channel` keep the upstream names for now (renaming needs a migration, see CHANGELOG).
+To type `aiduCAT …` directly: run `pnpm setup`, then `pnpm link --global` (or `alias aiduCAT="node $PWD/bin/lark-channel-bridge.mjs"`). The entry file `bin/lark-channel-bridge.mjs` and the service names keep the upstream names; since f0.3+ the data dir is `~/.aiducat` — the old `~/.lark-channel` is still read, and `aiduCAT migrate-home` moves it.
 
 Optional environment variables (in the bot's service environment):
 
@@ -80,7 +80,7 @@ Optional environment variables (in the bot's service environment):
 | `/status` | Six-line status card: session id, model · effort · 🗜️ compact point, permissions/owner, lark-cli/run/queue, 🚩 session start · age · message counts, ⏳ context and token stats |
 | `/model` | Show / switch model and reasoning effort (any gateway combo id; `/model default` restores; non-Claude models are marked "translated by gateway" and get no effort flag) (admin) |
 | `/resume` | List and resume past sessions for this working directory |
-| `/cd <path>` | Switch working directory (admin; refuses credential/system dirs such as `~/.ssh`, `~/.claude`, `~/.lark-channel`, `/etc`, including subtrees) |
+| `/cd <path>` | Switch working directory (admin; refuses credential/system dirs such as `~/.ssh`, `~/.claude`, `~/.aiducat`, `~/.lark-channel`, `/etc`, including subtrees) |
 | `/ws` | Named workspaces: `list` / `save <name>` / `use <name>` / `remove <name>` (admin) |
 | `/config` | Preferences, access control and identity policy (admin) |
 | `/timeout [N\|off]` | Session idle timeout |
@@ -105,6 +105,7 @@ aiduCAT restart
 aiduCAT ps
 aiduCAT kill <id|#>
 aiduCAT ui               # local web console
+aiduCAT migrate-home --dry-run   # data dir ~/.lark-channel → ~/.aiducat (stop the service first; drop --dry-run to migrate)
 aiduCAT secrets set --app-id <id>
 ```
 
@@ -135,7 +136,9 @@ One card, top to bottom:
 - New per-profile `features` switches (meeting / web console / Codex / CoT): a module that is off is not loaded, its commands are hidden from `/help` and answer 「此功能未开启」 (feature not enabled); all on by default
 - Meeting, CoT, Codex and the web console load on demand; code loaded at startup down ~46%
 - The `unrecognized_model` notice is logged once per model
-- Infrastructure (graceful restart, auto-resume after restart, data dir moves to `~/.aiducat`, owner-only token, self-tightening permissions, `/cd` allowlist): see CHANGELOG
+- Graceful restart: stopping the service first lets in-flight rounds finish (`shutdownDrainMinutes`, default 10 min); a round cut off by a restart is continued once automatically if the service is back within 10 minutes
+- Data dir is now `~/.aiducat`; `aiduCAT migrate-home [--dry-run]` migrates in one step and never touches the old dir
+- Tokens in `settings.json` only reach the owner's rounds; the data dir self-tightens to 0700/0600 at start; optional `/cd` allowlist `workspaces.roots`
 
 Full details in [CHANGELOG.md](./CHANGELOG.md).
 
@@ -184,7 +187,7 @@ Cloud-doc comments use the DM allowlist: only owner / allowedUsers / admins can 
 
 ### lark-cli identity policy
 
-Each profile uses a profile-local lark-cli directory at `~/.lark-channel/profiles/<profile>/lark-cli`. The agent process receives `LARKSUITE_CLI_CONFIG_DIR` for that directory, so personal authorization in one profile is never shared with another. The default policy is `bot-only`; `/config` can switch an authorized user to `user-default`. `/status` shows the summary (`lark-cli: app` / `lark-cli: user-ready`).
+Each profile uses a profile-local lark-cli directory at `~/.aiducat/profiles/<profile>/lark-cli`. The agent process receives `LARKSUITE_CLI_CONFIG_DIR` for that directory, so personal authorization in one profile is never shared with another. The default policy is `bot-only`; `/config` can switch an authorized user to `user-default`. `/status` shows the summary (`lark-cli: app` / `lark-cli: user-ready`).
 
 This **lark-cli identity policy** is per profile, not global.
 
@@ -194,7 +197,7 @@ Only runs started by the owner get a lark-cli config. Runs started by anyone els
 
 ### Multi-provider setup
 
-The `/model` card offers three dropdowns (Provider / Model / Effort). The default gateway comes from service env (`ANTHROPIC_BASE_URL` / `ANTHROPIC_API_KEY`); extra providers live in `~/.lark-channel/config.json` under `profiles.<name>.modelProviders`:
+The `/model` card offers three dropdowns (Provider / Model / Effort). The default gateway comes from service env (`ANTHROPIC_BASE_URL` / `ANTHROPIC_API_KEY`); extra providers live in `~/.aiducat/config.json` (`~/.lark-channel/config.json` on older machines) under `profiles.<name>.modelProviders`:
 
 ```json
 {
@@ -273,6 +276,12 @@ The panel header shows a vendor icon (OpenAI/Claude/Gemini, 30 vendors). Feishu 
 
 Each profile may define a default workspace through `workspaces.default`. `/cd` switches the current directory and resets the session; `/ws` saves and reuses named workspaces (`/ws list`, `/ws save <name>`, `/ws use <name>`, `/ws remove <name>`). The directory is the agent's current working directory, not a filesystem sandbox — file access still depends on the local agent process and its permission mode.
 
+Optional allowlist `workspaces.roots` (absolute paths or `~/…`): when set, `/cd`, `/ws use` and a chat's working directory must sit under one of them, otherwise the bot replies that the directory is outside the allowed roots; the denylist still applies and `workspaces.default` is not checked. Unset = denylist only (default).
+
+```json
+{ "workspaces": { "default": "~/proj/main", "roots": ["~/proj", "/srv/work"] } }
+```
+
 ### Permissions
 
 Access is controlled by the canonical `"permissions"` block. **Omitted = `workspace`**; `full` must be written explicitly by the owner:
@@ -292,6 +301,14 @@ Access is controlled by the canonical `"permissions"` block. **Omitted = `worksp
 - The agent subprocess env is an allowlist: PATH/HOME/LANG/LC_*/proxy/certs, plus `ANTHROPIC_*`/`CLAUDE_*` for Claude or `OPENAI_*`/`CODEX_*` for Codex. Any other service variable (e.g. `AIDU_10ROUTER_URL`, `SSH_AUTH_SOCK`) must be listed in `agentEnv.passthrough`.
 - Tool calls are hidden in groups by default; set `preferences.showToolCallsInGroups: true` to show them.
 - Timeouts: `preferences.runIdleTimeoutMinutes` (default 15 min without output), `preferences.runToolTimeoutMinutes` (one tool call, default 30 min). After a restart, queued messages younger than 10 minutes are replayed, older ones get a "please resend"; in-flight cards are marked "service restarted, please resend".
+- Graceful restart: on a stop signal the bridge takes no new rounds and waits for the ones in flight, at most `preferences.shutdownDrainMinutes` minutes (default 10, `0` = stop at once); messages arriving meanwhile are kept and handled after the restart. A round that was cut off is continued once, in the same session, with "（服务重启，接着刚才的继续）" if the restart took ≤ 10 minutes. systemd units need `KillMode=mixed` and `TimeoutStopSec=660` (units installed by `aiduCAT start` have them; add them to hand-written units).
+- Owner-only tokens: credentials in the `env` block of `~/.claude/settings.json` (`GH_TOKEN`, `CLOUDFLARE_*`, …) are only available in rounds the owner starts; rounds started by anyone else get them blanked (`ANTHROPIC_*`/`CLAUDE_*` are kept). Nothing changes for the owner.
+
+### Data dir and migration (migrate-home)
+
+- Since f0.3+ the data dir is `~/.aiducat`. A machine that only has the old `~/.lark-channel` keeps using it (one notice line at start); when both exist the new one wins; `LARK_CHANNEL_HOME` still wins over both.
+- To migrate: stop the service → `aiduCAT migrate-home --dry-run` to see the plan → `aiduCAT migrate-home`. It copies everything, rewrites paths that point into the old dir, verifies (including that the keystore decrypts at the new place), then renames into place; `~/.aiducat-workspaces` links to the old workspaces so sessions resume. **The old dir is never touched** — delete it by hand once you are happy.
+- At start the data dir is tightened to 0700 directories / 0600 files.
 
 ### Feature switches (features)
 

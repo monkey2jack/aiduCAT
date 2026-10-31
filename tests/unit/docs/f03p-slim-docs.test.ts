@@ -25,7 +25,7 @@ describe('f03p-slim-#9 version f0.3+ (package 0.3.2) docs', () => {
     }
   });
 
-  it('f03p-slim-#9 CHANGELOG has an f0.3+ section (Y done, X placeholders, by-design notes)', async () => {
+  it('f03p-slim-#9 CHANGELOG has an f0.3+ section (Y and X, by-design notes)', async () => {
     const md = await read('CHANGELOG.md');
     const start = md.indexOf('## f0.3+ ');
     expect(start).toBeGreaterThan(0);
