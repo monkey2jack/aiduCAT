@@ -3,6 +3,7 @@ import os from 'node:os';
 import { createInterface } from 'node:readline';
 import pkg from '../../../package.json';
 import type { AppPaths } from '../../config/app-paths';
+import { tightenDataDirPermissions } from '../../config/data-dir-perms';
 import { configureLogger, gcOldLogs, log, reportError } from '../../core/logger';
 import { createProcessErrorHandlers } from '../../core/process-errors';
 import { loadTelemetryAdapter, telemetry } from '../../core/telemetry';
@@ -93,6 +94,7 @@ async function runClassic(opts: StartOptions): Promise<void> {
   });
   const { cfg, configPath, appPaths } = runtime;
   configureLogger({ logsDir: appPaths.logsDir });
+  scheduleDataDirTightening(appPaths.rootDir);
   await loadTelemetryAdapter({
     version: pkg.version,
     appId: cfg.accounts.app.id,
@@ -138,6 +140,7 @@ async function runSupervisorConsole(opts: StartOptions): Promise<void> {
   const configPath = runtime.configPath;
   const appPaths = runtime.appPaths;
   configureLogger({ logsDir: appPaths.hostLogsDir });
+  scheduleDataDirTightening(appPaths.rootDir);
 
   // One supervisor per machine. If one is already running, print its console
   // URL and exit instead of launching a duplicate.
@@ -283,6 +286,18 @@ async function confirmStopRuntimeLockProcess(err: RuntimeLockConflictError): Pro
   } finally {
     rl.close();
   }
+}
+
+/**
+ * f03p-infra-#1: owner-only data dir (0700 dirs / 0600 files), in the
+ * background — it never delays going online and never fails the start.
+ */
+function scheduleDataDirTightening(rootDir: string): void {
+  void tightenDataDirPermissions(rootDir)
+    .then((r) => {
+      if (r.changed > 0 || r.failed > 0) log.info('perms', 'data-dir-tightened', { ...r });
+    })
+    .catch(() => undefined);
 }
 
 async function flushTelemetry(timeoutMs = 2000): Promise<void> {
