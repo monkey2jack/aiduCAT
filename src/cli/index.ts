@@ -2,6 +2,7 @@ import { Command } from 'commander';
 import pkg from '../../package.json';
 import { formatAgentPreflightDiagnostic, getAgentPreflightDiagnostic } from '../agent/preflight';
 import { runMigrate } from './commands/migrate';
+import { runMigrateHome } from './commands/migrate-home';
 import { runKillCli, runPs } from './commands/ps';
 import {
   runSecretsGet,
@@ -69,6 +70,21 @@ program
   .option('--agent <kind>', 'agent kind for legacy v1 profile migration (claude or codex)')
   .action(async (opts: { config?: string; profile?: string; agent?: string }) => {
     await runMigrate(opts);
+  });
+
+program
+  .command('migrate-home')
+  .description('Copy the data dir from the old ~/.lark-channel (or $LARK_CHANNEL_HOME) to ~/.aiducat: rewrites paths, verifies, never deletes the old dir. Stop the service first.')
+  .option('--dry-run', 'show the plan, write nothing')
+  .option('--from <dir>', 'source data dir (default: $LARK_CHANNEL_HOME or ~/.lark-channel)')
+  .option('--to <dir>', 'target data dir (default: ~/.aiducat)')
+  .action(async (opts: { dryRun?: boolean; from?: string; to?: string }) => {
+    try {
+      await runMigrateHome(opts);
+    } catch (err) {
+      console.error(`✗ ${err instanceof Error ? err.message : String(err)}`);
+      process.exit(1);
+    }
   });
 
 const profile = program
@@ -224,7 +240,7 @@ program
 
 const secrets = program
   .command('secrets')
-  .description('Manage the bridge\'s encrypted secret keystore (~/.lark-channel/secrets.enc)');
+  .description('Manage the bridge\'s encrypted secret keystore (<data dir>/profiles/<profile>/secrets.enc; data dir = ~/.aiducat, or the old ~/.lark-channel)');
 
 secrets
   .command('get')

@@ -2,7 +2,7 @@ import dns from 'node:dns';
 import os from 'node:os';
 import { createInterface } from 'node:readline';
 import pkg from '../../../package.json';
-import type { AppPaths } from '../../config/app-paths';
+import { legacyDataDirNotice, type AppPaths } from '../../config/app-paths';
 import { tightenDataDirPermissions } from '../../config/data-dir-perms';
 import { configureLogger, gcOldLogs, log, reportError } from '../../core/logger';
 import { createProcessErrorHandlers } from '../../core/process-errors';
@@ -293,6 +293,12 @@ async function confirmStopRuntimeLockProcess(err: RuntimeLockConflictError): Pro
  * background — it never delays going online and never fails the start.
  */
 function scheduleDataDirTightening(rootDir: string): void {
+  // f03p-infra-#4: still on the old ~/.lark-channel → say so once per start.
+  const notice = legacyDataDirNotice(rootDir);
+  if (notice) {
+    console.log(notice);
+    log.info('data-dir', 'legacy-in-use', { rootDir });
+  }
   void tightenDataDirPermissions(rootDir)
     .then((r) => {
       if (r.changed > 0 || r.failed > 0) log.info('perms', 'data-dir-tightened', { ...r });

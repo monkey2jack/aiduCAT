@@ -155,7 +155,7 @@ function classifyHighRiskWorkingDirectory(
  */
 const HOME_SENSITIVE = [
   '.ssh', '.gnupg', '.aws', '.azure', '.kube', '.docker', '.netrc',
-  '.lark-channel', '.lark-cli', '.claude', '.codex',
+  '.aiducat', '.lark-channel', '.lark-cli', '.claude', '.codex',
   join('.config', 'gh'), join('.config', 'gcloud'), join('.config', 'lark-cli'),
   join('Library', 'Keychains'),
 ];

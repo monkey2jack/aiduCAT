@@ -1,5 +1,6 @@
+import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 
 export interface ResolveAppPathsOptions {
   rootDir?: string;
@@ -43,8 +44,40 @@ export interface AppPaths {
 
 const DEFAULT_PROFILE = 'claude';
 
+/** f03p-infra-#4: the data dir is `~/.aiducat`; `~/.lark-channel` is the old name. */
+export const DATA_DIR_NAME = '.aiducat';
+export const LEGACY_DATA_DIR_NAME = '.lark-channel';
+
+/**
+ * f03p-infra-#4: default data root when neither `opts.rootDir` nor
+ * LARK_CHANNEL_HOME says otherwise. New installs get `~/.aiducat`; a machine
+ * that only has the old `~/.lark-channel` keeps using it (nothing moves on its
+ * own — `aiduCAT migrate-home` does that); once `~/.aiducat` exists it wins.
+ */
+export function defaultDataRootDir(home: string = homedir()): string {
+  const next = join(home, DATA_DIR_NAME);
+  if (existsSync(next)) return next;
+  const legacy = join(home, LEGACY_DATA_DIR_NAME);
+  if (existsSync(legacy)) return legacy;
+  return next;
+}
+
+/**
+ * f03p-infra-#4: one line to print at start when the default resolution fell
+ * back to the old `~/.lark-channel` (never when LARK_CHANNEL_HOME was set on
+ * purpose). undefined = nothing to say.
+ */
+export function legacyDataDirNotice(rootDir: string, env: NodeJS.ProcessEnv = process.env): string | undefined {
+  if (env.LARK_CHANNEL_HOME?.trim()) return undefined;
+  if (resolve(rootDir) !== resolve(join(homedir(), LEGACY_DATA_DIR_NAME))) return undefined;
+  return (
+    `ℹ️ 数据目录还在旧位置 ${rootDir}（照常使用，不影响运行）。` +
+    `想换到 ~/${DATA_DIR_NAME}：先停服务，运行 \`aiduCAT migrate-home --dry-run\` 看计划，再 \`aiduCAT migrate-home\`。`
+  );
+}
+
 export function resolveAppPaths(opts: ResolveAppPathsOptions = {}): AppPaths {
-  const rootDir = opts.rootDir ?? process.env.LARK_CHANNEL_HOME ?? join(homedir(), '.lark-channel');
+  const rootDir = opts.rootDir ?? process.env.LARK_CHANNEL_HOME ?? defaultDataRootDir();
   const profile = normalizeProfileName(opts.profile ?? DEFAULT_PROFILE);
   const profileDir = join(rootDir, 'profiles', profile);
   const registryDir = join(rootDir, 'registry');
