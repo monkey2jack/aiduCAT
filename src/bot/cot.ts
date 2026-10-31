@@ -2,7 +2,6 @@ import type { AgentEvent } from '../agent/types';
 import type { CotMessagesMode, TenantBrand } from '../config/schema';
 import { log } from '../core/logger';
 import { toolHeaderText } from '../card/tool-render';
-import type { RunState } from '../card/run-state';
 
 const ENDPOINTS: Record<TenantBrand, string> = {
   feishu: 'https://open.feishu.cn',
