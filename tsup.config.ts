@@ -9,7 +9,9 @@ export default defineConfig([
     platform: 'node',
     clean: true,
     sourcemap: false,
-    splitting: false,
+    // f03p-slim-#7: optional modules (meeting, CoT, Codex, web console) are
+    // dynamic imports; splitting turns them into chunks loaded on demand.
+    splitting: true,
     dts: false,
     // Inline the Vite-built console (src/ui/generated/index.html) as a string.
     esbuildOptions(options) {
