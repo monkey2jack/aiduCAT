@@ -2,7 +2,6 @@ import { Command } from 'commander';
 import pkg from '../../package.json';
 import { formatAgentPreflightDiagnostic, getAgentPreflightDiagnostic } from '../agent/preflight';
 import { runMigrate } from './commands/migrate';
-import { runMigrateHome } from './commands/migrate-home';
 import { runKillCli, runPs } from './commands/ps';
 import {
   runSecretsGet,
@@ -80,6 +79,8 @@ program
   .option('--to <dir>', 'target data dir (default: ~/.aiducat)')
   .action(async (opts: { dryRun?: boolean; from?: string; to?: string }) => {
     try {
+      // f03p-infra-#4: loaded only when used (keeps the startup bundle small).
+      const { runMigrateHome } = await import('./commands/migrate-home');
       await runMigrateHome(opts);
     } catch (err) {
       console.error(`✗ ${err instanceof Error ? err.message : String(err)}`);
