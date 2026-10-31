@@ -2,7 +2,33 @@
 
 aiduCAT 的版本号用 `f` 前缀（f0.1、f0.2+ …），`package.json` 里是对应的 semver。按 git log 与 tag 整理；日期为提交日期（CST）。
 
-> **tag 说明**：仓库里的 `f0.2+`、`f0.2++`、`v0.2.1` 三个 tag 目前都指向 `6fa62f8`（package 0.2.1）。真正的 f0.2+ 发布提交是 `f01fcd2`，f0.2++ 发布提交是 `c7ff90d`（0.2.2）。下面按真实发布提交记录；tag 修正（需要强推 tag）待维护者决定。
+> **tag 说明**：`f0.2++` 原先误指 `6fa62f8`（package 0.2.1），**已于 2026-10-31 修正**为真实发布提交 `c7ff90d`（0.2.2）。`f0.2+`、`v0.2.1` 核实后保持 `6fa62f8`：f0.2+ 的 GitHub Release 于 2026-10-20 01:17 从 main 发布，当时 main 的头部就是 `6fa62f8`（package 0.2.1）；版本号提交 `f01fcd2` 与它只差文档和一个测试，没有代码差别。
+
+## f0.3+ （未发布，package 0.3.2）
+
+基于 f0.3.1（`bd79bcb`）。嘟嘟和猴哥自己用，体验优先：不用的模块可以关掉，收紧不能让日常用起来更麻烦。
+
+### 功能开关（Y 路）
+- **profile 级 `features: {meeting, webConsole, codex, cot}`**：不写 = 全开（行为不变）；只有显式 `false` 才关。关掉的模块**不加载**（懒加载），相关命令在 `/help` 里隐藏，调用时回「此功能未开启」：
+  - `meeting`：`/meeting`、会议推送与自动入会、控制台会议接口；即使 `meeting.enabled: true` 也不创建会议管理器。
+  - `webConsole`：`run/start --web-ui` 拒绝启动、`aiduCAT ui` 拒绝、`/config` 不显示控制台那一行。
+  - `codex`：`agentKind: codex` 的 profile 拒绝启动；`/resume` 不读 Codex 历史。
+  - `cot`：CoT 过程消息强制关闭（偏好值保留，重新打开后恢复），`/config` 不显示「COT 过程消息」选项。
+- **懒加载 + 拆包**：会议、CoT、Codex、Web 控制台（含约 430KB 内嵌页面）改为按需 `import()`，构建开启 code splitting。启动时加载的代码 1,205,897 B → 655,424 B（−46%）；`--version` 进程 heapUsed 中位数 38.0 → 36.0 MB。默认配置下（会议没启用、CoT 偏好关）这些模块本来就不会被用到，现在也不再被加载。
+- **`[claude-code:unrecognized_model]` 提示每个模型每个进程只记一次**：网关模型（如 Gemini-3.8-Flash）每轮都会触发这条 Claude Code 官方说明的提示，f0.3.1 已降为 info，但每轮仍写一行；现在同一模型只记第一次。没有用 `modelOverrides` 消掉它，因为那会让 Claude Code 把 Gemini 当成某个 Claude 模型（effort/thinking/窗口都跟着变）。
+- 删除没人引用的 `src/agent/index.ts`；模型 logo 表在 cwd 不是仓库根时也能从 `dist/` 找到。
+
+### 基础设施（X 路，占位，合并时补全）
+- 优雅重启：收到停止信号先等在途轮次跑完（有上限）再退出。
+- 重启自动续跑：被重启打断的轮次 10 分钟内自动用「继续」续跑一次。
+- 数据目录迁移 `~/.lark-channel` → `~/.aiducat`（带 dry-run 迁移命令，旧目录兼容读取）。
+- `settings.json` 里的 token 仅在 owner 发起的运行中注入（非 owner 拿不到）。
+- 权限自收紧：启动时把 `profiles/`、`registry/` 等收紧为 0700/0600。
+- `/cd` 可选白名单 `workspaces.roots`（默认仍是黑名单，体验不变）。
+
+### 设计如此（不改）
+- **keystore 同用户可解**：`secrets.enc` 用同目录 `.keystore.key`（0600）加密，防的是别的用户和误传文件；同一系统用户下的进程（包括 agent 自己）能解开，这是本机单用户部署的取舍。
+- **`aiduCAT ui` 在本机打印完整 URL（含 token）**：只在本机终端输出，用来打开控制台；日志、journald 与飞书里的控制台地址都已打码（f0.3.1）。
 
 ## f0.3.1 （未发布，package 0.3.1）
 
@@ -82,7 +108,7 @@ aiduCAT 的版本号用 `f` 前缀（f0.1、f0.2+ …），`package.json` 里是
 - TPS 分母改为 agent 实际执行时间；Agent 消息在 run `done` 时计数。
 - Inception Labs（Mercury）厂商 logo。
 
-## f0.2+ — 2026-10-20（`f01fcd2`，package 0.1.2；后续 `6fa62f8` 合入 PR #1）
+## f0.2+ — 2026-10-20（tag `6fa62f8`，package 0.2.1；版本号提交 `f01fcd2`）
 
 - 修复：`/model` 切 Provider 后实际仍走默认网关（provider env 在 run-flow → executor → adapter 断链），合并社区 PR #1。
 - 修复：Provider 下拉选「默认网关」提交被静默丢弃。

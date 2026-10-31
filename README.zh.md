@@ -10,7 +10,7 @@
 >
 > 给 Claude Code / Codex CLI 穿上泡波流的飞书卡片：宣白纸面上灌一道深蓝流光，一只猫，零噪音。
 
-[![Version](https://img.shields.io/badge/version-f0.3.1-blue.svg)](https://github.com/monkey2jack/aiduCAT)
+[![Version](https://img.shields.io/badge/version-f0.3%2B-blue.svg)](https://github.com/monkey2jack/aiduCAT)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Node 20+](https://img.shields.io/badge/node-20.12%2B-brightgreen.svg)](https://nodejs.org/)
 [![Claude Code](https://img.shields.io/badge/agent-Claude%20Code%20%7C%20Codex-orange.svg)](https://docs.anthropic.com/en/docs/claude-code/quickstart)
@@ -130,12 +130,12 @@ aiduCAT secrets set --app-id <id>
 - **空跑**（agent 什么都没产出就退出）：直接显示红色报错卡和原因，提示重发
 - **超长 / 被拒**：正文超 25KB 时卡内截断并补发纯文本全文；飞书拒收卡片时先用严格卡（无图片链接、正文 12KB）重试，再不行发纯文本，最后发一句「卡片发送失败」
 
-## 更新日志（f0.3.1）
+## 更新日志（f0.3+）
 
-- 卡片被拒自动降级、答案清洗与 30KB 大小控制、SDK 节流更新不再 unhandledRejection、空跑保护真正生效、节流改 250ms
-- `/status` 数字全部改为真实值（上下文 = input + cache，统计重启不清零，🚩 取 Claude 会话记录首条时间）
-- 60% 自动压缩修复：10router 窗口改用 `AIDU_10ROUTER_TOKEN` 查询，查不到打 warn 并沿用 CLI `settings.json`
-- `/help` 列全 20 个命令；提示文案统一为 `aiduCAT …`；删除约 300 行死代码
+- 新增 profile 级功能开关 `features`（会议 / Web 控制台 / Codex / CoT），关掉的模块不加载，命令在 `/help` 隐藏并回「此功能未开启」；默认全开
+- 会议、CoT、Codex、Web 控制台改为按需加载，启动加载的代码减少约 46%
+- `unrecognized_model` 提示每个模型只记一次
+- 基础设施（优雅重启、重启自动续跑、数据目录迁移 `~/.aiducat`、token 仅 owner、权限自收紧、`/cd` 白名单）见 CHANGELOG
 
 完整明细见 [CHANGELOG.md](./CHANGELOG.md)。
 
@@ -295,6 +295,20 @@ export ANTHROPIC_API_KEY="sk-ant-..."
 - agent 子进程的环境变量是白名单：PATH/HOME/LANG/LC_*/代理/证书，Claude 另给 `ANTHROPIC_*`/`CLAUDE_*`，Codex 另给 `OPENAI_*`/`CODEX_*`。服务环境里其他变量（如 `AIDU_10ROUTER_URL`、`SSH_AUTH_SOCK`）要在 `agentEnv.passthrough` 里显式放行。
 - 群里默认不显示工具调用，`preferences.showToolCallsInGroups: true` 可打开。
 - 超时：`preferences.runIdleTimeoutMinutes`（默认 15 分钟无输出即停）、`preferences.runToolTimeoutMinutes`（单个工具默认最长 30 分钟）。重启后 10 分钟内的排队消息会自动重放，更早的回一句「请重发」；在途卡片标「服务重启，请重发」。
+
+### 功能开关（features）
+
+不用的模块可以按 profile 关掉。不写 `features` = 全开；只有显式 `false` 才关：
+
+```json
+{
+  "features": { "meeting": false, "webConsole": false, "codex": false, "cot": false }
+}
+```
+
+- 关掉的模块不加载（省启动内存），相关命令在 `/help` 里隐藏，调用时回「此功能未开启」。
+- `"meeting"`：`/meeting`、会议推送与自动入会；`"webConsole"`：`run/start --web-ui`、`aiduCAT ui`、`/config` 里的控制台那一行；`"codex"`：Codex profile 与 Codex 会话历史；`"cot"`：CoT 过程消息与 `/config` 里的选项（偏好值保留）。
+- 改完重启服务生效。
 
 ### 开发
 
