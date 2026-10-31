@@ -31,6 +31,9 @@ function loadKeys(): Partial<Record<VendorLogo, string>> {
     // (service runs with WorkingDirectory=repo root), then from this module.
     const candidates = [
       join(process.cwd(), 'assets', 'lark-logo-keys.json'),
+      // f03p-slim: built bundle lives in <repo>/dist/ → ../assets
+      join(dirname(fileURLToPath(import.meta.url)), '../assets/lark-logo-keys.json'),
+      // source tree (src/card/) → ../../assets
       join(dirname(fileURLToPath(import.meta.url)), '../../assets/lark-logo-keys.json'),
     ];
     for (const p of candidates) {
