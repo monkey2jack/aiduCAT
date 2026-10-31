@@ -231,7 +231,7 @@ class ManagedProfile {
       const next = nextRuntime.cfg;
       if (!isComplete(next)) throw new Error('config incomplete after change');
       assertReconnectAgentKindUnchanged(this.profileConfig.agentKind, nextRuntime.profileConfig.agentKind);
-      const nextAgent = createRuntimeAgent(nextRuntime.profileConfig, {
+      const nextAgent = await createRuntimeAgent(nextRuntime.profileConfig, {
         ...nextRuntime.appPaths,
         configPath: nextRuntime.configPath,
       });
@@ -359,7 +359,7 @@ export class Supervisor {
       });
     }
 
-    const agent = createRuntimeAgent(profileConfig, { ...appPaths, configPath });
+    const agent = await createRuntimeAgent(profileConfig, { ...appPaths, configPath });
     if (this.opts.runPreflight !== false) {
       const availability = await checkRuntimeAgentAvailability(agent);
       if (!availability.ok) throw availability.error;

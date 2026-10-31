@@ -10,8 +10,8 @@ import { createDefaultProfileConfig } from '../../../src/config/profile-schema.j
 import { createRuntimeProfileConfig } from '../../../src/runtime/profile-runtime.js';
 
 describe('start runtime agent factory', () => {
-  it('keeps Claude as the default runtime agent', () => {
-    const agent = createRuntimeAgent(
+  it('keeps Claude as the default runtime agent', async () => {
+    const agent = await createRuntimeAgent(
       createDefaultProfileConfig({
         agentKind: 'claude',
         accounts: appAccount(),
@@ -23,14 +23,14 @@ describe('start runtime agent factory', () => {
     expect(agent.displayName).toBe('Claude Code');
   });
 
-  it('creates CodexAdapter from canonical workspace permissions', () => {
+  it('creates CodexAdapter from canonical workspace permissions', async () => {
     const profile = createDefaultProfileConfig({
       agentKind: 'codex',
       accounts: appAccount(),
       codex: codexConfig(),
       permissions: { defaultAccess: 'workspace', maxAccess: 'workspace' },
     });
-    const agent = createRuntimeAgent(profile, {
+    const agent = await createRuntimeAgent(profile, {
       profileDir: '/tmp/lark-channel-bridge/profiles/codex-e2e',
     });
 
@@ -46,8 +46,8 @@ describe('start runtime agent factory', () => {
     });
   });
 
-  it('creates a Codex runtime agent when an older profile has only a binary path', () => {
-    const agent = createRuntimeAgent(
+  it('creates a Codex runtime agent when an older profile has only a binary path', async () => {
+    const agent = await createRuntimeAgent(
       createDefaultProfileConfig({
         agentKind: 'codex',
         accounts: appAccount(),

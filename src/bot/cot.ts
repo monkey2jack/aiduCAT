@@ -249,16 +249,9 @@ export class CotPublisher {
   }
 }
 
-export function finalAnswerOnlyState(state: RunState): RunState {
-  return {
-    ...state,
-    blocks: state.finalText
-      ? [{ kind: 'text', content: state.finalText, streaming: false }]
-      : state.blocks.filter((b) => b.kind === 'text'),
-    reasoning: { content: '', active: false, segments: 0 },
-    footer: null,
-  };
-}
+// f03p-slim-#7: lives in card/run-state (the non-CoT reply path needs it
+// without loading this module); re-exported for existing callers.
+export { finalAnswerOnlyState } from '../card/run-state';
 
 export async function consumeCotEvents(
   events: AsyncIterable<AgentEvent>,

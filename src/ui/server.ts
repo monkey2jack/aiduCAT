@@ -3,6 +3,7 @@ import { randomBytes } from 'node:crypto';
 import type { AddressInfo } from 'node:net';
 import { log } from '../core/logger';
 import { readActiveProfile } from '../config/profile-store';
+import { FEATURE_OFF_REPLY, featureEnabled } from '../config/profile-schema';
 import type { MutableProfileState } from '../config/config-ops';
 import consoleHtml from './generated/index.html';
 import {
@@ -267,6 +268,24 @@ async function route(
   }
 
   // --- in-meeting agent (智能体入会) ---
+  // f03p-slim-#3: a profile with features.meeting=false has no meeting module
+  // (POSTs fail on their own: no manager is ever created for it).
+  if (g && (path === '/api/meetings' || path === '/api/meetings/preflight')) {
+    const profile = url.searchParams.get('profile') ?? (await readActiveProfile(deps.rootDir));
+    const pc = profile
+      ? (sup.controlsFor(profile)?.profileConfig ??
+        (await loadProfileState(profile, deps.rootDir).catch(() => undefined))?.profileConfig)
+      : undefined;
+    if (pc && !featureEnabled(pc, 'meeting')) {
+      sendJson(res, 200, {
+        available: false,
+        reason: FEATURE_OFF_REPLY,
+        sessions: [],
+        push: { hooked: false, received: 0 },
+      });
+      return;
+    }
+  }
   if (path === '/api/meetings' && g) {
     const profile = url.searchParams.get('profile') ?? (await readActiveProfile(deps.rootDir));
     if (!profile) throw new HttpError(400, 'no profile');

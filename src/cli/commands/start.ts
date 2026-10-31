@@ -7,7 +7,8 @@ import { configureLogger, gcOldLogs, log, reportError } from '../../core/logger'
 import { createProcessErrorHandlers } from '../../core/process-errors';
 import { loadTelemetryAdapter, telemetry } from '../../core/telemetry';
 import { maskConsoleUrl } from '../../ui/console-url';
-import { startUiServer } from '../../ui/server';
+// f03p-slim-#7: the web console server (and its ~430KB inlined page) is
+// imported only in --web-ui mode.
 import { readUiSidecar, removeUiSidecar, writeUiSidecar } from '../../ui/sidecar';
 import type { UiServerHandle } from '../../ui/types';
 import { Supervisor } from '../../runtime/supervisor';
@@ -17,6 +18,7 @@ import { stopProcessEntry, type StopProcessEntryResult } from './ps';
 import { cleanupTmpFiles } from '../../runtime/registry';
 import { RuntimeLockConflictError, type RuntimeLockMeta } from '../../runtime/locks';
 import { resolveProfileRuntime } from '../../runtime/profile-runtime';
+import { FEATURE_OFF_REPLY, featureEnabled } from '../../config/profile-schema';
 import { assertReconnectAgentKindUnchanged, createRuntimeAgent } from '../../runtime/agent-runtime';
 
 // Re-exported for existing tests that import these from this module.
@@ -137,6 +139,14 @@ async function runSupervisorConsole(opts: StartOptions): Promise<void> {
   const cfg = runtime.cfg;
   const configPath = runtime.configPath;
   const appPaths = runtime.appPaths;
+  // f03p-slim-#6: refuse before taking the host lock or starting anything.
+  if (!featureEnabled(runtime.profileConfig, 'webConsole')) {
+    console.error(
+      `${FEATURE_OFF_REPLY}：Web 控制台（profile「${appPaths.profile}」features.webConsole=false）。不带 --web-ui 运行即可。`,
+    );
+    process.exitCode = 1;
+    return;
+  }
   configureLogger({ logsDir: appPaths.hostLogsDir });
 
   // One supervisor per machine. If one is already running, print its console
@@ -165,6 +175,7 @@ async function runSupervisorConsole(opts: StartOptions): Promise<void> {
   // Single web console (host sidecar), backed by the supervisor.
   let uiServer: UiServerHandle | undefined;
   try {
+    const { startUiServer } = await import('../../ui/server');
     uiServer = await startUiServer({ supervisor, version: pkg.version, rootDir: appPaths.rootDir });
     await writeUiSidecar(appPaths.hostUiFile, uiServer, new Date().toISOString());
     // f031-sec-M2: stdout lands in journald / daemon logs — no token there.

@@ -58,7 +58,8 @@ import type {
   ProfileConfig,
   ProfileMode,
 } from '../config/profile-schema';
-import { effectiveLarkCliIdentity } from '../config/profile-schema';
+import type { FeatureName } from '../config/profile-schema';
+import { FEATURE_OFF_REPLY, effectiveLarkCliIdentity, featureEnabled } from '../config/profile-schema';
 import { resolveAppPaths } from '../config/app-paths';
 import { accessToClaudePermissionMode } from '../config/permissions';
 import {
@@ -80,11 +81,8 @@ import {
   type RunState,
 } from '../card/run-state';
 import { formatRelTime, listRecentSessions, transcriptStartedAt, type SessionSummary } from '../session/history';
-import {
-  listCodexThreadHistory,
-  type CodexThreadHistoryEntry,
-  type ListCodexThreadHistoryOptions,
-} from '../session/codex-history';
+// f03p-slim-#7: codex history is loaded on demand (codex profiles only).
+import type { CodexThreadHistoryEntry, ListCodexThreadHistoryOptions } from '../session/codex-history';
 import type { SessionCatalog, SessionCatalogIdentity } from '../session/catalog';
 import { isAlive, readAndPrune, resolveTarget } from '../runtime/registry';
 import { readUiSidecar } from '../ui/sidecar';
@@ -98,9 +96,8 @@ import { validateAppCredentials } from '../utils/feishu-auth';
 import type { WorkspaceStore } from '../workspace/store';
 import { createBoundChat, defaultChatName } from '../bot/group';
 import { fetchKnownChats, type KnownChat } from '../bot/lark-info';
-import { describeMeetingError, type MeetingManager } from '../meeting/manager';
-import { isMeetingNo } from '../meeting/api';
-import { answerInMeeting, meetingScopeId } from '../meeting/orchestrator';
+// f03p-slim-#7: meeting modules are value-imported lazily inside handleMeeting.
+import type { MeetingManager } from '../meeting/manager';
 import { fenceBlock } from '../card/sanitize';
 import type { MeetingSession } from '../meeting/session';
 import { hasStructuredLarkCliUserAuth } from '../lark-cli/identity-policy';
@@ -234,6 +231,25 @@ const ADMIN_COMMANDS = new Set([
   '/model',
 ]);
 
+/**
+ * f03p-slim-#2/#3: commands that belong to an optional module. When the
+ * profile switches the module off the command is hidden from /help and
+ * answers FEATURE_OFF_REPLY (for everyone — the module is not even loaded).
+ */
+const FEATURE_COMMANDS: Readonly<Record<string, FeatureName>> = {
+  '/meeting': 'meeting',
+};
+
+function commandFeatureOff(cmd: string, profile: ProfileConfig): boolean {
+  const feature = FEATURE_COMMANDS[cmd.startsWith('/') ? cmd : `/${cmd}`];
+  return feature !== undefined && !featureEnabled(profile, feature);
+}
+
+/** f03p-slim-#2: commands /help leaves out for this profile. */
+export function hiddenCommandsFor(profile: ProfileConfig): string[] {
+  return Object.keys(FEATURE_COMMANDS).filter((cmd) => commandFeatureOff(cmd, profile));
+}
+
 function isAdminCommand(cmd: string): boolean {
   return ADMIN_COMMANDS.has(cmd.startsWith('/') ? cmd : `/${cmd}`);
 }
@@ -246,6 +262,10 @@ export async function tryHandleCommand(ctx: CommandContext): Promise<boolean> {
   const args = parts.slice(1).join(' ');
   const h = handlers[cmd];
   if (!h) return false;
+  if (commandFeatureOff(cmd, ctx.controls.profileConfig)) {
+    await reply(ctx, FEATURE_OFF_REPLY);
+    return true;
+  }
   if (
     isAdminCommand(cmd) &&
     !canRunAdminCommand(ctx.controls.profileConfig, ctx.controls, ctx.msg.senderId).ok
@@ -274,6 +294,10 @@ export async function runCommandHandler(
 ): Promise<boolean> {
   const h = handlers[`/${name}`];
   if (!h) return false;
+  if (commandFeatureOff(name, ctx.controls.profileConfig)) {
+    await reply(ctx, FEATURE_OFF_REPLY);
+    return true;
+  }
   if (
     isAdminCommand(name) &&
     !canRunAdminCommand(ctx.controls.profileConfig, ctx.controls, ctx.msg.senderId).ok
@@ -792,7 +816,9 @@ async function listCodexResumeHistory(
   const binary = codex?.binaryPath;
   if (!binary) return [];
 
-  const provider = ctx.codexHistoryProvider ?? listCodexThreadHistory;
+  if (!featureEnabled(ctx.controls.profileConfig, 'codex')) return [];
+  const provider =
+    ctx.codexHistoryProvider ?? (await import('../session/codex-history')).listCodexThreadHistory;
   try {
     return await provider({
       binary,
@@ -1437,7 +1463,7 @@ function formatDoctorEchoStatus(echoText: string, state: RunState): string {
 }
 
 async function handleHelp(_args: string, ctx: CommandContext): Promise<void> {
-  const card = helpCard(ctx.agent.displayName);
+  const card = helpCard(ctx.agent.displayName, hiddenCommandsFor(ctx.controls.profileConfig));
   await ctx.channel.send(ctx.msg.chatId, { card }, commandReplyOptions(ctx));
 }
 
@@ -2086,8 +2112,9 @@ async function showConfigForm(ctx: CommandContext): Promise<void> {
   // alive so we don't advertise a stale address.
   // f031-sec-M2: never in a group (everyone there would see it); in a DM the
   // card shows the token-free address only (config-card masks it).
+  // f03p-slim-#6: no console line at all when the web console is switched off.
   const sidecar =
-    ctx.chatMode === 'p2p'
+    ctx.chatMode === 'p2p' && featureEnabled(ctx.controls.profileConfig, 'webConsole')
       ? await readUiSidecar(commandProfilePaths(ctx).hostUiFile).catch(() => undefined)
       : undefined;
   const consoleUrl = sidecar && isAlive(sidecar.pid) ? sidecar.url : undefined;
@@ -2101,6 +2128,7 @@ async function showConfigForm(ctx: CommandContext): Promise<void> {
     messageReply: getMessageReplyMode(ctx.controls.cfg),
     showToolCalls: getShowToolCalls(ctx.controls.cfg),
     cotMessages: getCotMessages(ctx.controls.cfg),
+    cotAvailable: featureEnabled(ctx.controls.profileConfig, 'cot'),
     maxConcurrentRuns: getMaxConcurrentRuns(ctx.controls.cfg),
     runIdleTimeoutMinutes: ms ? Math.round(ms / 60_000) : 0,
     requireMentionInGroup: getRequireMentionInGroup(ctx.controls.cfg),
@@ -2314,6 +2342,7 @@ async function submitConfig(ctx: CommandContext): Promise<void> {
         messageReply,
         showToolCalls,
         cotMessages,
+        cotAvailable: featureEnabled(ctx.controls.profileConfig, 'cot'),
         maxConcurrentRuns,
         runIdleTimeoutMinutes,
         requireMentionInGroup,
@@ -2461,6 +2490,11 @@ async function handleMeeting(args: string, ctx: CommandContext): Promise<void> {
     await reply(ctx, '会议能力未就绪（channel 未连接或启用后尚未重启）。');
     return;
   }
+  const [{ describeMeetingError }, { isMeetingNo }, { answerInMeeting, meetingScopeId }] = await Promise.all([
+    import('../meeting/manager'),
+    import('../meeting/api'),
+    import('../meeting/orchestrator'),
+  ]);
 
   switch (sub) {
     case '':

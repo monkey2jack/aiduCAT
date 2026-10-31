@@ -14,6 +14,8 @@ export interface ConfigFormOpts {
   messageReply: MessageReplyMode;
   showToolCalls: boolean;
   cotMessages: CotMessagesMode;
+  /** f03p-slim-#4: false when the profile switched CoT off — no selector, no saved line. Default true. */
+  cotAvailable?: boolean;
   maxConcurrentRuns: number;
   /** 0 means "disabled". */
   runIdleTimeoutMinutes: number;
@@ -209,24 +211,28 @@ export function configFormCard(opts: ConfigFormOpts): object {
                 { text: { tag: 'plain_text', content: '隐藏' }, value: 'hide' },
               ],
             },
-            {
-              tag: 'markdown',
-              content:
-                '\n**COT 过程消息**\n' +
-                '_关闭:只发送最终回复_\n' +
-                '_简略:展示 agent 过程文本和工具摘要_\n' +
-                '_详细:额外展示工具参数和输出摘要_',
-            },
-            {
-              tag: 'select_static',
-              name: 'cot_messages',
-              initial_option: opts.cotMessages,
-              options: [
-                { text: { tag: 'plain_text', content: '关闭' }, value: 'off' },
-                { text: { tag: 'plain_text', content: '简略' }, value: 'brief' },
-                { text: { tag: 'plain_text', content: '详细' }, value: 'detailed' },
-              ],
-            },
+            ...(opts.cotAvailable === false
+              ? []
+              : [
+                  {
+                    tag: 'markdown',
+                    content:
+                      '\n**COT 过程消息**\n' +
+                      '_关闭:只发送最终回复_\n' +
+                      '_简略:展示 agent 过程文本和工具摘要_\n' +
+                      '_详细:额外展示工具参数和输出摘要_',
+                  },
+                  {
+                    tag: 'select_static',
+                    name: 'cot_messages',
+                    initial_option: opts.cotMessages,
+                    options: [
+                      { text: { tag: 'plain_text', content: '关闭' }, value: 'off' },
+                      { text: { tag: 'plain_text', content: '简略' }, value: 'brief' },
+                      { text: { tag: 'plain_text', content: '详细' }, value: 'detailed' },
+                    ],
+                  },
+                ]),
             {
               tag: 'markdown',
               content:
@@ -354,7 +360,7 @@ export function configSavedCard(opts: ConfigFormOpts): object {
             `**模型**:\`${modelLabel(opts.agentKind, opts.model)}\`\n` +
             `**消息回复方式**:${replyLabel}\n` +
             `**工具调用显示**:\`${opts.showToolCalls ? 'show' : 'hide'}\`\n` +
-            `**COT 过程消息**:\`${cotLabel}\`\n` +
+            (opts.cotAvailable === false ? '' : `**COT 过程消息**:\`${cotLabel}\`\n`) +
             `**并发上限**:\`${opts.maxConcurrentRuns}\`\n` +
             `**run 探活**:\`${opts.runIdleTimeoutMinutes > 0 ? `${opts.runIdleTimeoutMinutes} 分钟` : '关闭'}\`\n` +
             `**群里需要 @ bot**:\`${opts.requireMentionInGroup ? '是' : '否'}\`\n\n` +

@@ -243,9 +243,14 @@ export const HELP_COMMANDS: Array<{ cmd: string; note: string }> = [
   { cmd: 'help', note: '本帮助' },
 ];
 
-export function helpCard(agentName = 'Agent'): object {
+/**
+ * @param hidden f03p-slim-#2: commands of switched-off modules (`/meeting`),
+ *   left out of both the list and the dropdown.
+ */
+export function helpCard(agentName = 'Agent', hidden: readonly string[] = []): object {
   const escapedAgentName = escapeMd(agentName);
-  const listLines = HELP_COMMANDS.map((c) => `/${c.cmd} — ${c.note}`);
+  const visible = HELP_COMMANDS.filter((c) => !hidden.includes(`/${c.cmd}`));
+  const listLines = visible.map((c) => `/${c.cmd} — ${c.note}`);
   return {
     schema: '2.0',
     config: {},
@@ -260,7 +265,7 @@ export function helpCard(agentName = 'Agent'): object {
           tag: 'select_static',
           name: 'help_cmd',
           placeholder: { tag: 'plain_text', content: '选择命令，直接执行' },
-          options: HELP_COMMANDS.map((c) => ({
+          options: visible.map((c) => ({
             text: { tag: 'plain_text', content: `/${c.cmd} · ${c.note}` },
             value: c.cmd,
           })),
