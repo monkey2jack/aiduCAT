@@ -1,13 +1,19 @@
 import { defineConfig } from 'tsup';
+import { publishDist } from './tools/dist-publish.mjs';
 
 export default defineConfig([
   {
     entry: { cli: 'src/cli/index.ts' },
-    outDir: 'dist',
+    // f03p-fix-#7: build into dist/.next, then publish (new chunks first,
+    // entry swapped by atomic rename, old chunks kept for KEEP_GENERATIONS
+    // builds) so rebuilding while the service runs does not break its next
+    // lazy import(). Only the staging folder is cleaned.
+    outDir: 'dist/.next',
     format: ['esm'],
     target: 'node20',
     platform: 'node',
     clean: true,
+    onSuccess: async () => publishDist({ stagingDir: 'dist/.next', outDir: 'dist' }),
     sourcemap: false,
     // f03p-slim-#7: optional modules (meeting, CoT, Codex, web console) are
     // dynamic imports; splitting turns them into chunks loaded on demand.
