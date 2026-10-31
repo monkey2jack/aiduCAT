@@ -292,6 +292,7 @@ export async function handleCommentMention(deps: CommentDeps): Promise<void> {
           ...runLarkCliIdentityEnv(controls.profileConfig, access.reason === 'owner'),
         },
         stopGraceMs: getAgentStopGraceMs(controls.cfg),
+        ownerRun: access.reason === 'owner',
         observability: {
           profile: controls.profile,
           agent: capability.agentId,

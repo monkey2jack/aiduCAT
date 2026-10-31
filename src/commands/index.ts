@@ -1289,6 +1289,8 @@ async function handleDoctor(args: string, ctx: CommandContext): Promise<void> {
       policy,
       nowait: true,
       stopGraceMs: getAgentStopGraceMs(ctx.controls.cfg),
+      // f03p-infra-#2: an admin who is not the owner gets the non-owner run.
+      ownerRun: Boolean(ctx.controls.botOwnerId) && ctx.controls.botOwnerId === ctx.msg.senderId,
       observability: {
         profile: ctx.controls.profile,
         agent: capability.agentId,

@@ -71,6 +71,8 @@ export async function setupStabChannel(opts: {
   markdownSetContent?: (markdown: string, n: number) => Promise<void> | void;
   /** markdown-mode stream: reject after the producer finished (final flush failed) */
   markdownFailTerminal?: Error;
+  /** f03p: the bot owner's open_id (unset = nobody is the owner) */
+  botOwnerId?: string;
 }): Promise<StabHarness> {
   const tmp = opts.tmp ?? (await createTmpProfile('stab-channel-'));
   const workspace = await realpath(tmp.workspace);
@@ -180,6 +182,7 @@ export async function setupStabChannel(opts: {
     configPath: join(tmp.profile, 'config.json'),
     cfg: profileConfig,
     processId: 'proc_test',
+    ...(opts.botOwnerId ? { botOwnerId: opts.botOwnerId } : {}),
   };
   const { startChannel } = await import('../../src/bot/channel.js');
   const appPaths = opts.withAppPaths

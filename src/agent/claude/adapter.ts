@@ -6,6 +6,11 @@ import type { Readable, Writable } from 'node:stream';
 import { log } from '../../core/logger';
 import { buildAgentEnv } from '../../platform/agent-env';
 import { isClaudeModelId } from './model-id';
+import {
+  buildNonOwnerSettings,
+  claudeUserConfigDir,
+  readUserSettingsEnvNames,
+} from './owner-only-settings';
 import { spawnProcess, type SpawnedProcessByStdio } from '../../platform/spawn';
 import { buildBridgeSystemPrompt } from '../bridge-system-prompt';
 import { buildLarkChannelEnv, type LarkChannelEnvContext } from '../lark-channel-env';
@@ -79,7 +84,22 @@ export class ClaudeAdapter implements AgentAdapter {
     // stream-json response. Pass the prompt via stdin and the appended system
     // prompt via a temp file (the same approach the Codex adapter uses) so no
     // special characters ever reach the shell.
-    const systemPromptFile = writeSystemPromptFile(buildBridgeSystemPrompt(this.botIdentity));
+    // f03p-infra-#2: a run not started by the owner gets flag settings that
+    // blank the owner's settings.json tokens (fail-closed: only an explicit
+    // ownerRun === true skips it). Written next to the system prompt file and
+    // removed with it; holds key names only, never values.
+    const ownerRun = opts.ownerRun === true;
+    const nonOwnerSettings = ownerRun
+      ? undefined
+      : (() => {
+          const configDir = claudeUserConfigDir({ ...process.env, ...(opts.envOverrides ?? {}) });
+          return JSON.stringify(
+            buildNonOwnerSettings({ configDir, settingsEnvNames: readUserSettingsEnvNames(configDir) }),
+            null,
+            2,
+          );
+        })();
+    const systemPromptFile = writeSystemPromptFile(buildBridgeSystemPrompt(this.botIdentity), nonOwnerSettings);
 
     const args = [
       '-p',
@@ -96,6 +116,7 @@ export class ClaudeAdapter implements AgentAdapter {
       '--append-system-prompt-file',
       systemPromptFile.path,
     ];
+    if (systemPromptFile.settingsPath) args.push('--settings', systemPromptFile.settingsPath);
     // f031-sec-L1: belt and braces — a session id is never passed if the CLI
     // could parse it as an option.
     if (opts.sessionId && /^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(opts.sessionId)) {
@@ -128,8 +149,11 @@ export class ClaudeAdapter implements AgentAdapter {
         overrides: {
           ...buildLarkChannelEnv(this.larkChannel, { forAgent: true }),
           ...(opts.envOverrides ?? {}),
+          // f03p-infra-#2: also in the process env, in case flag settings are ignored.
+          ...(ownerRun ? {} : { CLAUDE_CODE_SUBPROCESS_ENV_SCRUB: '1' }),
         },
-        passthrough: this.envPassthrough,
+        // f03p-infra-#2: owner-chosen passthrough (SSH agent, …) is the owner's.
+        passthrough: ownerRun ? this.envPassthrough : [],
       }),
       stdio: ['pipe', 'pipe', 'pipe'],
     }) as ClaudeChild;
@@ -325,12 +349,21 @@ async function* createEventStream(
  * passed via `--append-system-prompt-file` instead of argv. Returns the path
  * plus an idempotent, best-effort cleanup that removes the temp directory.
  */
-function writeSystemPromptFile(content: string): { path: string; cleanup: () => void } {
+function writeSystemPromptFile(
+  content: string,
+  settings?: string,
+): { path: string; settingsPath?: string; cleanup: () => void } {
   const dir = mkdtempSync(join(tmpdir(), 'lark-claude-'));
   const path = join(dir, 'append-system-prompt.md');
   writeFileSync(path, content, 'utf8');
+  let settingsPath: string | undefined;
+  if (settings !== undefined) {
+    settingsPath = join(dir, 'non-owner-settings.json');
+    writeFileSync(settingsPath, settings, { encoding: 'utf8', mode: 0o600 });
+  }
   return {
     path,
+    ...(settingsPath ? { settingsPath } : {}),
     cleanup: () => {
       try {
         rmSync(dir, { recursive: true, force: true });

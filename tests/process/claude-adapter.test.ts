@@ -123,6 +123,8 @@ describe('ClaudeAdapter process contract', () => {
         runId: 'run-env',
         prompt: 'env',
         cwd: fake.dir,
+        // f03p-infra-#2: passthrough is for the owner's runs.
+        ownerRun: true,
       });
       await collect(run.events);
       const record = await readRecord(fake.recordPath);

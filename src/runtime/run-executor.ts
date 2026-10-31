@@ -27,6 +27,8 @@ export interface SubmitRunInput {
   stopGraceMs?: number;
   /** f0.2: per-run provider env (ANTHROPIC_* / OPENAI_*), applied last by the adapter. */
   envOverrides?: Record<string, string>;
+  /** f03p-infra-#2: the bot owner started this run (see AgentRunOptions.ownerRun). */
+  ownerRun?: boolean;
   nowait?: boolean;
   observability?: {
     profile: string;
@@ -133,6 +135,7 @@ export class RunExecutor {
       permissionMode: input.policy.permissionMode,
       stopGraceMs: input.stopGraceMs,
       envOverrides: input.envOverrides,
+      ownerRun: input.ownerRun === true,
     };
     let run: AgentRun;
     try {

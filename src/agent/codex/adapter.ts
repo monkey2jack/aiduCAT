@@ -125,7 +125,12 @@ export class CodexAdapter implements AgentAdapter {
     }
     const child = spawnProcess(this.binary, args, {
       cwd: opts.cwd,
-      env: buildAgentEnv({ agent: 'codex', overrides: envOverrides, passthrough: this.envPassthrough }),
+      // f03p-infra-#2: owner passthrough only for the owner's runs.
+      env: buildAgentEnv({
+        agent: 'codex',
+        overrides: envOverrides,
+        passthrough: opts.ownerRun === true ? this.envPassthrough : [],
+      }),
       stdio: ['pipe', 'pipe', 'pipe'],
     }) as CodexChild;
 

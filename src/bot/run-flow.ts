@@ -201,6 +201,8 @@ export async function startRunFlow(input: StartRunFlowInput): Promise<StartRunFl
               .filter((path): path is string => Boolean(path))
           : undefined,
       stopGraceMs: input.stopGraceMs,
+      // f03p-infra-#2: settings.json tokens / owner passthrough only for the owner.
+      ownerRun: input.access.reason === 'owner',
       observability: input.observability,
     });
   } catch (err) {
