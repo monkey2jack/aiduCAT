@@ -8,6 +8,8 @@ export interface RunHandle {
 export class ActiveRuns {
   private readonly handles = new Map<string, RunHandle>();
   private readonly reservations = new Set<string>();
+  /** f03p-infra-#5: scopes whose run was stopped on purpose (/stop, /cd, /new…). */
+  private readonly stoppedOnPurpose = new Set<string>();
   private pauseDepth = 0;
   private pauseReason: string | undefined;
 
@@ -78,12 +80,18 @@ export class ActiveRuns {
     const h = this.handles.get(chatId);
     if (!h) return false;
     this.reservations.delete(chatId);
+    this.stoppedOnPurpose.add(chatId);
     h.interrupted = true;
     this.handles.delete(chatId);
     void h.run.stop().catch(() => {
       /* stop errors are non-fatal */
     });
     return true;
+  }
+
+  /** f03p-infra-#5: was this scope's run stopped on purpose? Clears the mark. */
+  consumeStoppedOnPurpose(chatId: string): boolean {
+    return this.stoppedOnPurpose.delete(chatId);
   }
 
   async stopAll(): Promise<void> {

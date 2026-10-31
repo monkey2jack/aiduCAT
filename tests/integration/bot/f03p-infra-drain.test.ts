@@ -104,6 +104,40 @@ describe('f03p-infra-#5 graceful shutdown: drain in-flight rounds before stoppin
     await h.tmp.cleanup();
   });
 
+  it('f03p-infra-#5 a round killed by the stop signal itself (systemd KillMode=control-group) stays in the journal for auto-continue', async () => {
+    const agent = new HoldAgent();
+    const h = await setupStabChannel({ withAppPaths: true, agent: agent as never });
+    harnesses.push(h);
+    await h.handlers.message?.(dmMessage('om_a', 'long one'));
+    await waitFor(() => agent.live.length === 1);
+    const draining = h.drain(10_000);
+    await settle(50);
+    agent.live[0]!.killedFromOutside(); // the agent dies from the same SIGTERM → interrupted
+    expect(await draining).toEqual({ drained: true, remaining: 0 });
+    await h.disconnect();
+    harnesses.splice(harnesses.indexOf(h), 1);
+    const journal = JSON.parse(await readFile(join(h.tmp.profile, 'run-journal.json'), 'utf8'));
+    expect(Object.keys(journal.inflight)).toEqual(['oc_dm']);
+    await h.tmp.cleanup();
+  });
+
+  it('f03p-infra-#5 a round the user /stops during the drain is NOT continued after the restart', async () => {
+    const agent = new HoldAgent();
+    const h = await setupStabChannel({ withAppPaths: true, agent: agent as never });
+    harnesses.push(h);
+    await h.handlers.message?.(dmMessage('om_a', 'long one'));
+    await waitFor(() => agent.live.length === 1);
+    const draining = h.drain(10_000);
+    await settle(50);
+    await h.handlers.message?.(dmMessage('om_stop', '/stop'));
+    expect((await draining).drained).toBe(true);
+    await h.disconnect();
+    harnesses.splice(harnesses.indexOf(h), 1);
+    const journal = JSON.parse(await readFile(join(h.tmp.profile, 'run-journal.json'), 'utf8'));
+    expect(journal.inflight).toEqual({});
+    await h.tmp.cleanup();
+  });
+
   it('f03p-infra-#5 a second signal (abort) ends the drain at once', async () => {
     const { h, paused } = await gated();
     await h.handlers.message?.(dmMessage('om_a', 'long one'));
@@ -161,3 +195,37 @@ describe('f03p-infra-#5 graceful shutdown: drain in-flight rounds before stoppin
     expect(src).toContain('drainAbort.abort()');
   });
 });
+
+/** An agent whose run keeps going until stopped (by /stop) or killed from outside. */
+class HoldAgent {
+  readonly id = 'claude';
+  readonly displayName = 'Claude';
+  readonly runOptions: unknown[] = [];
+  readonly live: Array<{ killedFromOutside(): void }> = [];
+  async isAvailable(): Promise<boolean> {
+    return true;
+  }
+  setBotIdentity(): void {}
+  run(opts: { runId: string }) {
+    this.runOptions.push(opts);
+    let end!: () => void;
+    const ended = new Promise<void>((r) => {
+      end = r;
+    });
+    this.live.push({ killedFromOutside: () => end() });
+    return {
+      runId: opts.runId,
+      events: (async function* () {
+        yield { type: 'text', delta: 'half' } as AgentEvent;
+        await ended;
+        yield { type: 'done', terminationReason: 'interrupted' } as AgentEvent;
+      })(),
+      async stop() {
+        end();
+      },
+      async waitForExit() {
+        return true;
+      },
+    };
+  }
+}

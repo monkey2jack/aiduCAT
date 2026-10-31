@@ -424,7 +424,12 @@ export async function startChannel(deps: StartChannelDeps): Promise<BridgeChanne
           );
         }
       } finally {
-        journal.endRun(scope, runKey);
+        // f03p-infra-#5/#6: a round that ended as "interrupted" while we drain
+        // was killed by the stop itself (e.g. systemd signalled the whole
+        // cgroup) — keep it in the journal so the next start continues it.
+        // Unless someone stopped it on purpose (/stop, /cd, /new …).
+        const stoppedOnPurpose = activeRuns.consumeStoppedOnPurpose(scope);
+        if (!(draining && terminal === 'interrupted' && !stoppedOnPurpose)) journal.endRun(scope, runKey);
         pending.unblock(scope);
         log.info('flush', 'end');
         inflightBatches--;
