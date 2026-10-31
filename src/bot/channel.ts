@@ -334,6 +334,8 @@ export async function startChannel(deps: StartChannelDeps): Promise<BridgeChanne
   const inflightWaiters = new Set<() => void>();
   let draining = false;
   const drainNoticed = new Set<string>();
+  /** f03p-infra-#6: message ids of the synthetic "接着刚才的继续" messages. */
+  const autoResumeIds = new Set<string>();
   const noteQueuedWhileDraining = (scope: string, msg: NormalizedMessage): void => {
     if (!draining || drainNoticed.has(scope)) return;
     drainNoticed.add(scope);
@@ -350,14 +352,19 @@ export async function startChannel(deps: StartChannelDeps): Promise<BridgeChanne
     pending.block(scope);
     const lastMsg = batch[batch.length - 1]!;
     const runKey = randomUUID();
+    // f03p-infra-#6: this batch carries the automatic post-restart continuation.
+    const autoResume = batch.some((m) => autoResumeIds.delete(m.messageId));
     journal.dequeue(scope, batch.map((m) => m.messageId));
     journal.startRun(scope, {
       runKey,
       chatId: firstMsg.chatId,
       replyTo: lastMsg.messageId,
       ...(firstMsg.threadId ? { replyInThread: true } : {}),
+      resumeMsg: lastMsg,
+      ...(autoResume ? { autoResumed: true } : {}),
     });
     inflightBatches++;
+    let terminal: string | undefined;
     void withTrace({ chatId: firstMsg.chatId }, async () => {
       log.info('flush', 'start', {
         scope,
@@ -397,9 +404,18 @@ export async function startChannel(deps: StartChannelDeps): Promise<BridgeChanne
           scope,
           mode,
           onCardOpened: (messageId) => journal.setCard(scope, runKey, messageId),
+          onTerminal: (t) => {
+            terminal = t;
+          },
         });
+        if (autoResume && !draining && (terminal === undefined || terminal === 'error' || terminal === 'idle_timeout')) {
+          await notifyAutoResumeFailed(channel, lastMsg);
+        }
       } catch (err) {
         log.fail('flush', err);
+        if (autoResume && !(err instanceof PreRunError) && !draining) {
+          await notifyAutoResumeFailed(channel, lastMsg);
+        }
         // f031-stab-#16: a pre-run step failed before anything reached the
         // user — say so instead of staying silent.
         if (err instanceof PreRunError) {
@@ -604,7 +620,15 @@ export async function startChannel(deps: StartChannelDeps): Promise<BridgeChanne
   });
 
   // f031-stab-#5: settle what the previous process left behind.
-  await recoverAfterRestart({ channel, pending, journal, snapshot: leftover });
+  await recoverAfterRestart({
+    channel,
+    pending,
+    journal,
+    snapshot: leftover,
+    // f03p-infra-#6: only a Claude scope with a recorded session can be resumed.
+    canResume: (scope) => agent.id === 'claude' && Boolean(sessions.getRaw(scope)?.sessionId),
+    autoResumeIds,
+  });
 
   return {
     channel,
@@ -678,11 +702,26 @@ export const RESTART_INTERRUPTED_MESSAGE = '服务重启，这一轮被中断了
 /** f03p-infra-#5: once per chat for messages that arrive while the service drains. */
 export const DRAIN_QUEUED_NOTICE = '⏳ 服务正在重启，这条消息已记下，重启后会自动接着处理。';
 
+/** f03p-infra-#6 */
+const RESUME_MAX_AGE_MS = 10 * 60_000;
+export const AUTO_RESUME_PROMPT = '（服务重启，接着刚才的继续）';
+export const AUTO_RESUME_CARD_MESSAGE = '🔄 服务重启后自动继续（见下一张卡片）';
+export const AUTO_RESUME_FAILED_MESSAGE = '⚠️ 服务重启后自动继续没成功，请重发一次。';
+
+async function notifyAutoResumeFailed(channel: LarkChannel, msg: NormalizedMessage): Promise<void> {
+  const opts = msg.threadId ? { replyTo: msg.messageId, replyInThread: true } : { replyTo: msg.messageId };
+  await channel
+    .send(msg.chatId, { text: AUTO_RESUME_FAILED_MESSAGE }, opts)
+    .catch((err: unknown) => log.warn('journal', 'auto-resume-failed-notice-failed', { err: String(err) }));
+}
+
 async function recoverAfterRestart(input: {
   channel: LarkChannel;
   pending: PendingQueue;
   journal: RunJournal;
   snapshot: JournalSnapshot;
+  canResume?: (scope: string) => boolean;
+  autoResumeIds?: Set<string>;
 }): Promise<void> {
   const { channel, pending, snapshot } = input;
   if (snapshot.inflight.length === 0 && snapshot.queued.length === 0) return;
@@ -697,7 +736,32 @@ async function recoverAfterRestart(input: {
       log.warn('journal', 'notify-failed', { chatId, err: err instanceof Error ? err.message : String(err) });
     }
   };
+  const downSince = snapshot.closedAt ?? snapshot.savedAt;
   for (const [scope, e] of snapshot.inflight) {
+    // f03p-infra-#6: continue once, by itself, when the restart was quick,
+    // the round was not already a continuation, and its session can resume.
+    const interruptedAt = downSince ?? e.startedAt;
+    const resumable =
+      e.resumeMsg !== undefined &&
+      e.autoResumed !== true &&
+      Date.now() - interruptedAt <= RESUME_MAX_AGE_MS &&
+      input.canResume?.(scope) === true &&
+      input.autoResumeIds !== undefined;
+    if (resumable) {
+      if (e.cardMessageId) {
+        try {
+          const state: RunState = { ...initialState, terminal: 'interrupted', footer: null, errorMsg: AUTO_RESUME_CARD_MESSAGE };
+          await channel.updateCard(e.cardMessageId, renderCard(state));
+        } catch (err) {
+          log.warn('journal', 'orphan-card-close-failed', { scope, err: err instanceof Error ? err.message : String(err) });
+        }
+      }
+      const msg: NormalizedMessage = { ...e.resumeMsg!, content: AUTO_RESUME_PROMPT, createTime: Date.now() };
+      input.autoResumeIds!.add(msg.messageId);
+      pending.push(scope, msg);
+      log.info('journal', 'auto-resume', { scope, card: Boolean(e.cardMessageId), downMs: Date.now() - interruptedAt });
+      continue;
+    }
     let closed = false;
     if (e.cardMessageId) {
       try {
@@ -1019,6 +1083,8 @@ interface RunBatchDeps {
   mode: ChatMode;
   /** f031-stab-#5: the streaming card exists — record its id for restart recovery. */
   onCardOpened?: (messageId: string) => void;
+  /** f03p-infra-#6: how the agent's turn ended (done / error / interrupted / idle_timeout). */
+  onTerminal?: (terminal: string) => void;
 }
 
 /**
@@ -1094,6 +1160,12 @@ async function runAgentBatch(deps: RunBatchDeps): Promise<void> {
     mode,
   } = deps;
   if (batch.length === 0) return;
+  // f03p-infra-#6: report how the turn ended, whichever reply path runs.
+  const trackedAgentStream = async (...args: Parameters<typeof processAgentStream>): Promise<RunState> => {
+    const state = await processAgentStream(...args);
+    deps.onTerminal?.(state.terminal);
+    return state;
+  };
   const firstMsg = batch[0];
   const lastMsg = batch[batch.length - 1];
   if (!firstMsg || !lastMsg) return;
@@ -1392,7 +1464,7 @@ async function runAgentBatch(deps: RunBatchDeps): Promise<void> {
         const cotDone = consumeCotEvents(execution.subscribe(), cotPublisher, {
           detail: cotMessages,
         });
-        const finalState = await processAgentStream(
+        const finalState = await trackedAgentStream(
           handle,
           eventStream,
           scope,
@@ -1485,7 +1557,7 @@ async function runAgentBatch(deps: RunBatchDeps): Promise<void> {
           sendOpts,
         ),
       );
-      const renderDone = processAgentStream(
+      const renderDone = trackedAgentStream(
         handle,
         eventStream,
         scope,
@@ -1621,7 +1693,7 @@ async function runAgentBatch(deps: RunBatchDeps): Promise<void> {
           sendOpts,
         );
       };
-      const renderDone = processAgentStream(
+      const renderDone = trackedAgentStream(
         handle,
         eventStream,
         scope,
@@ -1688,7 +1760,7 @@ async function runAgentBatch(deps: RunBatchDeps): Promise<void> {
       // text mode: drain the agent stream without sending anything during
       // the run, then post the final rendered text once as a plain markdown
       // (msg_type=post) message — no card, no streaming, no typewriter.
-      const finalState = await processAgentStream(
+      const finalState = await trackedAgentStream(
         handle,
         eventStream,
         scope,

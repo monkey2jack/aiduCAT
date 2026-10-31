@@ -1,5 +1,5 @@
 import type { NormalizedMessage } from '@larksuite/channel';
-import { readFile } from 'node:fs/promises';
+import { readFile, stat } from 'node:fs/promises';
 import { log } from '../core/logger';
 import { writeFileAtomic } from '../platform/atomic-write';
 
@@ -26,6 +26,14 @@ export interface InflightEntry {
   /** streaming card message id, once the card exists (card mode only) */
   cardMessageId?: string;
   startedAt: number;
+  /**
+   * f03p-infra-#6: who / where to continue as after a restart — the round's
+   * last message with its text, attachments, mentions and quote stripped
+   * (never the user's words).
+   */
+  resumeMsg?: NormalizedMessage;
+  /** f03p-infra-#6: this round already IS the automatic continuation (never twice). */
+  autoResumed?: boolean;
 }
 
 export interface QueuedEntry {
@@ -46,6 +54,8 @@ export interface JournalSnapshot {
   queued: Array<[scope: string, entries: QueuedEntry[]]>;
   /** f03p-infra-#5: set when the previous process shut down in order. */
   closedAt?: number;
+  /** f03p-infra-#6: last write of the previous journal (crash: no closedAt). */
+  savedAt?: number;
 }
 
 export class RunJournal {
@@ -67,7 +77,9 @@ export class RunJournal {
    */
   async takeOver(): Promise<JournalSnapshot> {
     let prev: JournalFile | undefined;
+    let savedAt: number | undefined;
     if (this.path) {
+      savedAt = await stat(this.path).then((st) => st.mtimeMs, () => undefined);
       try {
         const raw = JSON.parse(await readFile(this.path, 'utf8')) as Partial<JournalFile>;
         if (raw && raw.v === 1) {
@@ -90,6 +102,7 @@ export class RunJournal {
       inflight: Object.entries(prev?.inflight ?? {}),
       queued: Object.entries(prev?.queued ?? {}).filter(([, list]) => Array.isArray(list) && list.length > 0),
       ...(prev?.closedAt !== undefined ? { closedAt: prev.closedAt } : {}),
+      ...(prev && savedAt !== undefined ? { savedAt } : {}),
     };
   }
 
@@ -111,7 +124,12 @@ export class RunJournal {
   }
 
   startRun(scope: string, entry: Omit<InflightEntry, 'startedAt'>): void {
-    this.data.inflight[scope] = { ...entry, startedAt: this.now() };
+    const { resumeMsg, ...rest } = entry;
+    this.data.inflight[scope] = {
+      ...rest,
+      ...(resumeMsg ? { resumeMsg: resumeTemplate(resumeMsg) } : {}),
+      startedAt: this.now(),
+    };
     this.persist();
   }
 
@@ -172,4 +190,22 @@ function slimMessage(msg: NormalizedMessage): NormalizedMessage {
       : undefined;
   const { raw: _drop, ...rest } = msg;
   return slimRaw ? { ...rest, raw: slimRaw } : rest;
+}
+
+/**
+ * f03p-infra-#6: identity + routing of a message, nothing the user wrote —
+ * enough to post an automatic continuation as that sender in that chat/topic.
+ */
+function resumeTemplate(msg: NormalizedMessage): NormalizedMessage {
+  const senderType = (msg.raw as { sender?: { sender_type?: unknown } } | undefined)?.sender?.sender_type;
+  const { raw: _raw, replyToMessageId: _quote, ...rest } = msg;
+  return {
+    ...rest,
+    content: '',
+    rawContentType: 'text',
+    resources: [],
+    mentions: [],
+    mentionAll: false,
+    ...(senderType !== undefined ? { raw: { sender: { sender_type: senderType } } } : {}),
+  };
 }

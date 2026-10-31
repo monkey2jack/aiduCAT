@@ -152,6 +152,10 @@ function buildCard(
   if (elements.length === 0 && state.terminal === 'error' && state.errorMsg) {
     elements.push(noteMd(`⚠️ ${errorText(state.errorMsg)}`));
   }
+  // f03p-infra-#6: a stopped card can carry a note too ("服务重启后自动继续").
+  if (elements.length === 0 && state.terminal === 'interrupted' && state.errorMsg) {
+    elements.push(noteMd(errorText(state.errorMsg)));
+  }
   // f031-stab-#4: a timeout (idle or one tool over its cap) says so on the
   // card itself — ⚠️Timeout in the summary alone left the user guessing.
   if (state.terminal === 'idle_timeout') {
