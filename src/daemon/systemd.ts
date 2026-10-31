@@ -58,6 +58,10 @@ Type=simple
 ExecStart="${escape(inputs.nodePath)}" "${escape(inputs.bridgeEntryPath)}" ${runArgs}
 Restart=always
 RestartSec=5
+# f03p-infra-#5: SIGTERM only the bridge (not the agents it runs) and give it
+# room to let in-flight rounds finish (shutdownDrainMinutes, default 10).
+KillMode=mixed
+TimeoutStopSec=660
 StandardOutput=append:${daemonStdoutPath(inputs.profile)}
 StandardError=append:${daemonStderrPath(inputs.profile)}
 Environment="PATH=${escape(inputs.envPath)}"

@@ -203,15 +203,26 @@ function parkWithShutdown(
   hostLock: { release(): Promise<void> } | undefined,
 ): Promise<void> {
   let shuttingDown = false;
+  // f03p-infra-#5: the first SIGTERM/SIGINT drains (no new rounds, the ones in
+  // flight finish, up to shutdownDrainMinutes); a second one stops at once.
+  const drainAbort = new AbortController();
   const shutdown = async (sig: string): Promise<void> => {
-    if (shuttingDown) return;
+    if (shuttingDown) {
+      if (!drainAbort.signal.aborted) {
+        console.log(`\n再次收到 ${sig}，不再等待在途轮次，立即停止。`);
+        drainAbort.abort();
+      }
+      return;
+    }
     shuttingDown = true;
-    console.log(`\n收到 ${sig}，正在关闭...`);
+    console.log(
+      `\n收到 ${sig}：不再接新轮次，等在途轮次跑完再关闭（最多 shutdownDrainMinutes，默认 10 分钟；再发一次信号立即停止）...`,
+    );
     if (uiServer) {
       await uiServer.close().catch(() => {});
       await removeUiSidecar(appPaths.hostUiFile);
     }
-    await supervisor.shutdown();
+    await supervisor.shutdown({ graceful: true, signal: drainAbort.signal });
     if (hostLock) await hostLock.release().catch(() => {});
     await flushTelemetry();
     process.exit(0);

@@ -29,6 +29,8 @@ export interface PendingQueueHooks {
 export class PendingQueue {
   private readonly map = new Map<string, PendingEntry>();
   private readonly blocked = new Set<string>();
+  /** f03p-infra-#5: shutdown drain — keep accepting, never flush. */
+  private frozen = false;
   private readonly delayMs: number;
   private readonly onFlush: FlushHandler;
   private readonly hooks: PendingQueueHooks;
@@ -73,6 +75,23 @@ export class PendingQueue {
     this.blocked.clear();
   }
 
+  /**
+   * f03p-infra-#5: graceful shutdown. Messages keep being accepted (and
+   * mirrored to the run journal through onPush) but no batch is flushed any
+   * more, so no new round starts; the next process replays them.
+   */
+  freeze(): void {
+    this.frozen = true;
+    for (const entry of this.map.values()) {
+      if (entry.timer) clearTimeout(entry.timer);
+      entry.timer = undefined;
+    }
+  }
+
+  get isFrozen(): boolean {
+    return this.frozen;
+  }
+
   /** Pause the debounce timer; pushed messages keep accumulating. */
   block(scope: string): void {
     if (this.blocked.has(scope)) return;
@@ -96,11 +115,13 @@ export class PendingQueue {
     entry.timer = this.armTimer(scope);
   }
 
-  private armTimer(scope: string): NodeJS.Timeout {
+  private armTimer(scope: string): NodeJS.Timeout | undefined {
+    if (this.frozen) return undefined;
     return setTimeout(() => this.flush(scope), this.delayMs);
   }
 
   private flush(scope: string): void {
+    if (this.frozen) return;
     const entry = this.map.get(scope);
     if (!entry) return;
     this.map.delete(scope);

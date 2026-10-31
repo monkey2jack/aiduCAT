@@ -37,11 +37,15 @@ interface JournalFile {
   v: 1;
   inflight: Record<string, InflightEntry>;
   queued: Record<string, QueuedEntry[]>;
+  /** f03p-infra-#5: when the previous process stopped writing (orderly shutdown). */
+  closedAt?: number;
 }
 
 export interface JournalSnapshot {
   inflight: Array<[scope: string, entry: InflightEntry]>;
   queued: Array<[scope: string, entries: QueuedEntry[]]>;
+  /** f03p-infra-#5: set when the previous process shut down in order. */
+  closedAt?: number;
 }
 
 export class RunJournal {
@@ -67,7 +71,12 @@ export class RunJournal {
       try {
         const raw = JSON.parse(await readFile(this.path, 'utf8')) as Partial<JournalFile>;
         if (raw && raw.v === 1) {
-          prev = { v: 1, inflight: raw.inflight ?? {}, queued: raw.queued ?? {} };
+          prev = {
+            v: 1,
+            inflight: raw.inflight ?? {},
+            queued: raw.queued ?? {},
+            ...(typeof raw.closedAt === 'number' ? { closedAt: raw.closedAt } : {}),
+          };
         }
       } catch (err) {
         if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
@@ -80,6 +89,7 @@ export class RunJournal {
     return {
       inflight: Object.entries(prev?.inflight ?? {}),
       queued: Object.entries(prev?.queued ?? {}).filter(([, list]) => Array.isArray(list) && list.length > 0),
+      ...(prev?.closedAt !== undefined ? { closedAt: prev.closedAt } : {}),
     };
   }
 
@@ -124,6 +134,12 @@ export class RunJournal {
    * erase it or clobber the successor's file.
    */
   async close(): Promise<void> {
+    if (!this.closed) {
+      // f03p-infra-#5: stamp the hand-over so the next start can tell how long
+      // the service was down (queued messages from a long drain still count).
+      this.data.closedAt = this.now();
+      this.persist();
+    }
     this.closed = true;
     await this.saving;
   }

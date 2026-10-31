@@ -55,6 +55,8 @@ export interface StabHarness {
   agent: FakeAgentAdapter;
   sessions: SessionStore;
   disconnect(): Promise<void>;
+  /** f03p: graceful drain before disconnect */
+  drain(timeoutMs: number, signal?: AbortSignal): Promise<{ drained: boolean; remaining: number }>;
 }
 
 export async function setupStabChannel(opts: {
@@ -193,6 +195,7 @@ export async function setupStabChannel(opts: {
       }
     : undefined;
   const bridge = await startChannel({ cfg: profileConfig, agent, sessions, workspaces, controls, appPaths } as never);
+  h.drain = (timeoutMs, signal) => bridge.drain!(timeoutMs, signal);
   h.disconnect = async () => {
     await bridge.disconnect();
     await Promise.all([sessions.flush(), workspaces.flush()]);

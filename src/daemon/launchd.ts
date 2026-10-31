@@ -55,6 +55,8 @@ ${argStrings}
     <true/>
     <key>KeepAlive</key>
     <true/>
+    <key>ExitTimeOut</key>
+    <integer>660</integer>
     <key>StandardOutPath</key>
     <string>${escape(daemonStdoutPath(inputs.profile))}</string>
     <key>StandardErrorPath</key>

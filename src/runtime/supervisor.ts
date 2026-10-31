@@ -2,7 +2,7 @@ import pkg from '../../package.json';
 import { startChannel as realStartChannel, type BridgeChannel } from '../bot/channel';
 import type { Controls } from '../commands';
 import type { AppPaths } from '../config/app-paths';
-import { isComplete, type AppConfig } from '../config/schema';
+import { getShutdownDrainMs, isComplete, type AppConfig } from '../config/schema';
 import type { AgentKind, ProfileConfig } from '../config/profile-schema';
 import type { AgentAdapter } from '../agent/types';
 import { log } from '../core/logger';
@@ -142,6 +142,23 @@ class ManagedProfile {
       await releaseRuntimeLocks(this.locks);
       this.locks = [];
       throw err;
+    }
+  }
+
+  /**
+   * f03p-infra-#5: let this profile's rounds in flight finish (up to its
+   * `shutdownDrainMinutes`) before stop(). No new rounds start meanwhile.
+   */
+  async drain(signal?: AbortSignal): Promise<void> {
+    const ms = getShutdownDrainMs(this.live?.cfg ?? this.cfg);
+    if (ms <= 0 || !this.bridge?.drain) return;
+    try {
+      const r = await this.bridge.drain(ms, signal);
+      if (!r.drained) {
+        log.warn('supervisor', 'drain-incomplete', { profile: this.profile, remaining: r.remaining, capMs: ms });
+      }
+    } catch (err) {
+      log.warn('supervisor', 'drain-failed', { profile: this.profile, err: String(err) });
     }
   }
 
@@ -405,9 +422,14 @@ export class Supervisor {
     await managed.controls.restart();
   }
 
-  /** Stop every profile — for process shutdown. */
-  async shutdown(): Promise<void> {
+  /**
+   * Stop every profile — for process shutdown. f03p-infra-#5: `graceful`
+   * first drains each profile (rounds in flight finish, queued messages are
+   * journalled for the next start); `signal` aborts the wait.
+   */
+  async shutdown(opts: { graceful?: boolean; signal?: AbortSignal } = {}): Promise<void> {
     const all = [...this.managed.values()];
+    if (opts.graceful) await Promise.allSettled(all.map((m) => m.drain(opts.signal)));
     this.managed.clear();
     await Promise.allSettled(all.map((m) => m.stop()));
   }
