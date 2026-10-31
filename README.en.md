@@ -37,7 +37,7 @@ aiduCAT originates from and credits the upstream [zarazhangrui/lark-coding-agent
 | 🔌 **Multi-provider** | `/model` card with Provider → Model → Effort dropdowns; provider keys resolve from env/secret refs, never plaintext; takes effect next turn without restart; 10router gateways only offer curated combos |
 | 🗜️ **Window-based auto-compact** | Compacts at 60% of the model window (`AIDUCAT_COMPACT_PCT`); the window comes from 10router `/v1/models` or the provider's `contextWindow`; when neither is available the Claude Code `settings.json` value is kept and a warn is logged |
 | 🚦 **Border = status** | done green / stopped yellow / error red / running grey — no trailing notes |
-| 🛟 **Rejected cards never hang** | Image markdown becomes links, HTML is stripped, answers over 25KB are truncated in the card and sent in full as plain text; if Feishu rejects the card it degrades (strict card → plain text → failure notice) instead of sticking on "Thinking" |
+| 🛟 **Rejected cards never hang** | Image markdown becomes links, HTML is stripped, answers over 25KB are split into ordered "续 i/N" continuation cards (cut at paragraph/code/table boundaries); if Feishu rejects the card it degrades (strict card → plain text → failure notice) instead of sticking on "Thinking" |
 | 🎹 **Typing reaction** | A keyboard reaction lands on your message and disappears as soon as output starts |
 | 🗣 **Free-form `/model`** | Passes any gateway combo id through (e.g. `Gemini-3.8-Flash`), no allow-list |
 
@@ -129,7 +129,7 @@ One card, top to bottom:
 - **Tool emoji**: 🖥️Bash 📖Read ⌨️Edit 📝Write 🔍Grep 🗂️Glob 🌐Web 🤖Agent/sub-agent 💻other; with many tools only the latest are listed, the rest fold into "…N more"
 - **On completion**: the status word disappears; the **border carries the result** — done green / stopped yellow / error red; the Feishu chat-list preview shows ✅Done / ⭕️Stop / ❌Error / ⚠️Timeout
 - **Empty run** (the agent exits without output): a red error card with the reason, asking you to resend
-- **Too long / rejected**: answers over 25KB are truncated in the card and sent in full as plain text; if Feishu rejects the card, a strict card (no image links, 12KB answer) is retried, then plain text, then a one-line "card failed" notice
+- **Too long / rejected**: an answer over 25KB fills card 1 up to the budget (cut at a paragraph, code-block or table boundary, ending in "…（未完，见下一张卡）"), then continues on ordered "续 2/N", "续 3/N" cards — rendered markdown, each <30KB, nothing repeated; an oversized code block is split between lines with the fence reopened, an oversized table between rows with the header repeated; only if Feishu rejects a continuation card does the rest from that card on go out once as plain text. if Feishu rejects the card, a strict card (no image links, 12KB answer) is retried, then plain text, then a one-line "card failed" notice
 
 ## Changelog (f0.3+)
 
@@ -302,6 +302,7 @@ Access is controlled by the canonical `"permissions"` block. **Omitted = `worksp
 - Tool calls are hidden in groups by default; set `preferences.showToolCallsInGroups: true` to show them.
 - Timeouts: `preferences.runIdleTimeoutMinutes` (default 15 min without output), `preferences.runToolTimeoutMinutes` (one tool call, default 30 min). After a restart, queued messages younger than 10 minutes are replayed, older ones get a "please resend"; in-flight cards are marked "service restarted, please resend".
 - Graceful restart: on a stop signal the bridge takes no new rounds and waits for the ones in flight, at most `preferences.shutdownDrainMinutes` minutes (default 10, `0` = stop at once); messages arriving meanwhile are kept and handled after the restart. A round that was cut off is continued once, in the same session, with "（服务重启，接着刚才的继续）" if the restart took ≤ 10 minutes. systemd units need `KillMode=mixed` and `TimeoutStopSec=660` (units installed by `aiduCAT start` have them; add them to hand-written units).
+- Rebuilding while the service runs is safe: `pnpm build` writes to `dist/.next`, moves the new chunks in first and swaps `dist/cli.js` with an atomic rename, keeping the chunks of the last 3 builds (`dist/.generations.json`), so the running process can still load its lazy chunks; the new code takes effect on restart. Stopping before building is still the recommended upgrade order.
 - Owner-only tokens: credentials in the `env` block of `~/.claude/settings.json` (`GH_TOKEN`, `CLOUDFLARE_*`, …) are only available in rounds the owner starts; rounds started by anyone else get them blanked (`ANTHROPIC_*`/`CLAUDE_*` are kept). Nothing changes for the owner.
 
 ### Data dir and migration (migrate-home)

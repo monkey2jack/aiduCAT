@@ -3,7 +3,7 @@ import { initialState, reduce, type RunState } from '../../../src/card/run-state
 import {
   CARD_MAX_BYTES,
   answerPlainText,
-  answerTruncatedInCard,
+  renderCardWithInfo,
   renderCard,
 } from '../../../src/card/run-renderer.js';
 import { sanitizeCardMarkdown } from '../../../src/card/sanitize.js';
@@ -54,9 +54,11 @@ describe('card markdown sanitizing (f031-#2)', () => {
     expect(json).not.toContain('<font');
     expect(bytes(card)).toBeLessThan(30_000);
     expect(bytes(card)).toBeLessThanOrEqual(CARD_MAX_BYTES);
-    expect(json).toContain('已截断');
-    expect(answerTruncatedInCard(state)).toBe(true);
-    // The plain-text follow-up carries the whole answer, images as links.
+    // f03p-fix-#8: the rest continues on 「续 i/N」 cards, not a plain-text copy.
+    expect(json).toContain('未完，见下一张卡');
+    expect(renderCardWithInfo(state).answerTruncated).toBe(true);
+    expect(renderCardWithInfo(state).continuations.length).toBeGreaterThan(0);
+    // The plain-text fallback (rejected card) still carries the whole answer, images as links.
     const plain = answerPlainText(state);
     expect(plain).not.toContain('![');
     expect(Buffer.byteLength(plain)).toBeGreaterThan(40_000);
@@ -77,7 +79,7 @@ describe('card markdown sanitizing (f031-#2)', () => {
     const card = renderCard(s, {});
     expect(bytes(card)).toBeLessThanOrEqual(CARD_MAX_BYTES);
     expect(JSON.stringify(card)).toContain('短答案');
-    expect(answerTruncatedInCard(s)).toBe(false);
+    expect(renderCardWithInfo(s).continuations).toHaveLength(0);
   });
 
   it('f031-#2 strict render drops image URLs and the panel body', () => {

@@ -26,4 +26,27 @@ describe('f03p-fix docs', () => {
     }
     expect(await read('README.zh.md')).toBe(await read('README.md'));
   });
+
+  it('f03p-fix-#7 CHANGELOG and every README say a running service survives a rebuild', async () => {
+    const md = await read('CHANGELOG.md');
+    const section = md.slice(md.indexOf('## f0.3+ '), md.indexOf('## f0.3.1 '));
+    for (const s of ['f03p-fix-#7', 'dist/.next', '.generations.json']) expect(section, s).toContain(s);
+    for (const f of READMES) {
+      const md = await read(f);
+      for (const s of ['dist/.next', 'dist/.generations.json']) expect(md, `${f} ${s}`).toContain(s);
+    }
+  });
+
+  it('f03p-fix-#8 CHANGELOG and every README describe continuation cards, no plain-text full copy', async () => {
+    const md = await read('CHANGELOG.md');
+    const section = md.slice(md.indexOf('## f0.3+ '), md.indexOf('## f0.3.1 '));
+    for (const s of ['f03p-fix-#8', '续 2/N', '…（未完，见下一张卡）']) expect(section, s).toContain(s);
+    for (const f of READMES) {
+      const md = await read(f);
+      expect(md, f).toContain('续 2/N');
+      expect(md, f).toContain('…（未完，见下一张卡）');
+      expect(md, f).not.toContain('补发纯文本全文');
+      expect(md, f).not.toContain('sent in full as plain text');
+    }
+  });
 });

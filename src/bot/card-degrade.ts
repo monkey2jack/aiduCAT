@@ -1,7 +1,13 @@
 import { createHash } from 'node:crypto';
 import type { LarkChannel } from '@larksuite/channel';
 import { log } from '../core/logger';
-import { answerPlainText, renderCardWithInfo, type RunCardRenderOptions } from '../card/run-renderer';
+import {
+  answerPlainText,
+  continuationPlainText,
+  renderCardWithInfo,
+  renderContinuationCard,
+  type RunCardRenderOptions,
+} from '../card/run-renderer';
 import type { RunState } from '../card/run-state';
 
 /**
@@ -19,7 +25,6 @@ import type { RunState } from '../card/run-state';
 
 export const CARD_FAILED_NOTICE = '⚠️ 卡片发送失败，本轮回答没能送达，请重发一次。';
 const TEXT_FALLBACK_HEADER = '（卡片显示失败，以下是纯文本答案）';
-const FULL_TEXT_HEADER = '📄 全文（卡片里放不下）：';
 
 type SendOpts = { replyTo?: string; replyInThread?: boolean };
 type CardChannel = Pick<LarkChannel, 'send' | 'updateCard'>;
@@ -65,24 +70,42 @@ async function sendText(channel: CardChannel, chatId: string, text: string, send
   if (!r?.messageId?.trim()) throw new Error('text reply missing message receipt');
 }
 
-/** Send the whole answer as plain text (used when the card had to truncate it). */
-export async function sendFullAnswerText(input: {
+/**
+ * f03p-fix-#8: send the rest of a long answer as ordered 「续 i/N」 cards
+ * (card 1 is the streaming card). Replaces the old「📄 全文」plain-text copy,
+ * which repeated card 1 unformatted. Only when Feishu rejects a continuation
+ * card does that page and everything after it go out as plain text, once.
+ */
+export async function sendContinuationCards(input: {
   channel: CardChannel;
   chatId: string;
   scope: string;
-  state: RunState;
+  pages: string[];
   sendOpts: SendOpts;
-}): Promise<boolean> {
-  const text = answerPlainText(input.state);
-  if (!text) return false;
-  try {
-    await sendText(input.channel, input.chatId, `${FULL_TEXT_HEADER}\n\n${text}`, input.sendOpts);
-    log.info('outbound', 'full-text-sent', { scope: input.scope, chars: text.length });
-    return true;
-  } catch (err) {
-    log.fail('outbound', err, { scope: input.scope, step: 'full-text' });
-    return false;
+}): Promise<'cards' | 'text' | 'none'> {
+  const { channel, chatId, scope, pages, sendOpts } = input;
+  if (pages.length === 0) return 'none';
+  const total = pages.length + 1;
+  for (let i = 0; i < pages.length; i++) {
+    const card = renderContinuationCard(pages[i]!, i + 2, total);
+    try {
+      const r = await channel.send(chatId, { card }, sendOpts);
+      if (!r?.messageId?.trim()) throw new Error('continuation card missing message receipt');
+    } catch (err) {
+      logRejectedCard(card, err, 'continuation-card', scope);
+      const header = `（卡片显示失败，以下是纯文本 续 ${i + 2}/${total}${i + 2 < total ? ` 至 ${total}/${total}` : ''}）`;
+      try {
+        await sendText(channel, chatId, `${header}\n\n${continuationPlainText(pages.slice(i))}`, sendOpts);
+        log.info('outbound', 'continuation-text', { scope, from: i + 2, total });
+        return 'text';
+      } catch (textErr) {
+        log.fail('outbound', textErr, { scope, step: 'continuation-text' });
+        return 'none';
+      }
+    }
   }
+  log.info('outbound', 'continuation-cards', { scope, total });
+  return 'cards';
 }
 
 export async function deliverAfterCardFailure(input: {
@@ -111,7 +134,7 @@ export async function deliverAfterCardFailure(input: {
       if (!r?.messageId?.trim()) throw new Error('strict card missing message receipt');
     }
     log.info('card', 'degraded', { scope, step: 'strict-card', patched: Boolean(messageId) });
-    if (strict.answerTruncated) await sendFullAnswerText({ channel, chatId, scope, state, sendOpts });
+    await sendContinuationCards({ channel, chatId, scope, pages: strict.continuations, sendOpts });
     return 'strict-card';
   } catch (err) {
     logRejectedCard(strict.card, err, 'strict-retry', scope);

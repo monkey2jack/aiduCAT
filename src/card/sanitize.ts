@@ -37,7 +37,8 @@ export function fenceBlock(text: string, lang = ''): string {
   return `${fence}${lang}\n${body}\n${fence}`;
 }
 
-export const TRUNCATION_NOTE = '\n\n…（已截断，全文见下方纯文本消息）';
+/** f03p-fix-#8: a long answer continues on the next card (no plain-text copy). */
+export const TRUNCATION_NOTE = '\n\n…（未完，见下一张卡）';
 
 function isHttp(url: string): boolean {
   return /^https?:\/\//i.test(url);

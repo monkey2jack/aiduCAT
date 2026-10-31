@@ -37,7 +37,7 @@ aiduCAT 起源并致敬上游 [zarazhangrui/lark-coding-agent-bridge](https://gi
 | 🔌 **多 Provider** | /model 卡三级下拉（Provider→Model→Effort）；provider 密钥走环境变量链不入配置明文；切换下一轮即生效，无需重启；10router 系网关自动识别并只拉 curated combo |
 | 🗜️ **按窗口自动压缩** | 上下文到模型窗口的 60%（`AIDUCAT_COMPACT_PCT`）自动压缩；窗口来自 10router `/v1/models` 或 provider 的 `contextWindow`，都拿不到时沿用 Claude Code 自己 `settings.json` 的设置并打 warn 日志 |
 | 🚦 **边框即状态** | 完成绿 / 停止黄 / 出错红 / 运行中灰 —— 一眼看清结果，无结尾注脚 |
-| 🛟 **卡片被拒不卡死** | 图片 markdown 转链接、去 HTML、正文超 25KB 截断并补发纯文本全文；飞书拒卡时自动降级（严格卡 → 纯文本 → 失败提示），不再停在「Thinking」 |
+| 🛟 **卡片被拒不卡死** | 图片 markdown 转链接、去 HTML、正文超 25KB 自动分成多张「续 i/N」卡片（按段落/代码块/表格边界切开）；飞书拒卡时自动降级（严格卡 → 纯文本 → 失败提示），不再停在「Thinking」 |
 | 🎹 **打字机反应** | 消息一落就打上敲键盘表情；真正开跑立刻消失 |
 | 🗣 **`/model` 自由切模型** | pass-through 任意 gateway combo id（如 `Gemini-3.8-Flash`），不做白名单收口 |
 
@@ -129,7 +129,7 @@ aiduCAT secrets set --app-id <id>
 - **工具 emoji**：🖥️Bash 📖Read ⌨️Edit 📝Write 🔍Grep 🗂️Glob 🌐Web 🤖Agent/子代理 💻其他；工具多时只列最近的，其余折叠成「…另有 N 个」
 - **结束**：状态词消失；**边框颜色说结果** —— 完成绿 / 停止黄 / 出错红；飞书会话列表预览显示 ✅Done / ⭕️Stop / ❌Error / ⚠️Timeout
 - **空跑**（agent 什么都没产出就退出）：直接显示红色报错卡和原因，提示重发
-- **超长 / 被拒**：正文超 25KB 时卡内截断并补发纯文本全文；飞书拒收卡片时先用严格卡（无图片链接、正文 12KB）重试，再不行发纯文本，最后发一句「卡片发送失败」
+- **超长 / 被拒**：正文超 25KB 时，第 1 张卡显示到预算边界（在段落、代码块、表格边界切开，末尾「…（未完，见下一张卡）」），其余按顺序发「续 2/N」「续 3/N」卡片，markdown 正常渲染、每张 <30KB、内容不重复；超大代码块按行切开并重新开合代码围栏，超大表格按行切开并重复表头；只有续卡被飞书拒收时，该张起的剩余部分才改发一次纯文本。飞书拒收卡片时先用严格卡（无图片链接、正文 12KB）重试，再不行发纯文本，最后发一句「卡片发送失败」
 
 ## 更新日志（f0.3+）
 
@@ -305,6 +305,7 @@ export ANTHROPIC_API_KEY="sk-ant-..."
 - 群里默认不显示工具调用，`preferences.showToolCallsInGroups: true` 可打开。
 - 超时：`preferences.runIdleTimeoutMinutes`（默认 15 分钟无输出即停）、`preferences.runToolTimeoutMinutes`（单个工具默认最长 30 分钟）。重启后 10 分钟内的排队消息会自动重放，更早的回一句「请重发」；在途卡片标「服务重启，请重发」。
 - 优雅重启：收到停止信号后不接新轮次，先等在途轮次跑完，最多 `preferences.shutdownDrainMinutes` 分钟（默认 10，`0` = 立即停）；期间新消息记下，重启后自动处理。被打断的轮次若 10 分钟内重启完成，会在同一会话里自动发一次「（服务重启，接着刚才的继续）」，只续一次。systemd 单元需要 `KillMode=mixed` 和 `TimeoutStopSec=660`（`aiduCAT start` 安装的单元已自带，手写的要自己加）。
+- 服务运行中也可以直接 `pnpm build`：构建先写到 `dist/.next`，新分块先就位、`dist/cli.js` 用原子改名替换，旧分块保留最近 3 次构建（`dist/.generations.json` 记录），所以正在跑的进程下一轮按需加载分块不会报错；新代码在重启后生效。稳妥起见仍建议升级时「先停 → 构建 → 再启动」。
 - token 只给 owner：`~/.claude/settings.json` 里 `env` 的凭据（`GH_TOKEN`、`CLOUDFLARE_*` 等）只在 owner 发起的轮次里可用；别人发起的轮次会被置空（`ANTHROPIC_*`/`CLAUDE_*` 保留）。owner 体验不变。
 
 ### 数据目录与迁移（migrate-home）

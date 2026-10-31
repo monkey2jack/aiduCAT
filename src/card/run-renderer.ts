@@ -2,13 +2,16 @@ import { deepMaskEmails } from './mask-email';
 import { timeoutNotice, type Block, type RunState, type ToolEntry } from './run-state';
 import { logoImgKeyForModel } from './model-logo';
 import { maskEmails } from './mask-email';
-import { sanitizeCardMarkdown, sanitizePlainText, truncateUtf8, utf8Bytes } from './sanitize';
+import { TRUNCATION_NOTE, sanitizeCardMarkdown, sanitizePlainText, truncateUtf8, utf8Bytes } from './sanitize';
+import { jsonBytes, paginateMarkdown } from './paginate';
 import { toolHeaderText } from './tool-render';
 const REASONING_MAX = 1500;
 /** f0.3.1 #2: answer budget inside the card (UTF-8 bytes, before JSON escaping). */
 export const ANSWER_MAX_BYTES = 25_000;
 /** f0.3.1 #2: whole card JSON budget — Feishu rejects cards over 30KB (230025). */
 export const CARD_MAX_BYTES = 28_000;
+/** f03p-fix-#8: answer budget of each 「续 i/N」 continuation card (JSON bytes). */
+export const CONTINUATION_ANSWER_MAX_BYTES = 25_000;
 /** Strict (degrade-retry) render: smaller answer, no reasoning/tool list. */
 const STRICT_ANSWER_MAX_BYTES = 12_000;
 const ERROR_MSG_MAX_BYTES = 1_000;
@@ -48,19 +51,29 @@ export interface RunCardRenderOptions {
   strict?: boolean;
 }
 
+export interface RenderResult {
+  card: object;
+  /** The answer did not fit this card; `continuations` carries the rest. */
+  answerTruncated: boolean;
+  bytes: number;
+  /** f03p-fix-#8: answer pages for cards 2..N (sanitized markdown), in order. */
+  continuations: string[];
+}
+
 export function renderCard(state: RunState, options: RunCardRenderOptions = {}): object {
   return renderCardWithInfo(state, options).card;
 }
 
 /**
  * f0.3.1 #2: render, then shrink until the card JSON fits `CARD_MAX_BYTES`
- * (tool list and reasoning first, then the answer). `answerTruncated` tells the
- * caller the full answer must also go out as a plain-text message.
+ * (tool list and reasoning first, then the answer). f03p-fix-#8: an answer
+ * that does not fit is paged — this card shows page 1 with「…（未完，见下一张卡）」
+ * and `continuations` holds the rest for `renderContinuationCard`.
  */
 export function renderCardWithInfo(
   state: RunState,
   options: RunCardRenderOptions = {},
-): { card: object; answerTruncated: boolean; bytes: number } {
+): RenderResult {
   const budget: RenderBudget = options.strict
     ? { answerBytes: STRICT_ANSWER_MAX_BYTES, reasoningMax: 0, toolLines: 0 }
     : { answerBytes: ANSWER_MAX_BYTES, reasoningMax: REASONING_MAX, toolLines: Number.POSITIVE_INFINITY };
@@ -82,9 +95,23 @@ export function renderCardWithInfo(
   return r;
 }
 
-/** Was the answer cut to fit the card? Then a plain-text copy must follow. */
-export function answerTruncatedInCard(state: RunState, options: RunCardRenderOptions = {}): boolean {
-  return renderCardWithInfo(state, options).answerTruncated;
+/**
+ * f03p-fix-#8: one 「续 i/N」 card carrying answer page `page` (from
+ * `RenderResult.continuations`). Pages other than the last end with the
+ * same「…（未完，见下一张卡）」note as card 1.
+ */
+export function renderContinuationCard(page: string, index: number, total: number): object {
+  const label = `续 ${index}/${total}`;
+  return deepMaskEmails({
+    schema: '2.0',
+    config: { streaming_mode: false, summary: { content: label } },
+    body: { elements: [noteMd(label), markdown(index < total ? page + TRUNCATION_NOTE : page)] },
+  });
+}
+
+/** f03p-fix-#8: plain text for continuation pages whose card Feishu rejected. */
+export function continuationPlainText(pages: string[]): string {
+  return maskEmails(sanitizePlainText(pages.join('\n\n')).trim());
 }
 
 /** The raw answer as the card shows it (text blocks, or Codex finalText). */
@@ -129,23 +156,30 @@ function buildCard(
   state: RunState,
   options: RunCardRenderOptions,
   budget: RenderBudget,
-): { card: object; answerTruncated: boolean; bytes: number } {
+): RenderResult {
   const elements: object[] = [];
   const withLinks = !options.strict;
 
   // aiduCAT: answer (text blocks or final_text) first, single aiduPOP panel below.
-  let remaining = budget.answerBytes;
+  // f03p-fix-#8: an answer over the budget is paged — page 1 here (cut at a
+  // paragraph / code / table boundary), the rest goes to 「续 i/N」 cards.
   let answerTruncated = false;
-  for (const raw of rawAnswerBlocks(state)) {
-    if (remaining <= 0) {
-      answerTruncated = true;
-      break;
-    }
-    const clean = sanitizeCardMarkdown(raw, { withLinks });
-    const text = truncateUtf8(clean, remaining);
-    if (text !== clean) answerTruncated = true;
-    remaining -= utf8Bytes(text);
-    if (text.trim()) elements.push(markdown(text));
+  let continuations: string[] = [];
+  const clean = rawAnswerBlocks(state).map((raw) => sanitizeCardMarkdown(raw, { withLinks }));
+  const total = clean.reduce((n, t) => n + jsonBytes(t), 0);
+  if (total <= budget.answerBytes) {
+    for (const text of clean) if (text.trim()) elements.push(markdown(text));
+  } else {
+    const note = jsonBytes(TRUNCATION_NOTE);
+    const pages = paginateMarkdown(
+      clean.join('\n\n'),
+      Math.max(500, budget.answerBytes - note),
+      CONTINUATION_ANSWER_MAX_BYTES - note,
+    );
+    answerTruncated = pages.length > 1;
+    continuations = pages.slice(1);
+    const first = (pages[0] ?? '') + (answerTruncated ? TRUNCATION_NOTE : '');
+    if (first.trim()) elements.push(markdown(first));
   }
   // f0.3.1 #4: an error with no answer (e.g. the empty-run guard) must be
   // visible without expanding the collapsed panel.
@@ -268,7 +302,7 @@ function buildCard(
     },
     body: { elements },
   });
-  return { card, answerTruncated, bytes: utf8Bytes(JSON.stringify(card)) };
+  return { card, answerTruncated, bytes: utf8Bytes(JSON.stringify(card)), continuations };
 }
 
 function errorText(msg: string): string {

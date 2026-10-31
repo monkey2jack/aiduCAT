@@ -20,8 +20,8 @@ import type { AgentAdapter, AgentEvent } from '../agent/types';
 import { handleCardAction } from '../card/dispatcher';
 import { CallbackAuth } from '../card/callback-auth';
 import { CallbackNonceStore } from '../card/callback-store';
-import { answerTruncatedInCard, renderCard } from '../card/run-renderer';
-import { deliverAfterCardFailure, larkErrorCode, sendFullAnswerText } from './card-degrade';
+import { renderCard, renderCardWithInfo } from '../card/run-renderer';
+import { deliverAfterCardFailure, larkErrorCode, sendContinuationCards } from './card-degrade';
 import {
   finalizeIfRunning,
   initialState,
@@ -1616,15 +1616,11 @@ async function runAgentBatch(deps: RunBatchDeps): Promise<void> {
               return;
             }
             try {
-              const result = await channel.send(
-                chatId,
-                { card: renderCard(filterForPrefs(state), cardRenderOptions) },
-                sendOpts,
-              );
+              const rendered = renderCardWithInfo(filterForPrefs(state), cardRenderOptions);
+              const result = await channel.send(chatId, { card: rendered.card }, sendOpts);
               requireMessageReceipt(result, 'card');
-              if (answerTruncatedInCard(filterForPrefs(state), cardRenderOptions)) {
-                await sendFullAnswerText({ channel, chatId, scope, state: filterForPrefs(state), sendOpts });
-              }
+              // f03p-fix-#8: the rest of a long answer as 「续 i/N」 cards.
+              await sendContinuationCards({ channel, chatId, scope, pages: rendered.continuations, sendOpts });
             } catch (err) {
               degraded = true;
               await degrade(err, state, 'fallback-card');
@@ -1643,15 +1639,11 @@ async function runAgentBatch(deps: RunBatchDeps): Promise<void> {
         if (controls.profileConfig.agentKind !== 'codex') throw err;
         log.fail('stream', err, { mode: replyMode, step: 'progress-stream' });
       }
-      // f0.3.1 #2: the card had to cut the answer — send the whole thing as text.
-      if (
-        !degraded &&
-        controls.profileConfig.agentKind !== 'codex' &&
-        progress.opened() &&
-        !progress.abandoned() &&
-        answerTruncatedInCard(filterForPrefs(latestState), cardRenderOptions)
-      ) {
-        await sendFullAnswerText({ channel, chatId, scope, state: filterForPrefs(latestState), sendOpts });
+      // f03p-fix-#8: the streaming card shows page 1 of a long answer — the
+      // rest follows as ordered 「续 i/N」 cards (no plain-text copy).
+      if (!degraded && controls.profileConfig.agentKind !== 'codex' && progress.opened() && !progress.abandoned()) {
+        const pages = renderCardWithInfo(filterForPrefs(latestState), cardRenderOptions).continuations;
+        await sendContinuationCards({ channel, chatId, scope, pages, sendOpts });
       }
       await recallIfEmptyStreamedReply(channel, progress, filterForPrefs(latestState), scope);
       // aiduCAT: In card mode, if the progress stream card successfully opened, it already
@@ -1974,13 +1966,18 @@ async function sendFinalReply(input: {
   }
 
   if (input.replyMode === 'card') {
-    const result = await input.channel.send(
-      input.chatId,
-      { card: renderCard(input.state, input.cardRenderOptions) },
-      input.sendOpts,
-    );
+    const rendered = renderCardWithInfo(input.state, input.cardRenderOptions);
+    const result = await input.channel.send(input.chatId, { card: rendered.card }, input.sendOpts);
     requireMessageReceipt(result, 'card');
     log.info('outbound', 'sent', outboundLogFields(input, 'card', body, result));
+    // f03p-fix-#8: a long answer continues on 「续 i/N」 cards.
+    await sendContinuationCards({
+      channel: input.channel,
+      chatId: input.chatId,
+      scope: input.scope,
+      pages: rendered.continuations,
+      sendOpts: input.sendOpts,
+    });
   } else if (input.replyMode === 'markdown') {
     if (body.trim()) {
       const result = await input.channel.send(

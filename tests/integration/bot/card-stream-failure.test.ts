@@ -12,6 +12,7 @@ import { FakeAgentAdapter, type FakeAgentEvents } from '../../helpers/fake-agent
 import { createTmpProfile } from '../../helpers/tmp-profile.js';
 import { CLAUDE_USAGE_FIXTURE as F } from '../../helpers/claude-usage-fixture.js';
 import { translateEvent } from '../../../src/agent/claude/stream-json.js';
+import { longChinese } from '../../helpers/long-answers.js';
 
 // f0.3.1: card-mode (嘟嘟's production mode, Claude) regressions for the
 // "card rejected → stuck on Thinking forever" incident. These replace the old
@@ -291,20 +292,58 @@ describe('card-mode stream failures (f0.3.1)', () => {
     expect(textSends(h).join('\n')).toContain('ANSWER_SENTINEL');
   });
 
-  it('f031-#2 an answer cut to fit the card is followed by a full plain-text copy', async () => {
-    let long = '';
-    while (Buffer.byteLength(long) < 40_000) long += '很长的一段回答。LONG ';
-    long += 'TAIL_SENTINEL';
+  // f03p-fix-#8 (replaces f031-#2's plain-text full copy): a long answer goes
+  // out as the streaming card + ordered 「续 i/N」 cards, never as plain text.
+  it('f03p-fix-#8 a 17k-char answer → streaming card + 续 2/N… cards in order, no plain-text copy, nothing repeated', async () => {
+    const long = longChinese() + '\n\nTAIL_SENTINEL';
     const h = await setup({
       events: [{ type: 'text', delta: long }, { type: 'done', terminationReason: 'normal' }] as AgentEvent[],
     });
     await h.handlers.message?.(message('om_5', 'hi'));
-    await waitFor(() => textSends(h).length >= 1);
+    await waitFor(() => h.sent.some((s) => JSON.stringify(s.content).includes('TAIL_SENTINEL')));
     await settle();
     for (const u of h.updates) expect(Buffer.byteLength(JSON.stringify(u))).toBeLessThan(30_000);
-    expect(JSON.stringify(h.updates.at(-1))).toContain('已截断');
-    expect(textSends(h).join('')).toContain('TAIL_SENTINEL');
+    const last = JSON.stringify(h.updates.at(-1));
+    expect(last).toContain('…（未完，见下一张卡）');
+    expect(last).not.toContain('已截断');
+    expect(textSends(h)).toHaveLength(0);
+    const conts = h.sent.filter((s) => 'card' in s.content).map((s) => JSON.stringify(s.content.card));
+    const total = conts.length + 1;
+    expect(total).toBeGreaterThanOrEqual(2);
+    conts.forEach((c, i) => {
+      expect(c).toContain(`续 ${i + 2}/${total}`);
+      expect(Buffer.byteLength(c)).toBeLessThan(30_000);
+      expect(c).not.toContain('![');
+    });
+    expect(conts.at(-1)).toContain('TAIL_SENTINEL');
+    // every paragraph exactly once across all cards
+    const all = [last, ...conts].join('\n');
+    for (const n of [1, 50, 100, 150]) expect(all.split(`〔P${n}〕这是第${n}段`).length - 1).toBe(3);
     expect(h.updateCardCalls).toHaveLength(0);
+  });
+
+  it('f03p-fix-#8 a continuation card rejected by Feishu → only the rest goes out as plain text', async () => {
+    const long = longChinese(30_000);
+    const h = await setup({
+      events: [{ type: 'text', delta: long }, { type: 'done', terminationReason: 'normal' }] as AgentEvent[],
+      send: async (content, n) => {
+        if ('card' in content && JSON.stringify(content).includes('续 3/')) throw feishuError(230099);
+        return { messageId: `sent_${n}` };
+      },
+    });
+    await h.handlers.message?.(message('om_5b', 'hi'));
+    await waitFor(() => textSends(h).length >= 1);
+    await settle();
+    const conts = h.sent.filter((s) => 'card' in s.content).map((s) => JSON.stringify(s.content.card));
+    expect(conts[0]).toContain('续 2/');
+    const text = textSends(h).join('\n');
+    expect(text).toContain('续 3/');
+    expect(text).not.toContain('全文（卡片里放不下）');
+    // the plain text starts where card 2 ended: no paragraph of card 1 or 2 repeated
+    const firstInText = Number(/〔P(\d+)〕这是第/.exec(text)![1]);
+    expect(conts[0]).not.toContain(`〔P${firstInText}〕这是第`);
+    expect(JSON.stringify(h.updates.at(-1))).not.toContain(`〔P${firstInText}〕这是第`);
+    expect(text).toContain(long.slice(-30));
   });
 
   it('f031-#3 a mid-stream throttled patch failure comes back to aiduCAT and is logged once with its code', async () => {
