@@ -1,4 +1,4 @@
-import { join } from 'node:path';
+import { isAbsolute, join } from 'node:path';
 import { devNull } from 'node:os';
 import type {
   AppCredentials,
@@ -171,6 +171,12 @@ export interface ProfileConfig {
   access: ProfileAccess;
   workspaces: {
     default?: string;
+    /**
+     * f03p-infra-#3: optional /cd allowlist — absolute paths or `~/…`. When
+     * set, /cd, /ws use and a chat's own cwd must sit under one of them (the
+     * profile default above is the owner's choice and is not checked).
+     */
+    roots?: string[];
   };
   sandbox: SandboxConfig;
   permissions: PermissionConfig;
@@ -276,6 +282,7 @@ export function normalizeProfileConfig(input: unknown): ProfileConfig {
     access?: Partial<ProfileAccess>;
     workspaces?: {
       default?: unknown;
+      roots?: unknown;
       // Legacy workspace authorization fields are accepted for config
       // compatibility only; normalizeWorkspaces drops them.
       trusted?: unknown;
@@ -428,6 +435,7 @@ function normalizeChatMentionMap(input: unknown): Record<string, boolean> {
 
 function normalizeWorkspaces(input: {
   default?: unknown;
+  roots?: unknown;
   trusted?: unknown;
   trustedRoots?: unknown;
   riskFlags?: unknown;
@@ -435,7 +443,16 @@ function normalizeWorkspaces(input: {
   const defaultWorkspace = typeof input?.default === 'string' && input.default.trim()
     ? input.default.trim()
     : undefined;
-  return defaultWorkspace ? { default: defaultWorkspace } : {};
+  const roots = Array.isArray(input?.roots)
+    ? input.roots
+        .filter((r): r is string => typeof r === 'string')
+        .map((r) => r.trim())
+        .filter((r) => r === '~' || r.startsWith('~/') || isAbsolute(r))
+    : [];
+  return {
+    ...(defaultWorkspace ? { default: defaultWorkspace } : {}),
+    ...(roots.length > 0 ? { roots } : {}),
+  };
 }
 
 function normalizeCodex(input: CodexConfig & { flags?: unknown }): CodexConfig {

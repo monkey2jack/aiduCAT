@@ -438,7 +438,9 @@ async function handleCd(args: string, ctx: CommandContext): Promise<void> {
     return;
   }
   const absolute = expandTilde(input);
-  const workspace = await resolveWorkingDirectory(absolute);
+  const workspace = await resolveWorkingDirectory(absolute, {
+    roots: ctx.controls.profileConfig.workspaces.roots,
+  });
   if (!workspace.ok) {
     await reply(ctx, workspace.userVisible);
     return;
@@ -503,7 +505,9 @@ async function handleWsUse(name: string, ctx: CommandContext): Promise<void> {
     await reply(ctx, `未找到工作目录别名：\`${name}\``);
     return;
   }
-  const workspace = await resolveWorkingDirectory(cwd);
+  const workspace = await resolveWorkingDirectory(cwd, {
+    roots: ctx.controls.profileConfig.workspaces.roots,
+  });
   if (!workspace.ok) {
     await reply(ctx, workspace.userVisible);
     return;
@@ -1188,6 +1192,7 @@ async function handleDoctor(args: string, ctx: CommandContext): Promise<void> {
   }
 
   const requestedCwd = effectiveWorkspaceCwd(ctx);
+  const scopeCwdSet = Boolean(ctx.workspaces.cwdFor(ctx.scope));
   if (!requestedCwd) {
     await reply(
       ctx,
@@ -1200,7 +1205,10 @@ async function handleDoctor(args: string, ctx: CommandContext): Promise<void> {
     return;
   }
 
-  const workspace = await resolveWorkingDirectory(requestedCwd);
+  const workspace = await resolveWorkingDirectory(
+    requestedCwd,
+    scopeCwdSet ? { roots: ctx.controls.profileConfig.workspaces.roots } : {},
+  );
   if (!workspace.ok) {
     await reply(
       ctx,

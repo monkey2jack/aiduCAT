@@ -13,7 +13,8 @@ export type WorkingDirectoryRejectReason =
   | 'temp-root'
   | 'broad-user-folder'
   | 'volume-root'
-  | 'sensitive-dir';
+  | 'sensitive-dir'
+  | 'outside-roots';
 
 export type WorkingDirectoryResolveResult =
   | { ok: true; requestedCwd: string; cwdRealpath: string }
@@ -24,8 +25,18 @@ export type WorkingDirectoryResolveResult =
       userVisible: string;
     };
 
+export interface ResolveWorkingDirectoryOptions {
+  /**
+   * f03p-infra-#3: optional allowlist (profile `workspaces.roots`). Empty or
+   * absent = old behaviour (blacklist only). When set, the cwd's realpath must
+   * sit under one of these roots' realpaths; the blacklist still applies.
+   */
+  roots?: readonly string[];
+}
+
 export async function resolveWorkingDirectory(
   requestedCwd: string,
+  opts: ResolveWorkingDirectoryOptions = {},
 ): Promise<WorkingDirectoryResolveResult> {
   const trimmed = requestedCwd.trim();
   if (!trimmed) {
@@ -49,11 +60,31 @@ export async function resolveWorkingDirectory(
   const broad = classifyHighRiskWorkingDirectory(resolved, requestedCwd, tempRealpath, homeRealpath);
   if (broad) return broad;
 
+  const roots = (opts.roots ?? []).filter((r) => typeof r === 'string' && r.trim());
+  if (roots.length > 0) {
+    const realRoots = await Promise.all(
+      roots.map((r) => realpath(expandHomeRoot(r.trim(), homeRealpath)).catch(() => undefined)),
+    );
+    if (!realRoots.some((root) => root !== undefined && isWithin(resolved, root))) {
+      return reject(
+        'outside-roots',
+        requestedCwd,
+        `这个目录不在允许的工作目录范围内（workspaces.roots：${roots.join('、')}）。`,
+      );
+    }
+  }
+
   return {
     ok: true,
     requestedCwd,
     cwdRealpath: resolved,
   };
+}
+
+function expandHomeRoot(root: string, home: string): string {
+  if (root === '~') return home;
+  if (root.startsWith('~/')) return join(home, root.slice(2));
+  return root;
 }
 
 function reject(
