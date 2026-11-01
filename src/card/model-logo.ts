@@ -20,7 +20,7 @@ export type VendorLogo =
   | 'kimi' | 'doubao' | 'hunyuan' | 'minimax' | 'stepfun' | 'zhipu'
   | 'chatglm' | 'baichuan' | 'yi' | 'spark' | 'wenxin' | 'sensenova'
   | 'internlm' | 'mistral' | 'cohere' | 'nvidia' | 'meta' | 'gemma'
-  | 'moonshot' | 'google' | 'anthropic' | 'stability' | 'inception' | 'monkey';
+  | 'moonshot' | 'google' | 'anthropic' | 'stability' | 'inception' | 'aidupark';
 
 let cachedKeys: Partial<Record<VendorLogo, string>> | undefined;
 
@@ -59,7 +59,10 @@ function loadKeys(): Partial<Record<VendorLogo, string>> {
  * most specific vendor keyword to the most generic.
  */
 const VENDOR_PATTERNS: Array<[RegExp, VendorLogo]> = [
-  [/monkey/, 'monkey'],
+  // 猴哥的 10router 专属 combo `aiduPARK`（2026-11-02 起，替代旧 combo
+  // `monkey`）用黑白翅膀徽标。放第一位：combo 名里可能带别的厂商词
+  // （如 aiduPARK-gemini），专属图标优先。旧的 `monkey` 不再有专属图标。
+  [/aidupark/, 'aidupark'],
   [/mercury|inception/, 'inception'],
   [/gemini|palm|bard/, 'gemini'],
   [/gemma/, 'gemma'],
