@@ -73,6 +73,7 @@ import { RunJournal, type JournalSnapshot } from './run-journal';
 import type { SessionCatalog } from '../session/catalog';
 import type { SessionStore } from '../session/store';
 import { TurnTpsMeter } from '../session/turn-tps';
+import { EarlyCard, EarlyCards, earlySendOpts } from './early-card';
 import type { WorkspaceStore } from '../workspace/store';
 import { ActiveRuns, type RunHandle } from './active-runs';
 import { ChatModeCache, type ChatMode } from './chat-mode-cache';
@@ -350,9 +351,28 @@ export async function startChannel(deps: StartChannelDeps): Promise<BridgeChanne
       .send(msg.chatId, { text: DRAIN_QUEUED_NOTICE }, opts)
       .catch((err: unknown) => log.warn('shutdown', 'drain-notice-failed', { scope, err: String(err) }));
   };
+  // f0.3.5: card-mode Claude profiles show「☤aiduCATing…」the moment a
+  // message is accepted (see early-card.ts) instead of a reaction.
+  const earlyCards = new EarlyCards((scope, msg) => {
+    if (!usesEarlyCard(controls)) return undefined;
+    log.info('outbound', 'early-card-open', { scope, ...latencyFields(msg.createTime) });
+    return new EarlyCard(
+      channel as unknown as ConstructorParameters<typeof EarlyCard>[0],
+      msg.chatId,
+      renderCard(initialState, { model: controls.profileConfig.preferences.model }),
+      earlySendOpts(msg),
+      scope,
+    );
+  });
   const pending = new PendingQueue(DEBOUNCE_MS, (scope, batch) => {
+    // f0.3.5: taken synchronously, so a message arriving after this flush
+    // gets its own card for the next batch.
+    const earlyCard = earlyCards.take(scope);
     const firstMsg = batch[0];
-    if (!firstMsg) return;
+    if (!firstMsg) {
+      earlyCard?.discard('empty-batch');
+      return;
+    }
     // f0.2+ /status: count every incoming user message batch as one user turn.
     sessions.recordMessage(scope, 'user');
     pending.block(scope);
@@ -384,7 +404,11 @@ export async function startChannel(deps: StartChannelDeps): Promise<BridgeChanne
       // before chat-mode lookup, attachments, pool acquire and agent spawn
       // (it used to land ~2s after acquire). Fire-and-forget: a failed
       // reaction never touches the run.
-      const workingReaction = startWorkingReaction(channel, lastMsg.messageId, lastMsg.createTime);
+      // f0.3.5: card-mode Claude has the「☤aiduCATing…」card instead (opened
+      // at intake, or at run start for a replayed batch) — no reaction.
+      const workingReaction = usesEarlyCard(controls)
+        ? NO_REACTION
+        : startWorkingReaction(channel, lastMsg.messageId, lastMsg.createTime);
       try {
         const resolvedMode = await chatModeCache.resolve(channel, firstMsg.chatId);
         // Feishu/Lark converted topic groups may still resolve as `group` from
@@ -416,6 +440,7 @@ export async function startChannel(deps: StartChannelDeps): Promise<BridgeChanne
           scope,
           mode,
           workingReaction,
+          ...(earlyCard ? { earlyCard } : {}),
           onCardOpened: (messageId) => journal.setCard(scope, runKey, messageId),
           onTerminal: (t) => {
             terminal = t;
@@ -446,6 +471,8 @@ export async function startChannel(deps: StartChannelDeps): Promise<BridgeChanne
         // f0.3.4: idempotent — covers rounds that ended before the run took
         // over the reaction (pre-run failure, policy reject, empty prompt).
         workingReaction.release();
+        // f0.3.5: the round ended without using its placeholder card.
+        earlyCard?.discard('not-used');
         pending.unblock(scope);
         log.info('flush', 'end');
         inflightBatches--;
@@ -456,8 +483,12 @@ export async function startChannel(deps: StartChannelDeps): Promise<BridgeChanne
     onPush: (scope, msg) => {
       journal.queue(scope, msg);
       noteQueuedWhileDraining(scope, msg);
+      if (!draining) earlyCards.ensure(scope, msg);
     },
-    onDrop: (scope, msgs) => journal.dequeue(scope, msgs.map((m) => m.messageId)),
+    onDrop: (scope, msgs) => {
+      journal.dequeue(scope, msgs.map((m) => m.messageId));
+      earlyCards.take(scope)?.discard('dropped');
+    },
   });
 
   // Counter for stdout reconnect escalation; reset on `reconnected`.
@@ -660,6 +691,9 @@ export async function startChannel(deps: StartChannelDeps): Promise<BridgeChanne
     drain: async (timeoutMs: number, signal?: AbortSignal): Promise<DrainResult> => {
       draining = true;
       pending.freeze();
+      // f0.3.5: queued batches are replayed by the next process (which opens
+      // its own card); don't leave「☤aiduCATing…」placeholders behind.
+      earlyCards.discardAll('draining');
       const startedAt = Date.now();
       log.info('shutdown', 'drain-start', { inflight: inflightBatches, timeoutMs });
       if (inflightBatches > 0 && !signal?.aborted) {
@@ -696,6 +730,7 @@ export async function startChannel(deps: StartChannelDeps): Promise<BridgeChanne
       // right now is exactly what the next start must recover.
       await journal.close();
       pending.cancelAll();
+      earlyCards.discardAll('disconnect');
       const [disconnectResult, stopAllResult, ...flushResults] = await Promise.allSettled([
         channel.disconnect(),
         activeRuns.stopAll(),
@@ -1115,6 +1150,8 @@ interface RunBatchDeps {
   onTerminal?: (terminal: string) => void;
   /** f0.3.4: the reaction added at flush start; released when real output shows or the round ends. */
   workingReaction?: WorkingReaction;
+  /** f0.3.5: the「☤aiduCATing…」card opened at intake; the run adopts it. */
+  earlyCard?: EarlyCard;
 }
 
 /**
@@ -1476,7 +1513,8 @@ async function runAgentBatch(deps: RunBatchDeps): Promise<void> {
   // update with content) it is removed early — 猴哥: "一旦开始了下面的工作，
   // 我的消息下的这个飞书表情就可以消失了". Fallback removal in `finally`.
   const workingReaction =
-    deps.workingReaction ?? startWorkingReaction(channel, lastMsg.messageId, lastMsg.createTime);
+    deps.workingReaction ??
+    (usesEarlyCard(controls) ? NO_REACTION : startWorkingReaction(channel, lastMsg.messageId, lastMsg.createTime));
 
   try {
     if (cotEnabled) {
@@ -1572,24 +1610,26 @@ async function runAgentBatch(deps: RunBatchDeps): Promise<void> {
           step,
         });
       };
-      const progress = createLazyProgressStream(scope, replyMode, lastMsg.createTime, () =>
+      const cardProducer = async (ctrl: NonNullable<typeof cardCtrl>): Promise<void> => {
+        producerStarted = true;
+        if (progress.abandoned()) return;
+        cardCtrl = ctrl;
+        if (ctrl.messageId) deps.onCardOpened?.(ctrl.messageId);
+        await ctrl.update(renderCard(filterForPrefs(latestState), cardRenderOptions));
+        await renderDone;
+      };
+      const freshCard = () =>
         channel.stream(
           chatId,
-          {
-            card: {
-              initial: renderCard(initialState, cardRenderOptions),
-              producer: async (ctrl) => {
-                producerStarted = true;
-                if (progress.abandoned()) return;
-                cardCtrl = ctrl;
-                if (ctrl.messageId) deps.onCardOpened?.(ctrl.messageId);
-                await ctrl.update(renderCard(filterForPrefs(latestState), cardRenderOptions));
-                await renderDone;
-              },
-            },
-          },
+          { card: { initial: renderCard(initialState, cardRenderOptions), producer: cardProducer } },
           sendOpts,
-        ),
+        );
+      // f0.3.5: take over the「☤aiduCATing…」card opened at intake.
+      const earlyCard = deps.earlyCard;
+      const progress = createLazyProgressStream(scope, replyMode, lastMsg.createTime, () =>
+        earlyCard
+          ? earlyCard.adopt(cardProducer as Parameters<typeof earlyCard.adopt>[0], freshCard)
+          : freshCard(),
       );
       const renderDone = trackedAgentStream(
         handle,
@@ -2421,6 +2461,18 @@ export function latencyFields(msgCreateTime: unknown, now = Date.now()): { atMs:
 /** f0.3.4: a working reaction added once, released (removed) at most once. */
 interface WorkingReaction {
   release(): void;
+}
+
+/** f0.3.5: card mode has no reaction (the「☤aiduCATing…」card is the cue). */
+const NO_REACTION: WorkingReaction = { release() {} };
+
+/**
+ * f0.3.5: the「☤aiduCATing…」card at intake replaces the reaction for card-mode
+ * Claude profiles. Codex keeps its lazy card (an early one would only be
+ * recalled) and markdown/text modes have no card, so both keep the reaction.
+ */
+function usesEarlyCard(controls: Pick<Controls, 'cfg' | 'profileConfig'>): boolean {
+  return getMessageReplyMode(controls.cfg) === 'card' && controls.profileConfig.agentKind !== 'codex';
 }
 
 function startWorkingReaction(channel: LarkChannel, messageId: string, msgCreateTime?: unknown): WorkingReaction {

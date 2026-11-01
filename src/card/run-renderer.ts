@@ -207,7 +207,7 @@ function buildCard(
     state.terminal === 'running'
       ? state.footer === 'tool_running'
         ? 'Processing…'
-        : state.footer === 'streaming'
+        : state.footer === 'streaming' || state.footer === 'received'
           ? 'aiduCATing…'
           : 'Thinking…'
       : '';
@@ -462,7 +462,8 @@ function summaryText(state: RunState): string {
   if (state.terminal === 'error') return '❌Error';
   if (state.terminal === 'done') return '✅Done';
   if (state.footer === 'tool_running') return '☤Processing…';
-  if (state.footer === 'streaming') return '☤aiduCATing…';
+  // f0.3.5: the placeholder card (received) reads the same as streaming.
+  if (state.footer === 'streaming' || state.footer === 'received') return '☤aiduCATing…';
   return '☤Thinking…';
 }
 

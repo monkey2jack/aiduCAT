@@ -256,19 +256,19 @@ const answer = (text: string): AgentEvent[] =>
   [{ type: 'text', delta: text }, { type: 'done', terminationReason: 'normal' }] as AgentEvent[];
 
 describe('f0.3.4 latency: early reaction + early card', () => {
-  it('f034-#3/#4 reaction and the ☤Thinking… card (with model logo) go out before the agent says anything', async () => {
+  it('f034-#3/#4 (f0.3.5: card replaces the reaction) the ☤aiduCATing… card (with model logo) goes out before the agent says anything', async () => {
     const g = gate();
     const h = await setup({ events: answer('FINAL_SENTINEL'), gate: g.promise, model: 'Gemini-3.8-Flash' });
     await h.handlers.message?.(message('om_a', 'hi'));
     await waitFor(() => h.order.includes('card-open'));
-    // nothing from the agent yet, but the user already sees both cues
-    expect(h.reactions.added).toEqual(['om_a']);
-    expect(h.order.indexOf('reaction')).toBeLessThan(h.order.indexOf('agent-run'));
-    expect(h.order.indexOf('reaction')).toBeLessThan(h.order.indexOf('card-open'));
+    // nothing from the agent yet, but the user already sees the card — and
+    // since f0.3.5 it is the only cue (no reaction in card mode)
+    expect(h.order.indexOf('card-open')).toBe(0);
+    expect(h.reactions.added).toEqual([]);
     const first = h.updates[0];
-    expect(summaryOf(first)).toBe('☤Thinking…');
+    expect(summaryOf(first)).toBe('☤aiduCATing…');
     const firstJson = JSON.stringify(first);
-    expect(firstJson).toContain('☤Thinking…');
+    expect(firstJson).toContain('☤aiduCATing…');
     expect(firstJson).toContain('Gemini-3.8-Flash');
     expect(firstJson).toContain('custom_icon');
     expect(firstJson).not.toContain('FINAL_SENTINEL');
@@ -282,15 +282,14 @@ describe('f0.3.4 latency: early reaction + early card', () => {
     expect(h.order.filter((o) => o === 'card-open')).toHaveLength(1);
     expect(h.sent).toHaveLength(0);
     expect(h.recalled).toHaveLength(0);
-    await waitFor(() => h.reactions.removed.length === 1);
+    expect(h.reactions.added).toHaveLength(0);
   });
 
-  it('f034-#3 the reaction never waits on a slow reaction API, and a failed one does not break the round', async () => {
+  it('f034-#3 (f0.3.5) card mode never calls the reaction API, even when it is slow or down', async () => {
     const h = await setup({ events: answer('OK_SENTINEL'), failReaction: true, addReactionDelayMs: 300 });
     await h.handlers.message?.(message('om_b', 'hi'));
     await waitFor(() => summaryOf(h.updates.at(-1)) === '✅Done');
-    // the agent was spawned while the reaction call was still pending
-    expect(h.order.indexOf('reaction')).toBeLessThan(h.order.indexOf('agent-run'));
+    expect(h.order).not.toContain('reaction');
     expect(JSON.stringify(h.updates.at(-1))).toContain('OK_SENTINEL');
     expect(h.reactions.removed).toHaveLength(0);
   });
@@ -303,7 +302,7 @@ describe('f0.3.4 latency: early reaction + early card', () => {
     expect(h.order.filter((o) => o === 'card-open')).toHaveLength(1);
     expect(h.recalled).toHaveLength(0);
     expect(h.sent).toHaveLength(0);
-    await waitFor(() => h.reactions.removed.length === 1);
+    expect(h.reactions.added).toHaveLength(0);
   });
 
   it('f034-#4 a stopped run ends on the same early card as ⭕️Stop (no second message)', async () => {
@@ -358,7 +357,7 @@ describe('f0.3.4 latency: early reaction + early card', () => {
     await waitFor(() => JSON.stringify([h.updates, h.sent]).includes('CODEX_SENTINEL'));
   });
 
-  it('f034-#7 the latency trail is logged in ms: intake enter → flush start → reaction added → card open', async () => {
+  it('f034-#7 the latency trail is logged in ms: intake enter → early card (f0.3.5) → flush start → card adopted', async () => {
     const info = vi.spyOn(log, 'info');
     const h = await setup({ events: answer('TRAIL_SENTINEL') });
     const m = message('om_t', 'hi');
@@ -369,18 +368,17 @@ describe('f0.3.4 latency: early reaction + early card', () => {
       info.mock.calls.find((c) => c[0] === phase && c[1] === event)?.[2] as Record<string, number> | undefined;
     const enter = find('intake', 'enter');
     const flush = find('flush', 'start');
-    const reaction = find('reaction', 'added');
+    const early = find('outbound', 'early-card-open');
     const open = find('outbound', 'progress-stream-open');
-    for (const f of [enter, flush, open]) {
+    for (const f of [enter, early, flush, open]) {
       expect(typeof f?.atMs).toBe('number');
       expect(f!.sinceMsgMs!).toBeGreaterThanOrEqual(1000);
     }
-    expect(typeof reaction?.requestedAtMs).toBe('number');
-    expect(typeof reaction?.doneAtMs).toBe('number');
-    expect(reaction!.sinceMsgMs!).toBeGreaterThanOrEqual(1000);
-    expect(enter!.atMs!).toBeLessThanOrEqual(flush!.atMs!);
-    expect(flush!.atMs!).toBeLessThanOrEqual(reaction!.requestedAtMs!);
-    expect(reaction!.requestedAtMs!).toBeLessThanOrEqual(open!.atMs!);
+    expect(find('reaction', 'added')).toBeUndefined();
+    expect(enter!.atMs!).toBeLessThanOrEqual(early!.atMs!);
+    // the card is up before the debounce even ends
+    expect(early!.atMs!).toBeLessThanOrEqual(flush!.atMs!);
+    expect(flush!.atMs!).toBeLessThanOrEqual(open!.atMs!);
   });
 
   it('f034-#1/#2 a round never fetches /v1/models (combos only, never awaited)', async () => {

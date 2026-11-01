@@ -48,8 +48,14 @@ describe('one-line minimal panel header (f0.2+ 猴哥点单 2026-10-20)', () => 
 });
 
 describe('status line between answer and panel', () => {
-  it('default running state renders Thinking…', () => {
+  it('f0.3.5: default running state (placeholder) renders aiduCATing…', () => {
     const card = renderCard(initialState, { model: 'M' });
+    expect(statusLine(card)).toBe('☤aiduCATing…');
+  });
+
+  it('thinking renders Thinking…', () => {
+    const state = reduce(initialState, { type: 'thinking', delta: 'hmm' });
+    const card = renderCard(state, { model: 'M' });
     expect(statusLine(card)).toBe('☤Thinking…');
   });
 

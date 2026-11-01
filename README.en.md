@@ -38,7 +38,7 @@ aiduCAT originates from and credits the upstream [zarazhangrui/lark-coding-agent
 | 🗜️ **Window-based auto-compact** | Compacts at 60% of the model window (`AIDUCAT_COMPACT_PCT`); the window comes from the 10router combo (when `/api/combos` carries a window field) or the provider's `contextWindow`; when neither has one aiduCAT sets nothing and Claude Code keeps `CLAUDE_CODE_MAX_CONTEXT_TOKENS` / `CLAUDE_CODE_AUTO_COMPACT_WINDOW` from its own `settings.json` (since f0.3.4 the full 10router `/v1/models` list is never pulled) |
 | 🚦 **Border = status** | done green / stopped yellow / error red / running grey — no trailing notes |
 | 🛟 **Rejected cards never hang** | Image markdown becomes links, HTML is stripped, answers over 25KB are split into ordered "续 i/N" continuation cards (cut at paragraph/code/table boundaries); if Feishu rejects the card it degrades (strict card → plain text → failure notice) instead of sticking on "Thinking" |
-| 🎹 **Typing reaction** | A keyboard reaction lands on your message and disappears as soon as output starts |
+| ☤ **aiduCATing… placeholder card** | The moment a message lands (even while queued behind a running round) a card saying「☤aiduCATing…」appears and then streams the answer; card mode no longer adds a Feishu reaction (markdown/text modes and Codex keep it) |
 | 🗣 **Free-form `/model`** | Passes any gateway combo id through (e.g. `Gemini-3.8-Flash`), no allow-list |
 
 ## Quick start (from scratch)
@@ -118,7 +118,7 @@ One card, top to bottom:
 ```
 [the model's answer, streaming]
 
-☤Thinking…                                       ← live status word (Thinking / Processing / aiduCATing), gone on completion
+☤Thinking…                                       ← live status word (aiduCATing / Thinking / Processing), gone on completion
 ┌─ [logo] Claude-Opus-4.6 · 💭 2 · 🛠️ 4 · ⏱️ 38s ─┐  ← collapsed panel header: model · thinking segments · tools · elapsed
 │ 💭 thinking text (up to 1500 chars)               │  ← when expanded
 │ - 🖥️ **Bash** — pnpm test                         │

@@ -18,7 +18,7 @@ describe('f035 version f0.3.5 (package 0.3.5) docs', () => {
     expect(start).toBeGreaterThan(0);
     expect(start).toBeLessThan(prev);
     const section = md.slice(start, prev);
-    for (const s of ['0.3.5', 'TPS', 'duration_api_ms', '群', '面板', 'showToolCallsInGroups', '1000000']) expect(section).toContain(s);
+    for (const s of ['0.3.5', 'TPS', 'duration_api_ms', '群', '面板', 'showToolCallsInGroups', '1000000', '☤aiduCATing…', '表情']) expect(section).toContain(s);
   });
 
   it('f035 READMEs say groups get the panel card', async () => {

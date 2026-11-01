@@ -38,7 +38,7 @@ aiduCAT 起源并致敬上游 [zarazhangrui/lark-coding-agent-bridge](https://gi
 | 🗜️ **按窗口自动压缩** | 上下文到模型窗口的 60%（`AIDUCAT_COMPACT_PCT`）自动压缩；窗口来自 10router combo（`/api/combos` 带窗口字段时）或 provider 的 `contextWindow`，都没有时 aiduCAT 不覆盖，沿用 Claude Code 自己 `settings.json` 的 `CLAUDE_CODE_MAX_CONTEXT_TOKENS` / `CLAUDE_CODE_AUTO_COMPACT_WINDOW`（f0.3.4 起不再拉 10router 的 `/v1/models` 全量模型表） |
 | 🚦 **边框即状态** | 完成绿 / 停止黄 / 出错红 / 运行中灰 —— 一眼看清结果，无结尾注脚 |
 | 🛟 **卡片被拒不卡死** | 图片 markdown 转链接、去 HTML、正文超 25KB 自动分成多张「续 i/N」卡片（按段落/代码块/表格边界切开）；飞书拒卡时自动降级（严格卡 → 纯文本 → 失败提示），不再停在「Thinking」 |
-| 🎹 **打字机反应** | 消息一落就打上敲键盘表情；真正开跑立刻消失 |
+| ☤ **aiduCATing… 占位卡** | 消息一落（还没开跑、在排队也一样）就出卡片「☤aiduCATing…」，之后同一张卡流式填充；卡片模式不再加飞书表情（markdown/text 模式和 Codex 仍用表情） |
 | 🗣 **`/model` 自由切模型** | pass-through 任意 gateway combo id（如 `Gemini-3.8-Flash`），不做白名单收口 |
 
 ## 快速开始（从零安装）
@@ -118,7 +118,7 @@ aiduCAT secrets set --app-id <id>
 ```
 [模型长答案，流式打字]
 
-☤Thinking…                                       ← 运行中的状态词（Thinking / Processing / aiduCATing），结束即消失
+☤Thinking…                                       ← 运行中的状态词（aiduCATing / Thinking / Processing），结束即消失
 ┌─ [logo] Claude-Opus-4.6 · 💭 2 · 🛠️ 4 · ⏱️ 38s ─┐  ← 折叠面板头：模型 · 思考段数 · 工具数 · 用时
 │ 💭 思考文本（最多 1500 字）                        │  ← 展开后
 │ - 🖥️ **Bash** — pnpm test                         │

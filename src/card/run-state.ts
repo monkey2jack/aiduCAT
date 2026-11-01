@@ -18,7 +18,8 @@ export type Block =
   | { kind: 'text'; content: string; streaming: boolean; raw?: string }
   | { kind: 'tool'; tool: ToolEntry };
 
-export type FooterStatus = 'thinking' | 'tool_running' | 'streaming' | null;
+/** f0.3.5: 'received' = placeholder before the agent shows anything (☤aiduCATing…). */
+export type FooterStatus = 'received' | 'thinking' | 'tool_running' | 'streaming' | null;
 export type Terminal = 'running' | 'done' | 'interrupted' | 'error' | 'idle_timeout';
 
 /** aiduCAT clarify: one parsed [CLARIFY]{...} marker emitted by the agent. */
@@ -62,7 +63,8 @@ export const initialState: RunState = {
   blocks: [],
   // segments: count of distinct thinking bursts (💭 in the aiduCAT panel).
   reasoning: { content: '', active: false, segments: 0 },
-  footer: 'thinking',
+  // f0.3.5: the placeholder says「☤aiduCATing…」until the agent shows work.
+  footer: 'received',
   terminal: 'running',
 };
 

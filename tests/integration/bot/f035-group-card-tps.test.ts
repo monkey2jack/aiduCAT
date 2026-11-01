@@ -288,13 +288,13 @@ const workEvents = (answerText: string): AgentEvent[] =>
   ] as AgentEvent[];
 
 describe('f0.3.5 group chats get the same panel card as DMs', () => {
-  it('f035-group a group @mention streams a card (☤Thinking… first, panel, ✅Done) — no markdown/post', async () => {
+  it('f035-group a group @mention streams a card (☤aiduCATing… first, panel, ✅Done) — no markdown/post', async () => {
     const g = gate();
     const h = await setup({ events: workEvents('GROUP_ANSWER'), gate: g.promise, model: 'aiduPARK' });
     const info = vi.spyOn(log, 'info');
     await h.handlers.message?.(message('om_g1', '@Bridge hi', 'group'));
     await waitFor(() => h.order.includes('card-open'));
-    expect(summaryOf(h.updates[0])).toBe('☤Thinking…');
+    expect(summaryOf(h.updates[0])).toBe('☤aiduCATing…');
     g.open();
     await waitFor(() => summaryOf(h.updates.at(-1)) === '✅Done');
     await settle();
