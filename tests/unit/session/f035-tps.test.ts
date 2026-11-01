@@ -149,6 +149,7 @@ describe('f035 SessionStore TPS', () => {
     expect(st?.genMs).toBe(20_000);
     s.recordTurnTps('c', 0, 5_000); // nothing measured → ignored
     expect(s.getRaw('c')?.stats?.genMs).toBe(20_000);
+    await s.flush(); // no write may land after the temp dir is removed
   });
 
   it('migration: the old wrong activeMs/tpsAvg (嘟嘟 78M ms → 4 tok/s) are dropped, other counters kept', async () => {
