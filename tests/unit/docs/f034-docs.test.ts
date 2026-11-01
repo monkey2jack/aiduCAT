@@ -18,7 +18,7 @@ describe('f034 version f0.3.4 (package 0.3.4) docs', () => {
     expect(start).toBeGreaterThan(0);
     expect(start).toBeLessThan(prev);
     const section = md.slice(start, prev);
-    for (const s of ['0.3.4', '/v1/models', 'combo', '表情', 'Thinking', 'settings.json']) expect(section).toContain(s);
+    for (const s of ['0.3.4', '/v1/models', 'combo', '表情', 'Thinking', 'settings.json', 'sinceMsgMs']) expect(section).toContain(s);
   });
 
   it('f034 READMEs no longer say the window comes from 10router /v1/models', async () => {

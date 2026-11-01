@@ -14,10 +14,18 @@ import { log } from '../core/logger';
 export async function addWorkingReaction(
   channel: LarkChannel,
   messageId: string,
+  /** f0.3.4: latency fields (atMs/sinceMsgMs) measured when the call STARTED. */
+  timing?: { atMs: number; sinceMsgMs?: number },
 ): Promise<string | undefined> {
   try {
     const id = await channel.addReaction(messageId, 'Get');
-    if (id) log.info('reaction', 'added', { messageId, reactionId: id });
+    if (id) {
+      log.info('reaction', 'added', {
+        messageId,
+        reactionId: id,
+        ...(timing ? { requestedAtMs: timing.atMs, sinceMsgMs: timing.sinceMsgMs, doneAtMs: Date.now() } : {}),
+      });
+    }
     return id;
   } catch (err) {
     log.warn('reaction', 'add-failed', {

@@ -373,6 +373,7 @@ export async function startChannel(deps: StartChannelDeps): Promise<BridgeChanne
     void withTrace({ chatId: firstMsg.chatId }, async () => {
       log.info('flush', 'start', {
         scope,
+        ...latencyFields(lastMsg.createTime),
         batchSize: batch.length,
         chatId: firstMsg.chatId,
         threadId: firstMsg.threadId,
@@ -382,7 +383,7 @@ export async function startChannel(deps: StartChannelDeps): Promise<BridgeChanne
       // before chat-mode lookup, attachments, pool acquire and agent spawn
       // (it used to land ~2s after acquire). Fire-and-forget: a failed
       // reaction never touches the run.
-      const workingReaction = startWorkingReaction(channel, lastMsg.messageId);
+      const workingReaction = startWorkingReaction(channel, lastMsg.messageId, lastMsg.createTime);
       try {
         const resolvedMode = await chatModeCache.resolve(channel, firstMsg.chatId);
         // Feishu/Lark converted topic groups may still resolve as `group` from
@@ -971,6 +972,8 @@ async function intakeMessage(deps: IntakeDeps): Promise<void> {
     : msg.chatId;
   log.info('intake', 'enter', {
     scope,
+    // f0.3.4: ms timing so latency can be read off the (minute-precision) jsonl.
+    ...latencyFields(msg.createTime),
     chatType: msg.chatType,
     chatMode,
     resolvedMode,
@@ -1465,7 +1468,8 @@ async function runAgentBatch(deps: RunBatchDeps): Promise<void> {
   // over. Once actual run output starts arriving (card mode: first state
   // update with content) it is removed early — 猴哥: "一旦开始了下面的工作，
   // 我的消息下的这个飞书表情就可以消失了". Fallback removal in `finally`.
-  const workingReaction = deps.workingReaction ?? startWorkingReaction(channel, lastMsg.messageId);
+  const workingReaction =
+    deps.workingReaction ?? startWorkingReaction(channel, lastMsg.messageId, lastMsg.createTime);
 
   try {
     if (cotEnabled) {
@@ -1561,7 +1565,7 @@ async function runAgentBatch(deps: RunBatchDeps): Promise<void> {
           step,
         });
       };
-      const progress = createLazyProgressStream(scope, replyMode, () =>
+      const progress = createLazyProgressStream(scope, replyMode, lastMsg.createTime, () =>
         channel.stream(
           chatId,
           {
@@ -1680,7 +1684,7 @@ async function runAgentBatch(deps: RunBatchDeps): Promise<void> {
       let latestState: RunState = initialState;
       let producerStarted = false;
       let markdownCtrl: { setContent(markdown: string): Promise<void> } | undefined;
-      const progress = createLazyProgressStream(scope, replyMode, () =>
+      const progress = createLazyProgressStream(scope, replyMode, lastMsg.createTime, () =>
         channel.stream(
           chatId,
           {
@@ -1841,6 +1845,7 @@ interface LazyProgressStream {
 function createLazyProgressStream(
   scope: string,
   mode: 'card' | 'markdown',
+  msgCreateTime: unknown,
   open: () => Promise<unknown>,
 ): LazyProgressStream {
   let stream: Promise<unknown> | undefined;
@@ -1856,7 +1861,7 @@ function createLazyProgressStream(
     opened: () => stream !== undefined,
     ensureOpen: () => {
       if (stream) return;
-      log.info('outbound', 'progress-stream-open', { scope, mode });
+      log.info('outbound', 'progress-stream-open', { scope, mode, ...latencyFields(msgCreateTime) });
       stream = open();
       settle(stream);
     },
@@ -2378,13 +2383,23 @@ async function runFallbackReply(
   }
 }
 
+/**
+ * f0.3.4: ms timing for the latency trail (intake enter → flush start →
+ * reaction added → progress-stream-open). `atMs` is this host's clock;
+ * `sinceMsgMs` is measured from the Feishu message create_time.
+ */
+export function latencyFields(msgCreateTime: unknown, now = Date.now()): { atMs: number; sinceMsgMs?: number } {
+  const t = typeof msgCreateTime === 'number' ? msgCreateTime : Number(msgCreateTime);
+  return Number.isFinite(t) && t > 0 ? { atMs: now, sinceMsgMs: now - t } : { atMs: now };
+}
+
 /** f0.3.4: a working reaction added once, released (removed) at most once. */
 interface WorkingReaction {
   release(): void;
 }
 
-function startWorkingReaction(channel: LarkChannel, messageId: string): WorkingReaction {
-  const promise = addWorkingReaction(channel, messageId);
+function startWorkingReaction(channel: LarkChannel, messageId: string, msgCreateTime?: unknown): WorkingReaction {
+  const promise = addWorkingReaction(channel, messageId, latencyFields(msgCreateTime));
   let released = false;
   return {
     release() {

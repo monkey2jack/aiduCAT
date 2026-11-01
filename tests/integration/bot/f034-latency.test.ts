@@ -358,6 +358,31 @@ describe('f0.3.4 latency: early reaction + early card', () => {
     await waitFor(() => JSON.stringify([h.updates, h.sent]).includes('CODEX_SENTINEL'));
   });
 
+  it('f034-#7 the latency trail is logged in ms: intake enter → flush start → reaction added → card open', async () => {
+    const info = vi.spyOn(log, 'info');
+    const h = await setup({ events: answer('TRAIL_SENTINEL') });
+    const m = message('om_t', 'hi');
+    (m as { createTime: number }).createTime = Date.now() - 1000;
+    await h.handlers.message?.(m);
+    await waitFor(() => summaryOf(h.updates.at(-1)) === '✅Done');
+    const find = (phase: string, event: string) =>
+      info.mock.calls.find((c) => c[0] === phase && c[1] === event)?.[2] as Record<string, number> | undefined;
+    const enter = find('intake', 'enter');
+    const flush = find('flush', 'start');
+    const reaction = find('reaction', 'added');
+    const open = find('outbound', 'progress-stream-open');
+    for (const f of [enter, flush, open]) {
+      expect(typeof f?.atMs).toBe('number');
+      expect(f!.sinceMsgMs!).toBeGreaterThanOrEqual(1000);
+    }
+    expect(typeof reaction?.requestedAtMs).toBe('number');
+    expect(typeof reaction?.doneAtMs).toBe('number');
+    expect(reaction!.sinceMsgMs!).toBeGreaterThanOrEqual(1000);
+    expect(enter!.atMs!).toBeLessThanOrEqual(flush!.atMs!);
+    expect(flush!.atMs!).toBeLessThanOrEqual(reaction!.requestedAtMs!);
+    expect(reaction!.requestedAtMs!).toBeLessThanOrEqual(open!.atMs!);
+  });
+
   it('f034-#1/#2 a round never fetches /v1/models (combos only, never awaited)', async () => {
     const prevUrl = process.env.AIDU_10ROUTER_URL;
     const prevTok = process.env.AIDU_10ROUTER_TOKEN;
