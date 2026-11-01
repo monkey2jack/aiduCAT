@@ -4,7 +4,19 @@ aiduCAT 的版本号用 `f` 前缀（f0.1、f0.2+ …），`package.json` 里是
 
 > **tag 说明**：`f0.2++` 原先误指 `6fa62f8`（package 0.2.1），**已于 2026-10-31 修正**为真实发布提交 `c7ff90d`（0.2.2）。`f0.2+`、`v0.2.1` 核实后保持 `6fa62f8`：f0.2+ 的 GitHub Release 于 2026-10-20 01:17 从 main 发布，当时 main 的头部就是 `6fa62f8`（package 0.2.1）；版本号提交 `f01fcd2` 与它只差文档和一个测试，没有代码差别。
 
-## f0.3.4 — 2026-11-02（package 0.3.4，tag 未打）
+## f0.3.5 — 2026-11-02（package 0.3.5，tag 未打）
+
+基于 f0.3.4（`729921a`）。
+
+- **TPS 改成真的**：以前 `/status` 的 ⚡ 用「累计输出 ÷ 累计 claude result 的 `duration_api_ms`」，但续接会话（`--resume`）时 `duration_api_ms` 是**整个会话的累计值**，每轮再加一遍就越滚越大（summer 嘟嘟一个会话 43 轮累出 78,227,379 ms ≈ 21.7 小时，⚡ 只有 4 tok/s）。现在 aiduCAT 自己给每轮计时：从 Claude Code 起来（随即发模型请求）到模型最后一次输出，**扣掉所有工具执行区间**（tool_use → 对应 tool_result，并行工具算到最后一个返回），不含排队、起进程、等工具。分子是本轮主线的输出 token（每次 API 调用最终的 `message_delta` 用量相加，子代理 sidechain 不算，和 f031-#8 一致；与整轮 result 的输出取较小值防重复）；没有逐次用量时（Codex）用整轮输出。
+- **卡片面板头显示本轮 ⚡ N tok/s**（正常结束的轮次才显示；被停止/失败的轮次不显示、不计入平均）。`/status` 的 ⚡ 是会话平均 = Σ本轮输出 ÷ Σ本轮生成时间；还没测到时显示「—」，不再显示 0。
+- **旧会话的错误数据**：`sessions.json` 里旧的 `activeMs` / `tpsAvg` 加载时丢掉（无法从历史重算：CLI 从没记录每轮生成时间），其它计数（📥📤🎯、消息数、上下文）保留；下一轮起按新口径累计。
+- **群聊也用带面板的流式卡片**：上游代码把群聊写死成富文本（post）回复，所以群里没有卡片、没有折叠面板，也没有 f0.3.4 的「☤Thinking…」开跑卡（winter 2026-11-02 01:44 一轮群聊 93 秒后才出第一条输出）。现在群聊和私聊一样按 `messageReply`（默认 card）。面板里的工具行在群里仍默认隐藏（f031-sec-#4），`preferences.showToolCallsInGroups: true` 才显示。查过两台配置：没有群级渲染开关，bot 也没改过配置，是代码问题。
+- **卡片保留真人 @**：agent 写的 `<at user_id="ou_…">名字</at>` 在卡片里改写成卡片格式 `<at id=ou_…></at>`（以前卡片会把所有 HTML 标签删掉）；@所有人 仍变成文字。
+- **usage 日志能看了**：日志会把含 `token` 的键名打码，以前 `inputTokens`/`outputTokens` 全是 `[REDACTED]`；改成 `inTok`/`outTok`，并加 `callFinal`。claude 的 `total_cost_usd` 在续接会话里也是会话累计，日志字段改名 `sessionCostUsd`、指标改名 `session_cost_usd`。新增每轮一条 `turn-tps`（`outTok`、`genMs`、`tps`）。
+- 部署（只 summer，Wei 2026-11-02 01:57 定 winter 不动）：summer Claude Code `settings.json` 的 `CLAUDE_CODE_MAX_CONTEXT_TOKENS` 900000 → 1000000（与 winter 一致），`CLAUDE_CODE_AUTO_COMPACT_WINDOW=600000`、`CLAUDE_CODE_MAX_OUTPUT_TOKENS=32000` 不变，`/status` 分母 1M。
+
+## f0.3.4 — 2026-11-02（`729921a`，package 0.3.4）
 
 基于 f0.3.3（`1e70511`）。修飞书响应慢（猴哥 2026-11-02 反馈）。
 

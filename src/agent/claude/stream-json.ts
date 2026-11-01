@@ -20,8 +20,6 @@ interface ClaudeRawEvent {
   model?: string;
   /** Set (non-null) when the event comes from a sub-agent (Task tool). */
   parent_tool_use_id?: string | null;
-  duration_ms?: number;
-  duration_api_ms?: number;
   message?: {
     content?: ContentBlock[];
     usage?: {
@@ -52,7 +50,7 @@ function hasTokens(u: RawUsage): boolean {
   );
 }
 
-function perCallUsage(u: RawUsage, evt: ClaudeRawEvent): AgentEvent {
+function perCallUsage(u: RawUsage, evt: ClaudeRawEvent, callFinal = false): AgentEvent {
   return {
     type: 'usage',
     inputTokens: u.input_tokens,
@@ -60,6 +58,7 @@ function perCallUsage(u: RawUsage, evt: ClaudeRawEvent): AgentEvent {
     cachedInputTokens: u.cache_read_input_tokens,
     cacheCreationInputTokens: u.cache_creation_input_tokens,
     ...(evt.parent_tool_use_id ? { sidechain: true } : {}),
+    ...(callFinal ? { callFinal: true } : {}),
   };
 }
 
@@ -103,7 +102,8 @@ export function* translateEvent(raw: unknown): Generator<AgentEvent> {
     const inner = (evt as { event?: { type?: string; usage?: ClaudeRawEvent['usage'] } }).event;
     if (inner?.type === 'message_delta' && inner.usage) {
       const u = inner.usage;
-      if (hasTokens(u)) yield perCallUsage(u, evt);
+      // f0.3.5: one message_delta per API call = that call's final usage.
+      if (hasTokens(u)) yield perCallUsage(u, evt, true);
     }
     return;
   }
@@ -134,10 +134,6 @@ export function* translateEvent(raw: unknown): Generator<AgentEvent> {
         cacheCreationInputTokens: evt.usage.cache_creation_input_tokens,
         costUsd: evt.total_cost_usd,
         cumulative: true,
-        ...(() => {
-          const ms = evt.duration_api_ms ?? evt.duration_ms;
-          return typeof ms === 'number' && ms > 0 ? { durationMs: ms } : {};
-        })(),
       };
     }
     yield { type: 'done', sessionId: evt.session_id, terminationReason: 'normal' };

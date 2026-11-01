@@ -34,6 +34,8 @@ interface MessageHandlerMap {
 interface FakeLarkChannel {
   sent: Array<{ chatId: string; content: unknown; options: unknown }>;
   streams: Array<{ chatId: string; options: unknown }>;
+  /** f0.3.5: every card the streamed producer rendered (initial + updates). */
+  cards: unknown[];
   botIdentity: { openId: string; name: string };
   rawClient: {
     request: ReturnType<typeof vi.fn>;
@@ -292,11 +294,11 @@ describe('topic message quote handling', () => {
   });
 
   it('does not open a progress stream when the agent produces no content', async () => {
-    // The SDK starts a stream eagerly and finishes an empty one with its
-    // "(no content)" placeholder, so a content-less run used to post a card and
-    // recall it seconds later. No stream is opened; since f0.3/f0.3.1 (#4) a
-    // Claude run with zero output is reported as one error card instead of
-    // silence, so the user knows to resend.
+    // A content-less run used to post a card and recall it seconds later.
+    // Since f0.3/f0.3.1 (#4) a Claude run with zero output is reported as one
+    // error card instead of silence, so the user knows to resend. f0.3.5:
+    // groups use the card like DMs, so (f0.3.4) that card is the one opened at
+    // run start — exactly one card, never recalled, nothing sent separately.
     const h = await createHarness({
       chatMode: 'group',
       agentEvents: [{ type: 'done', terminationReason: 'normal' }],
@@ -311,10 +313,9 @@ describe('topic message quote handling', () => {
     // give the (absent) stream and its recall a chance to fire before asserting
     await new Promise((resolve) => setTimeout(resolve, 80));
 
-    await waitFor(() => h.channel.sent.length === 1);
-    expect(h.channel.streams).toHaveLength(0);
-    expect(h.channel.sent).toHaveLength(1);
-    expect(JSON.stringify(h.channel.sent[0]?.content)).toContain('没有产出');
+    await waitFor(() => JSON.stringify(h.channel.cards.at(-1) ?? '').includes('没有产出'));
+    expect(h.channel.streams).toHaveLength(1);
+    expect(h.channel.sent).toHaveLength(0);
     expect(h.channel.recallMessage).not.toHaveBeenCalled();
   });
 
@@ -503,10 +504,11 @@ describe('merge_forward fetch failure', () => {
 
     expect(h.agent.runOptions).toHaveLength(1);
     // No "re-forward" hint. The fake agent answers with nothing, so the only
-    // message is the empty-run error card (f0.3.1 #4).
-    await waitFor(() => h.channel.sent.length === 1);
-    expect(JSON.stringify(h.channel.sent[0]?.content)).not.toContain('重新转发');
-    expect(JSON.stringify(h.channel.sent[0]?.content)).toContain('没有产出');
+    // output is the empty-run error card (f0.3.1 #4; f0.3.5: on the streamed
+    // group card, like a DM).
+    await waitFor(() => JSON.stringify(h.channel.cards.at(-1) ?? '').includes('没有产出'));
+    expect(JSON.stringify(h.channel.cards)).not.toContain('重新转发');
+    expect(h.channel.sent).toHaveLength(0);
   });
 });
 
@@ -597,6 +599,7 @@ function createFakeLarkChannel(options: {
   const handlers: MessageHandlerMap = {};
   const sent: Array<{ chatId: string; content: unknown; options: unknown }> = [];
   const streams: Array<{ chatId: string; options: unknown }> = [];
+  const cards: unknown[] = [];
   const chatMode = options.chatMode ?? 'topic';
   const quotedMessages = options.quotedMessages ?? {
     om_topic_root: 'topic root content',
@@ -607,6 +610,7 @@ function createFakeLarkChannel(options: {
     handlers,
     sent,
     streams,
+    cards,
     botIdentity: { openId: 'ou_bot', name: 'Bridge' },
     rawClient: {
       request: vi.fn(async () => ({ data: { items: [] } })),
@@ -657,6 +661,16 @@ function createFakeLarkChannel(options: {
       streams.push({ chatId, options });
       if (isMarkdownStreamInput(input)) {
         await input.markdown({ setContent: async () => {} });
+      } else if (input && typeof input === 'object' && 'card' in input) {
+        // f0.3.5: groups stream cards too — run the producer, keep the last card.
+        const card = (input as { card: { initial: unknown; producer: (c: unknown) => Promise<void> } }).card;
+        cards.push(card.initial);
+        await card.producer({
+          messageId: `om_stream_${streams.length}`,
+          async update(next: unknown) {
+            cards.push(next);
+          },
+        });
       }
       return { messageId: `om_stream_${streams.length}` };
     },

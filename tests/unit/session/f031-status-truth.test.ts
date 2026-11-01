@@ -117,7 +117,8 @@ describe('f031-#10 session totals come from each turn result (no per-snapshot gu
     expect(st?.tokensOut).toBe(r.output_tokens * 2);
     expect(st?.cacheRead).toBe(r.cache_read_input_tokens * 2);
     expect(st?.cacheCreate).toBe(r.cache_creation_input_tokens * 2);
-    expect(st?.tpsAvg).toBe(Math.round((r.output_tokens * 2) / ((F.durationApiMs * 2) / 1000)));
+    // f0.3.5: TPS is no longer derived from result (duration_api_ms is session-cumulative)
+    expect(st?.tpsAvg).toBeUndefined();
   });
 
   it('f031-#10 a later call with a smaller output does not get lost', async () => {

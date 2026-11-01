@@ -48,7 +48,7 @@ describe('statusCard (f0.2+ 4-line placeholder mode)', () => {
     expect(json).toContain('abcdef1234567890');                       // full session id
     expect(json).toContain('User 0 / Agent 0');                       // counters placeholder
     expect(json).toContain('\u23f3 \u2014/\u2014 (\u2014%)');            // ctx placeholder
-    expect(json).toContain('\u26a1 0 tok/s');                        // tps placeholder
+    expect(json).toContain('\u26a1 \u2014 tok/s');                   // tps placeholder (f0.3.5: unknown, not 0)
     expect(json).toContain('\u23f1\ufe0f \u521a\u521a');                // duration placeholder
     expect(json).not.toContain('"tag":"button"');
     expect(json).not.toContain('"tag":"action"');

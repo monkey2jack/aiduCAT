@@ -144,7 +144,7 @@ export function statusCard(info: StatusInfo): object {
       : ml?.ctxUsed !== undefined
         ? `${fmtTok(ml.ctxUsed)}/— (—%)`
         : '—/— (—%)';
-  const tokenBits = `📥 ${st ? fmtTok(st.tokensIn) : 0} · 📤 ${st ? fmtTok(st.tokensOut) : 0} · 🎯 ${cacheHitPct}% · ⚡ ${st?.tpsAvg ?? 0} tok/s`;
+  const tokenBits = `📥 ${st ? fmtTok(st.tokensIn) : 0} · 📤 ${st ? fmtTok(st.tokensOut) : 0} · 🎯 ${cacheHitPct}% · ⚡ ${st?.tpsAvg ?? '—'} tok/s`;
   // f0.2+ 猴哥终版 (2026-10-21): six lines — runtime/identity middle rows come
   // back (they were missed after the cleanup pass), placed between the model
   // line and the stats lines.

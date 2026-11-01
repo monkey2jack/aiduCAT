@@ -72,6 +72,7 @@ import { RunWatchdog, type RunTimeouts } from './run-watchdog';
 import { RunJournal, type JournalSnapshot } from './run-journal';
 import type { SessionCatalog } from '../session/catalog';
 import type { SessionStore } from '../session/store';
+import { TurnTpsMeter } from '../session/turn-tps';
 import type { WorkspaceStore } from '../workspace/store';
 import { ActiveRuns, type RunHandle } from './active-runs';
 import { ChatModeCache, type ChatMode } from './chat-mode-cache';
@@ -1421,10 +1422,16 @@ async function runAgentBatch(deps: RunBatchDeps): Promise<void> {
     log.info('flush', 'idle-watchdog', { idleTimeoutMs, toolTimeoutMs: runTimeouts.toolMs });
   }
 
-  // Group replies use rich text (post) so `<at user_id>` becomes a real
-  // mention; DMs keep the configured mode.
-  const replyMode = firstMsg.chatType !== 'p2p' ? 'markdown' : getMessageReplyMode(controls.cfg);
-  log.info('flush', 'reply-mode', { mode: replyMode });
+  // f0.3.5: groups get the same reply mode as DMs (the streaming card with
+  // its panel). Upstream forced groups to rich text (post) "so <at user_id>
+  // becomes a mention", which left groups with no card, no panel and no
+  // early ☤Thinking… card (winter 2026-11-02 01:44: first output 93s after
+  // the message). aiduCAT never passes mentions to the SDK anyway; agent-
+  // written `<at user_id="ou_…">` tags are kept as card mentions by
+  // sanitizeCardMarkdown. Tool visibility in groups still follows
+  // getShowToolCalls (f031-sec-#4).
+  const replyMode = getMessageReplyMode(controls.cfg);
+  log.info('flush', 'reply-mode', { mode: replyMode, chatType: firstMsg.chatType });
   // f03p-slim-#4: a profile with features.cot=false never uses CoT.
   const cotMessages = getEffectiveCotMessages(controls.cfg, controls.profileConfig);
   const cotEnabled = cotMessages !== 'off';
@@ -2085,11 +2092,14 @@ async function processAgentStream(
   timeouts: RunTimeouts,
   recordSession: (event: AgentEvent) => void,
   flush: (state: RunState) => Promise<void>,
-  stats: Pick<SessionStore, 'recordUsage' | 'recordMessage' | 'recordModel'>,
+  stats: Pick<SessionStore, 'recordUsage' | 'recordMessage' | 'recordModel' | 'recordTurnTps'>,
   agentId: string,
 ): Promise<RunState> {
   const runStart = Date.now();
   let state: RunState = initialState;
+  // f0.3.5: this turn's TPS, timed here (model generation only, tool windows
+  // removed) — never from the CLI's session-cumulative duration fields.
+  const tpsMeter = new TurnTpsMeter();
 
   // Idle watchdog: claude going silent for `idleTimeoutMs` is treated as
   // "presumed hung", we stop() and surface a timeout marker on the card.
@@ -2133,6 +2143,7 @@ async function processAgentStream(
   try {
     for await (const evt of events) {
       if (handle.interrupted) break;
+      tpsMeter.observe(evt);
 
       // Track tool flight before re-arming the idle timer so the arm step
       // sees the correct set size. tool_use opens a window; tool_result
@@ -2187,21 +2198,25 @@ async function processAgentStream(
           cacheCreationInputTokens: evt.cacheCreationInputTokens,
           cumulative: evt.cumulative,
           sidechain: evt.sidechain,
-          durationMs: evt.durationMs,
         });
         const { costUsd, inputTokens, outputTokens } = evt;
         if (costUsd !== undefined || inputTokens !== undefined || outputTokens !== undefined) {
           log.info('agent', 'usage', {
-            ...(costUsd !== undefined ? { costUsd: Number(costUsd.toFixed(4)) } : {}),
-            ...(inputTokens !== undefined ? { inputTokens } : {}),
-            ...(outputTokens !== undefined ? { outputTokens } : {}),
+            // f0.3.5: claude's total_cost_usd is SESSION-cumulative on a
+            // resumed session, so name it that way (it is not this turn's).
+            ...(costUsd !== undefined ? { sessionCostUsd: Number(costUsd.toFixed(4)) } : {}),
+            // f0.3.5: keys without "token" — the logger redacts any key that
+            // contains it, which made these counts useless ("[REDACTED]").
+            ...(inputTokens !== undefined ? { inTok: inputTokens } : {}),
+            ...(outputTokens !== undefined ? { outTok: outputTokens } : {}),
+            ...(evt.callFinal ? { callFinal: true } : {}),
             // f031-#8: cache fields + kind, so the journal can explain /status.
             ...(evt.cachedInputTokens !== undefined ? { cacheRead: evt.cachedInputTokens } : {}),
             ...(evt.cacheCreationInputTokens !== undefined ? { cacheCreate: evt.cacheCreationInputTokens } : {}),
             ...(evt.cumulative ? { cumulative: true } : {}),
             ...(evt.sidechain ? { sidechain: true } : {}),
           });
-          if (costUsd !== undefined) reportMetric('cost_usd', costUsd);
+          if (costUsd !== undefined) reportMetric('session_cost_usd', costUsd);
           if (inputTokens !== undefined) reportMetric('tokens_in', inputTokens);
           if (outputTokens !== undefined) reportMetric('tokens_out', outputTokens);
         }
@@ -2216,6 +2231,16 @@ async function processAgentStream(
       const prevTerminal = state.terminal;
       const prevFooter = state.footer;
       state = reduce(state, evt);
+      // f0.3.5: a turn that ended normally gets its TPS on the card and into
+      // the session average (/status). Interrupted/failed turns are skipped.
+      if (evt.type === 'done' && evt.terminationReason === 'normal') {
+        const turn = tpsMeter.finish();
+        log.info('agent', 'turn-tps', { outTok: turn.outputTokens, genMs: turn.genMs, tps: turn.tps ?? null });
+        if (turn.tps !== undefined) {
+          state = { ...state, turnTps: turn.tps };
+          stats.recordTurnTps(scope, turn.outputTokens, turn.genMs);
+        }
+      }
       // f0.3.1 #4: must run AFTER reduce — reduce('done') unconditionally sets
       // terminal='done' and used to wipe the guard's error (f0.3 bug).
       if (

@@ -6,9 +6,9 @@ const read = (f: string) => readFile(new URL(`../../../${f}`, import.meta.url), 
 const READMES = ['README.md', 'README.zh.md', 'README.en.md'];
 
 describe('f034 version f0.3.4 (package 0.3.4) docs', () => {
-  it('f034 package 0.3.4 and every README carries the f0.3.4 badge', async () => {
-    expect(pkg.version).toBe('0.3.4');
-    for (const f of READMES) expect(await read(f), f).toContain('badge/version-f0.3.4-blue');
+  it('f034 package moved past 0.3.4 (now 0.3.5) and no README still carries the f0.3.4 badge', async () => {
+    expect(pkg.version).toBe('0.3.5');
+    for (const f of READMES) expect(await read(f), f).not.toContain('badge/version-f0.3.4-blue');
   });
 
   it('f034 CHANGELOG has an f0.3.4 section above f0.3.3 covering the latency fixes', async () => {

@@ -25,9 +25,11 @@ export type AgentEvent =
       /** f031-#8: emitted by a sub-agent (claude `parent_tool_use_id` set) —
        * its prompt is not the main conversation's context. */
       sidechain?: boolean;
-      /** f031-#10: API time of the turn (result `duration_api_ms`, falling
-       * back to `duration_ms`); TPS denominator. Only on cumulative events. */
-      durationMs?: number;
+      /** f0.3.5: the final usage of ONE API call (claude `message_delta`),
+       * so per-call output can be summed exactly once per call for TPS.
+       * (f031-#10's `durationMs` from result `duration_api_ms` is gone: it is
+       * session-cumulative on a resumed session; aiduCAT times turns itself.) */
+      callFinal?: boolean;
     }
   | {
       type: 'done';

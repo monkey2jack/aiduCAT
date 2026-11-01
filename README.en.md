@@ -10,7 +10,7 @@
 >
 > Dress your Claude Code / Codex CLI in a Bubble-Wave Feishu card: deep-blue veins on paper white, one cat, zero noise.
 
-[![Version](https://img.shields.io/badge/version-f0.3.4-blue.svg)](https://github.com/monkey2jack/aiduCAT)
+[![Version](https://img.shields.io/badge/version-f0.3.5-blue.svg)](https://github.com/monkey2jack/aiduCAT)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Node 20+](https://img.shields.io/badge/node-20.12%2B-brightgreen.svg)](https://nodejs.org/)
 [![Claude Code](https://img.shields.io/badge/agent-Claude%20Code%20%7C%20Codex-orange.svg)](https://docs.anthropic.com/en/docs/claude-code/quickstart)
@@ -179,7 +179,7 @@ DMs do not require an @ mention; groups and topics require `@bot` by default. Ma
 /remove group
 ```
 
-An allowlisted group is not enough: the sender must also be in allowedUsers / admins / owner. Other bots are rejected unless listed in `access.allowedBots` (and the group is allowlisted). Team mode only serves the owner's own tenant. Card button clicks are re-checked with the same rules. `@all` in replies becomes the plain text "@所有人".
+An allowlisted group is not enough: the sender must also be in allowedUsers / admins / owner. Other bots are rejected unless listed in `access.allowedBots` (and the group is allowlisted). Team mode only serves the owner's own tenant. Card button clicks are re-checked with the same rules. `@all` in replies becomes the plain text "@所有人". Groups get the same streaming card (with its panel) as DMs; tool lines in the panel are hidden in groups unless `preferences.showToolCallsInGroups` is `true`.
 
 ### Cloud-doc comments
 

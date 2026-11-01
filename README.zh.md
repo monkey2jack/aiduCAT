@@ -10,7 +10,7 @@
 >
 > 给 Claude Code / Codex CLI 穿上泡波流的飞书卡片：宣白纸面上灌一道深蓝流光，一只猫，零噪音。
 
-[![Version](https://img.shields.io/badge/version-f0.3.4-blue.svg)](https://github.com/monkey2jack/aiduCAT)
+[![Version](https://img.shields.io/badge/version-f0.3.5-blue.svg)](https://github.com/monkey2jack/aiduCAT)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Node 20+](https://img.shields.io/badge/node-20.12%2B-brightgreen.svg)](https://nodejs.org/)
 [![Claude Code](https://img.shields.io/badge/agent-Claude%20Code%20%7C%20Codex-orange.svg)](https://docs.anthropic.com/en/docs/claude-code/quickstart)
@@ -179,7 +179,7 @@ aiduCAT profile export <name> --include-secrets --yes
 /remove group
 ```
 
-群在白名单还不够：群里发言的人本人也要在 allowedUsers / admins / owner 里；别的机器人默认被拒（bot-at-bot 要在 `access.allowedBots` 里显式写，且群在白名单）；team 模式只对 owner 同租户的人开放。卡片按钮点击按同一规则复核。回复里的 @所有人 会变成文字「@所有人」，不会真的 @全员。
+群在白名单还不够：群里发言的人本人也要在 allowedUsers / admins / owner 里；别的机器人默认被拒（bot-at-bot 要在 `access.allowedBots` 里显式写，且群在白名单）；team 模式只对 owner 同租户的人开放。卡片按钮点击按同一规则复核。回复里的 @所有人 会变成文字「@所有人」，不会真的 @全员。群里的回复和私聊一样是带折叠面板的流式卡片；面板里的工具行在群里默认隐藏，`preferences.showToolCallsInGroups: true` 才显示。
 
 ### 云文档评论
 

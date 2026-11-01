@@ -23,10 +23,15 @@ export interface SessionStats {
   cacheCreate: number;
   userMessages: number;
   agentMessages: number;
-  /** Sum of API time of finished turns (TPS denominator, 猴哥点单 2026-10-21:
-   * execution time, not wall clock). */
-  activeMs: number;
-  /** Output tokens / active seconds. */
+  /** f0.3.5: Σ model generation time (ms) of finished turns, timed by
+   * aiduCAT (tool windows removed; see session/turn-tps.ts). TPS denominator
+   * (猴哥点单 2026-10-21: execution time, not wall clock). Replaces f031's
+   * `activeMs`, which summed claude's session-CUMULATIVE `duration_api_ms`
+   * every turn (summer 嘟嘟: 78M ms ≈ 21.7 h → 4 tok/s). */
+  genMs: number;
+  /** f0.3.5: Σ main-line output tokens of those same turns (numerator). */
+  genOut: number;
+  /** genOut / genMs seconds, rounded. Absent until a turn is measured. */
   tpsAvg?: number;
 }
 
@@ -38,7 +43,6 @@ export interface UsageSample {
   cacheCreationInputTokens?: number;
   cumulative?: boolean;
   sidechain?: boolean;
-  durationMs?: number;
 }
 
 export interface SessionEntry {
@@ -75,8 +79,13 @@ function validStats(raw: unknown): SessionStats | undefined {
     cacheCreate: num(r.cacheCreate) ? r.cacheCreate : 0,
     userMessages: num(r.userMessages) ? r.userMessages : 0,
     agentMessages: num(r.agentMessages) ? r.agentMessages : 0,
-    activeMs: num(r.activeMs) ? r.activeMs : 0,
-    ...(num(r.tpsAvg) ? { tpsAvg: r.tpsAvg } : {}),
+    // f0.3.5 migration: pre-0.3.5 stats carry `activeMs`/`tpsAvg` built from
+    // a session-cumulative CLI field — wrong and not recomputable (the CLI
+    // never recorded per-turn generation time). Drop them: TPS shows — until
+    // the next turn is measured. Every other counter is kept.
+    genMs: num(r.genMs) ? r.genMs : 0,
+    genOut: num(r.genOut) ? r.genOut : 0,
+    ...(num(r.genMs) && num(r.genOut) && num(r.tpsAvg) ? { tpsAvg: r.tpsAvg } : {}),
   };
 }
 
@@ -171,7 +180,8 @@ export class SessionStore {
       cacheCreate: 0,
       userMessages: 0,
       agentMessages: 0,
-      activeMs: 0,
+      genMs: 0,
+      genOut: 0,
     };
   }
 
@@ -180,7 +190,8 @@ export class SessionStore {
    * - per-call, main-line → context = input + cache_read + cache_creation
    *   (only when the event carries input-side fields; output-only deltas and
    *   sub-agent calls leave it alone).
-   * - cumulative (claude `result`, once per turn) → session totals + TPS.
+   * - cumulative (claude `result`, once per turn) → session totals (TPS is
+   *   timed separately, f0.3.5 recordTurnTps).
    *   Per-call snapshots repeat several times per call, so summing them would
    *   over-count; the turn total is exact.
    */
@@ -195,14 +206,25 @@ export class SessionStore {
       st.tokensOut += u.outputTokens ?? 0;
       st.cacheRead += u.cachedInputTokens ?? 0;
       st.cacheCreate += u.cacheCreationInputTokens ?? 0;
-      st.activeMs += Math.max(0, u.durationMs ?? 0);
-      if (st.activeMs > 0) st.tpsAvg = Math.round(st.tokensOut / (st.activeMs / 1000));
     } else if (!u.sidechain && prompt > 0) {
       st.contextTokens = prompt;
       st.contextAt = Date.now();
     } else {
       return;
     }
+    entry.stats = st;
+    this.schedulePersist();
+  }
+
+  /** f0.3.5: one measured turn (main-line output, generation ms). */
+  recordTurnTps(chatId: string, outputTokens: number, genMs: number): void {
+    const entry = this.data[chatId];
+    if (!entry) return;
+    if (!(outputTokens > 0) || !(genMs > 0)) return;
+    const st: SessionStats = entry.stats ?? this.#freshStats();
+    st.genOut += outputTokens;
+    st.genMs += genMs;
+    st.tpsAvg = Math.round(st.genOut / (st.genMs / 1000));
     entry.stats = st;
     this.schedulePersist();
   }

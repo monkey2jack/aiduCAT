@@ -21,6 +21,11 @@ const TAG_RE = /<\/?[a-zA-Z][a-zA-Z0-9-]*(?:\s[^<>]*)?\/?>/g;
 // f031-sec-L5: `<at id="all">` / `<at user_id="all">` would ping the whole group.
 const AT_ALL_RE = /<at\b[^>]*?\b(?:user_id|open_id|id)\s*=\s*["']?all["']?[^>]*>(?:[\s\S]*?<\/at>)?/gi;
 
+// f0.3.5: a person mention survives the card's tag stripping, rewritten to
+// the card markdown form `<at id=ou_…></at>` (groups now get cards too).
+const AT_PERSON_RE = /<at\b[^>]*?\b(?:user_id|open_id|id)\s*=\s*["']?(ou_[A-Za-z0-9_-]+)["']?[^>]*>(?:[^<]*<\/at>)?/gi;
+const AT_SLOT = '\u0000AT';
+
 /** Replace every @all tag with inert text (code included). Person mentions stay. */
 export function defuseMentionAll(text: string): string {
   return text.replace(AT_ALL_RE, '@所有人');
@@ -80,7 +85,15 @@ export function sanitizeCardMarkdown(md: string, opts: { withLinks?: boolean } =
       if (seg.code) return t;
       t = t.replace(IMG_TAG_RE, (_m, url: string) => imageToText('', url, withLinks));
       t = t.replace(BR_RE, '\n');
+      const mentions: string[] = [];
+      t = t.replace(/\u0000/g, '').replace(AT_PERSON_RE, (_m, id: string) => {
+        mentions.push(`<at id=${id}></at>`);
+        return `${AT_SLOT}${mentions.length - 1}\u0000`;
+      });
       t = t.replace(TAG_RE, '');
+      if (mentions.length > 0) {
+        t = t.replace(/\u0000AT(\d+)\u0000/g, (_m, i: string) => mentions[Number(i)] ?? '');
+      }
       return t;
     })
     .join(''));

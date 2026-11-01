@@ -107,6 +107,7 @@ describe('Claude stream-json translator', () => {
         outputTokens: 195,
         cachedInputTokens: 17648,
         cacheCreationInputTokens: undefined,
+        callFinal: true, // f0.3.5: one message_delta per API call
       },
     ]);
     // Zero-filled deltas (gateway quirks) must not clobber a good snapshot.

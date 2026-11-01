@@ -386,6 +386,8 @@ function metaHeader(state: RunState, options: RunCardRenderOptions): string {
     const label = secs >= 60 ? `${Math.floor(secs / 60)}m${secs % 60}s` : `${secs}s`;
     parts.push(`⏱️ ${label}`);
   }
+  // f0.3.5: finished turn shows its own TPS (generation time only).
+  if (state.terminal !== 'running' && state.turnTps !== undefined) parts.push(`⚡ ${state.turnTps} tok/s`);
   return parts.join(" · ");
 }
 

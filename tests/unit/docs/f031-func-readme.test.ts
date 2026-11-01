@@ -7,11 +7,11 @@ const read = (f: string) => readFile(new URL(`../../../${f}`, import.meta.url), 
 const READMES = ['README.md', 'README.zh.md', 'README.en.md'];
 
 describe('f031-func-#5 READMEs + CHANGELOG match the code', () => {
-  it('f031-func-#5 all three READMEs carry the current badge (f0.3.4, package 0.3.4)', async () => {
-    expect(pkg.version).toBe('0.3.4');
+  it('f031-func-#5 all three READMEs carry the current badge (f0.3.5, package 0.3.5)', async () => {
+    expect(pkg.version).toBe('0.3.5');
     for (const f of READMES) {
       const md = await read(f);
-      expect(md, f).toContain('badge/version-f0.3.4-blue');
+      expect(md, f).toContain('badge/version-f0.3.5-blue');
       expect(md, f).not.toMatch(/badge\/version-f0\.(1|2)/);
     }
   });
@@ -39,9 +39,9 @@ describe('f031-func-#5 READMEs + CHANGELOG match the code', () => {
     expect(await read('README.zh.md')).toBe(await read('README.md'));
   });
 
-  it('f031-func-#5 CHANGELOG.md exists and covers f0.1 → f0.3.4', async () => {
+  it('f031-func-#5 CHANGELOG.md exists and covers f0.1 → f0.3.5', async () => {
     const md = await read('CHANGELOG.md');
-    for (const v of ['f0.3.4', 'f0.3.3', 'f0.3+', 'f0.3.1', 'f0.3', 'f0.2++', 'f0.2+', 'f0.2', 'f0.1+', 'f0.1']) {
+    for (const v of ['f0.3.5', 'f0.3.4', 'f0.3.3', 'f0.3+', 'f0.3.1', 'f0.3', 'f0.2++', 'f0.2+', 'f0.2', 'f0.1+', 'f0.1']) {
       expect(md).toContain(`## ${v} `);
     }
   });
