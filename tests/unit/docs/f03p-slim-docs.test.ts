@@ -6,12 +6,12 @@ const read = (f: string) => readFile(new URL(`../../../${f}`, import.meta.url), 
 const READMES = ['README.md', 'README.zh.md', 'README.en.md'];
 
 describe('f03p-slim-#9 version f0.3+ (package 0.3.2) docs', () => {
-  it('f03p-slim-#9 package 0.3.2 and every README carries the f0.3+ badge', async () => {
-    expect(pkg.version).toBe('0.3.2');
+  it('f03p-slim-#9 package moved past 0.3.2 (now 0.3.3) and no README still carries the f0.3+ / f0.3.1 badge', async () => {
+    expect(pkg.version).toBe('0.3.3');
     for (const f of READMES) {
       const md = await read(f);
       // shields.io: `+` must be URL-encoded inside the badge path
-      expect(md, f).toContain('badge/version-f0.3%2B-blue');
+      expect(md, f).not.toContain('badge/version-f0.3%2B-blue');
       expect(md, f).not.toContain('badge/version-f0.3.1-blue');
     }
   });

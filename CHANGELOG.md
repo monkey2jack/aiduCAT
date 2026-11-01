@@ -4,13 +4,13 @@ aiduCAT 的版本号用 `f` 前缀（f0.1、f0.2+ …），`package.json` 里是
 
 > **tag 说明**：`f0.2++` 原先误指 `6fa62f8`（package 0.2.1），**已于 2026-10-31 修正**为真实发布提交 `c7ff90d`（0.2.2）。`f0.2+`、`v0.2.1` 核实后保持 `6fa62f8`：f0.2+ 的 GitHub Release 于 2026-10-20 01:17 从 main 发布，当时 main 的头部就是 `6fa62f8`（package 0.2.1）；版本号提交 `f01fcd2` 与它只差文档和一个测试，没有代码差别。
 
-## 下一版（未发布，版本号待猴哥定，package 暂仍 0.3.2）
+## f0.3.3 — 2026-11-02（package 0.3.3，tag 未打）
 
 基于 f0.3+（`8d6b4d1`）。
 
 - **专属 logo 从 combo `monkey` 挪到 `aiduPARK`**（猴哥 2026-11-02 新建的 10router combo）：模型 id 含 `aidupark`（不分大小写，带前缀/后缀也算，如 `10router/aiduPARK`、`aiduPARK[1m]`）就显示黑白翅膀徽标，且排在所有厂商规则前面，不会被别的规则截走。旧 combo `monkey` 不再有专属图标（名字里带厂商词的按厂商显示，否则面板头无图标）。`assets/lark-logo-keys.json` 键名 `monkey` → `aidupark`，img_key 值不变，不用重传图片。
 
-## f0.3+ （未发布，package 0.3.2）
+## f0.3+ — 2026-10-31（`8d6b4d1`，package 0.3.2）
 
 基于 f0.3.1（`bd79bcb`）。嘟嘟和猴哥自己用，体验优先：不用的模块可以关掉，收紧不能让日常用起来更麻烦。
 
@@ -39,7 +39,7 @@ aiduCAT 的版本号用 `f` 前缀（f0.1、f0.2+ …），`package.json` 里是
 - **keystore 同用户可解**：`secrets.enc` 用同目录 `.keystore.key`（0600）加密，防的是别的用户和误传文件；同一系统用户下的进程（包括 agent 自己）能解开，这是本机单用户部署的取舍。
 - **`aiduCAT ui` 在本机打印完整 URL（含 token）**：只在本机终端输出，用来打开控制台；日志、journald 与飞书里的控制台地址都已打码（f0.3.1）。
 
-## f0.3.1 （未发布，package 0.3.1）
+## f0.3.1 — 2026-10-31（`bd79bcb`，package 0.3.1）
 
 基于 f0.3（`3aa4a2d`）。修掉「卡片被拒 → 永久思考中」、`/status` 数字不真实、60% 自动压缩从没生效等问题，门禁转绿。
 
