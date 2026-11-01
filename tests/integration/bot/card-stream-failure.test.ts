@@ -369,12 +369,15 @@ describe('card-mode stream failures (f0.3.1)', () => {
       events: [{ type: 'done', terminationReason: 'normal' }] as AgentEvent[],
     });
     await h.handlers.message?.(message('om_7', 'hi'));
-    await waitFor(() => h.sent.length >= 1);
+    // f0.3.4: the card is open from the start, so the error lands on that
+    // same card instead of a separately sent one.
+    await waitFor(() => summaryOf(h.updates.at(-1)) === '❌Error');
     await settle();
-    const card = h.sent.at(-1)!.content.card;
+    const card = h.updates.at(-1);
     expect(card).toBeDefined();
     expect(summaryOf(card)).toBe('❌Error');
     expect(JSON.stringify(card)).toContain('没有产出');
+    expect(h.sent).toHaveLength(0);
   });
 
   it('f031-#5 card patches are throttled to <=4/s (250ms, no char-count bypass)', async () => {

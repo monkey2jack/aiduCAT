@@ -86,6 +86,7 @@ import { lookupMessageThreadId } from './thread-id';
 import { addWorkingReaction, removeReaction } from './reaction';
 import { fetchKnownChats } from './lark-info';
 import { contextWindowForModel, resolveModelWindow } from './context-window';
+import { prewarmCombos } from './tenrouter';
 import type { AppPaths } from '../config/app-paths';
 // f03p-slim-#7: the CoT module is loaded only when a run actually uses CoT.
 import type { CotClient } from './cot';
@@ -316,6 +317,9 @@ export async function startChannel(deps: StartChannelDeps): Promise<BridgeChanne
   };
 
   const channel = createLarkChannel(opts);
+  // f0.3.4: warm the 10router combo cache in the background so the first
+  // /model open (and any combo-declared window) never waits on 10router.
+  void prewarmCombos(cfg);
   const media = new MediaCache(channel, deps.appPaths?.mediaDir);
 
   // Pending → run handoff: while a run is active on a chat, block its pending
@@ -374,6 +378,11 @@ export async function startChannel(deps: StartChannelDeps): Promise<BridgeChanne
         threadId: firstMsg.threadId,
         msgId: firstMsg.messageId,
       });
+      // f0.3.4: the "收到了" reaction goes on the moment the batch flushes —
+      // before chat-mode lookup, attachments, pool acquire and agent spawn
+      // (it used to land ~2s after acquire). Fire-and-forget: a failed
+      // reaction never touches the run.
+      const workingReaction = startWorkingReaction(channel, lastMsg.messageId);
       try {
         const resolvedMode = await chatModeCache.resolve(channel, firstMsg.chatId);
         // Feishu/Lark converted topic groups may still resolve as `group` from
@@ -404,6 +413,7 @@ export async function startChannel(deps: StartChannelDeps): Promise<BridgeChanne
           lastRunModelByScope,
           scope,
           mode,
+          workingReaction,
           onCardOpened: (messageId) => journal.setCard(scope, runKey, messageId),
           onTerminal: (t) => {
             terminal = t;
@@ -431,6 +441,9 @@ export async function startChannel(deps: StartChannelDeps): Promise<BridgeChanne
         // Unless someone stopped it on purpose (/stop, /cd, /new …).
         const stoppedOnPurpose = activeRuns.consumeStoppedOnPurpose(scope);
         if (!(draining && terminal === 'interrupted' && !stoppedOnPurpose)) journal.endRun(scope, runKey);
+        // f0.3.4: idempotent — covers rounds that ended before the run took
+        // over the reaction (pre-run failure, policy reject, empty prompt).
+        workingReaction.release();
         pending.unblock(scope);
         log.info('flush', 'end');
         inflightBatches--;
@@ -1096,6 +1109,8 @@ interface RunBatchDeps {
   onCardOpened?: (messageId: string) => void;
   /** f03p-infra-#6: how the agent's turn ended (done / error / interrupted / idle_timeout). */
   onTerminal?: (terminal: string) => void;
+  /** f0.3.4: the reaction added at flush start; released when real output shows or the round ends. */
+  workingReaction?: WorkingReaction;
 }
 
 /**
@@ -1320,7 +1335,8 @@ async function runAgentBatch(deps: RunBatchDeps): Promise<void> {
   const flow = await preRun('run-setup', async () => startRunFlow({
     scopeId: scope,
     // f0.2+: the selected model's declared window drives the 60% compact env.
-    modelWindow: await resolveModelWindow(controls.profileConfig, modelSelection),
+    // f0.3.4: combo cache only — never waits on 10router.
+    modelWindow: resolveModelWindow(controls.profileConfig, modelSelection),
     scope: scopeContext,
     prompt,
     attachments: attachments.map(toPolicyAttachment),
@@ -1420,10 +1436,10 @@ async function runAgentBatch(deps: RunBatchDeps): Promise<void> {
     // aiduCAT: surface model + start time in the meta panel.
     model: modelSelection,
     startedAt: Date.now(),
-    // aiduCAT: reasoning effort + this model's context window (10router
-    // /v1/models, cached) drive the two-line panel header readout.
+    // aiduCAT: reasoning effort + this model's context window (f0.3.4: from
+    // the cached 10router combo entry, never a network wait).
     effort: controls.profileConfig.preferences.effort,
-    contextWindow: await contextWindowForModel(modelSelection),
+    contextWindow: contextWindowForModel(modelSelection),
     ...(callbackAuth
       ? {
           signCallback: (action: string) =>
@@ -1444,18 +1460,12 @@ async function runAgentBatch(deps: RunBatchDeps): Promise<void> {
   // the streaming card's own status footer already signals liveness, and the
   // extra bubble carried a replyTo which rendered as "回复 xxx" quotes.)
 
-  // aiduCAT: always add the "Typing" (敲键盘) reaction as the instant liveness
-  // cue — including card mode, since the streaming card can take a beat to
-  // post and 猴哥 wants the emoji on his message as the "已启动" signal.
-  // Removed after the reply via the `finally` cleanup below; never let this
-  // outbound call block agent event draining.
-  // aiduCAT: add the "Typing" (敲键盘) reaction as the instant liveness cue the
-  // moment the command lands. Once actual run output starts arriving (card
-  // mode: first state update in the stream loop below), it's removed early —
-  // 猴哥: "一旦开始了下面的工作，我的消息下的这个飞书表情就可以消失了".
-  // Fallback removal still happens in the `finally` cleanup below; never let
-  // this outbound call block agent event draining.
-  let reactionPromise = addWorkingReaction(channel, lastMsg.messageId);
+  // aiduCAT: the working reaction is the instant "已启动" cue. f0.3.4: it is
+  // added at flush start (see startWorkingReaction); here we only take it
+  // over. Once actual run output starts arriving (card mode: first state
+  // update with content) it is removed early — 猴哥: "一旦开始了下面的工作，
+  // 我的消息下的这个飞书表情就可以消失了". Fallback removal in `finally`.
+  const workingReaction = deps.workingReaction ?? startWorkingReaction(channel, lastMsg.messageId);
 
   try {
     if (cotEnabled) {
@@ -1582,13 +1592,11 @@ async function runAgentBatch(deps: RunBatchDeps): Promise<void> {
           // real work shows up on the card (first thinking/tool/text update),
           // drop it — the streaming card itself carries liveness from here.
           if (
-            reactionPromise &&
-            (state.reasoning.content.trim() ||
-              state.blocks.length > 0 ||
-              state.finalText)
+            state.reasoning.content.trim() ||
+            state.blocks.length > 0 ||
+            state.finalText
           ) {
-            scheduleWorkingReactionCleanup(channel, lastMsg.messageId, reactionPromise);
-            reactionPromise = Promise.resolve(undefined);
+            workingReaction.release();
           }
           if (shouldOpenProgressStream(filterForPrefs(state))) progress.ensureOpen();
           if (cardCtrl) {
@@ -1599,6 +1607,14 @@ async function runAgentBatch(deps: RunBatchDeps): Promise<void> {
         sessions,
         // (diagnostics)
         capability.agentId);
+      // f0.3.4: claude runs open the card right away — the initial render is
+      // the "☤Thinking…" placeholder with the model logo in the panel header —
+      // instead of waiting for the first tool call / text (10–200s). Later
+      // updates patch this same card; continuation cards, degrade, /stop and
+      // the empty-run recall all work off it unchanged. Codex keeps the lazy
+      // open (its final answer is sent separately; an eager card would only
+      // be recalled).
+      if (controls.profileConfig.agentKind !== 'codex') progress.ensureOpen();
       let degraded = false;
       try {
         await awaitRenderAwareStream({
@@ -1791,7 +1807,7 @@ async function runAgentBatch(deps: RunBatchDeps): Promise<void> {
     log.fail('stream', err);
   } finally {
     activePolicyFingerprints.delete(scope);
-    scheduleWorkingReactionCleanup(channel, lastMsg.messageId, reactionPromise);
+    workingReaction.release();
   }
 }
 
@@ -2360,6 +2376,23 @@ async function runFallbackReply(
   } catch (err) {
     log.fail('stream', err, { mode, step: 'fallback' });
   }
+}
+
+/** f0.3.4: a working reaction added once, released (removed) at most once. */
+interface WorkingReaction {
+  release(): void;
+}
+
+function startWorkingReaction(channel: LarkChannel, messageId: string): WorkingReaction {
+  const promise = addWorkingReaction(channel, messageId);
+  let released = false;
+  return {
+    release() {
+      if (released) return;
+      released = true;
+      scheduleWorkingReactionCleanup(channel, messageId, promise);
+    },
+  };
 }
 
 function scheduleWorkingReactionCleanup(

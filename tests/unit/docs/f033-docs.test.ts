@@ -6,11 +6,11 @@ const read = (f: string) => readFile(new URL(`../../../${f}`, import.meta.url), 
 const READMES = ['README.md', 'README.zh.md', 'README.en.md'];
 
 describe('f033 version f0.3.3 (package 0.3.3) docs', () => {
-  it('f033 package 0.3.3 and every README carries the f0.3.3 badge', async () => {
-    expect(pkg.version).toBe('0.3.3');
+  it('f033 package moved past 0.3.3 (now 0.3.4) and no README still carries the f0.3+ / f0.3.3 badge', async () => {
+    expect(pkg.version).toBe('0.3.4');
     for (const f of READMES) {
       const md = await read(f);
-      expect(md, f).toContain('badge/version-f0.3.3-blue');
+      expect(md, f).not.toContain('badge/version-f0.3.3-blue');
       expect(md, f).not.toContain('badge/version-f0.3%2B-blue');
     }
   });
@@ -19,6 +19,7 @@ describe('f033 version f0.3.3 (package 0.3.3) docs', () => {
     const md = await read('CHANGELOG.md');
     const start = md.indexOf('## f0.3.3 ');
     expect(start).toBeGreaterThan(0);
+    expect(start).toBeGreaterThan(md.indexOf('## f0.3.4 '));
     expect(start).toBeLessThan(md.indexOf('## f0.3+ '));
     const section = md.slice(start, md.indexOf('## f0.3+ '));
     for (const s of ['0.3.3', 'aiduPARK', 'monkey', 'aidupark']) expect(section).toContain(s);

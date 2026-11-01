@@ -7,8 +7,9 @@ import type { AppConfig, SecretInput } from '../config/schema';
  *
  * 猴哥's principle: only *custom combos* (the short curated list he manages
  * in the 10router dashboard) are offered in the /model card — never the
- * ~670 raw provider models behind /v1/models. Pulling live on every card
- * open means combos added/removed on 10router sync automatically.
+ * ~700 raw provider models behind /v1/models (f0.3.4: aiduCAT never pulls
+ * that list any more). The cache is refreshed in the background, so combos
+ * added/removed on 10router still sync automatically.
  *
  * The management token is never hardcoded: it resolves through the secret
  * chain (env `AIDU_10ROUTER_TOKEN` → file → exec) via SecretInput, with a
@@ -16,15 +17,13 @@ import type { AppConfig, SecretInput } from '../config/schema';
  */
 
 const COMBOS_TIMEOUT_MS = 8_000;
-// aiduCAT: /v1/models is a fat payload (~200KB, 500+ entries) behind a
-// Cloudflare tunnel — 3s+ is normal and tunnel jitter can double it. Give it
-// its own generous budget so one slow fetch doesn't blank the ctx% readout.
-const MODELS_TIMEOUT_MS = 20_000;
 
 export interface TenRouterCombo {
   id: string;
   name: string;
   models: string[];
+  /** f0.3.4: context window, only when /api/combos carries one (it doesn't as of 2026-11-02). */
+  contextWindow?: number;
 }
 
 export interface TenRouterConfig {
@@ -128,92 +127,133 @@ export async function resolveTenRouterConfig(
   return { baseUrl: url.replace(/\/+$/, ''), token };
 }
 
-/** Fetch the custom combo list. 5-minute cache so re-opening the card soon after doesn't re-hit 10router. */
-export async function fetchCombos(cfg: TenRouterConfig): Promise<ComboCatalog> {
-  if (cache && Date.now() - cache.fetchedAt < CACHE_TTL_MS) {
-    return { combos: cache.combos, source: 'cached' };
-  }
-  try {
-    const res = await fetchWithRetry(`${cfg.baseUrl}/api/combos`, {
-      headers: { 'x-10r-cli-token': cfg.token },
-      signal: AbortSignal.timeout(COMBOS_TIMEOUT_MS),
-    });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const body = (await res.json()) as { combos?: Array<{ id: string; name: string; models?: string[] }> };
-    const combos = (body.combos ?? [])
-      .map((c) => ({ id: String(c.id), name: String(c.name), models: (c.models ?? []).map(String) }))
-      .filter((c) => c.id && c.name);
-    if (combos.length === 0) throw new Error('empty combo list');
-    cache = { combos, fetchedAt: Date.now() };
-    log.info('tenrouter', 'combos-fetched', { count: combos.length });
-    return { combos, source: 'live' };
-  } catch (err) {
-    log.warn('tenrouter', 'combos-fetch-failed', {
-      err: err instanceof Error ? err.message : String(err),
-    });
-    return { combos: [], source: 'unavailable' };
-  }
+/**
+ * f0.3.4 (飞书响应慢): the combo list is served stale-while-revalidate.
+ * A cached list — even an expired one — is returned at once and an expired
+ * one is refreshed in the background; only a cold cache (first /model open
+ * before the startup prewarm landed) waits for 10router. Concurrent
+ * refreshes share one request. Nothing on the conversation path ever awaits
+ * this: runs only read the cache via `cachedCombos()`.
+ */
+let inflight: Promise<TenRouterCombo[] | undefined> | undefined;
+/** Last config a fetch was made with — lets cache readers trigger a refresh. */
+let lastConfig: TenRouterConfig | undefined;
+
+function positiveNumber(v: unknown): number | undefined {
+  const n = typeof v === 'number' ? v : typeof v === 'string' ? Number(v) : NaN;
+  return Number.isFinite(n) && n > 0 ? n : undefined;
 }
 
-/** Invalidate the cache (e.g. after a preference write, so the next open refetches). */
-export function invalidateComboCache(): void {
-  cache = undefined;
+type RawCombo = {
+  id?: unknown;
+  name?: unknown;
+  models?: unknown;
+  contextWindow?: unknown;
+  context_window?: unknown;
+  capabilities?: { contextWindow?: unknown } | null;
+};
+
+function parseCombo(c: RawCombo): TenRouterCombo {
+  const contextWindow =
+    positiveNumber(c.contextWindow) ??
+    positiveNumber(c.context_window) ??
+    positiveNumber(c.capabilities?.contextWindow);
+  return {
+    id: String(c.id ?? ''),
+    name: String(c.name ?? ''),
+    models: Array.isArray(c.models) ? c.models.map(String) : [],
+    ...(contextWindow ? { contextWindow } : {}),
+  };
+}
+
+function refreshCombos(cfg: TenRouterConfig): Promise<TenRouterCombo[] | undefined> {
+  lastConfig = cfg;
+  if (inflight) return inflight;
+  inflight = (async () => {
+    try {
+      const res = await fetchWithRetry(`${cfg.baseUrl}/api/combos`, {
+        headers: { 'x-10r-cli-token': cfg.token },
+        signal: AbortSignal.timeout(COMBOS_TIMEOUT_MS),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const body = (await res.json()) as { combos?: RawCombo[] };
+      const combos = (body.combos ?? []).map(parseCombo).filter((c) => c.id && c.name);
+      if (combos.length === 0) throw new Error('empty combo list');
+      cache = { combos, fetchedAt: Date.now() };
+      log.info('tenrouter', 'combos-fetched', { count: combos.length });
+      return combos;
+    } catch (err) {
+      log.warn('tenrouter', 'combos-fetch-failed', {
+        err: err instanceof Error ? err.message : String(err),
+        keptStale: cache !== undefined,
+      });
+      return undefined;
+    } finally {
+      inflight = undefined;
+    }
+  })();
+  return inflight;
+}
+
+function isStale(entry: CacheEntry): boolean {
+  return Date.now() - entry.fetchedAt >= CACHE_TTL_MS;
 }
 
 /**
- * aiduCAT: model name -> context window size, from 10router's /v1/models
- * (each entry carries `capabilities.contextWindow`). Drives the 60%
- * auto-compact (run-flow) and the /status denominator. Cached 10 min;
- * failures yield an empty map and the caller falls back.
- *
- * f031-func-#1: auth prefers the management token AIDU_10ROUTER_TOKEN (sent
- * as `x-10r-cli-token`, which 10router accepts on /v1/models) — the bot env
- * has it, but not ANTHROPIC_API_KEY (that only lives in the CLI's
- * settings.json), so the old key-only lookup always came back empty and the
- * 60% compact never applied. ANTHROPIC_API_KEY (Bearer) stays as a fallback.
+ * The custom combo list for the /model card. Fresh cache → as is; expired
+ * cache → returned at once while a background refresh runs; cold cache →
+ * waits for one fetch. `waitForFresh` (the /model submit validation, off the
+ * conversation path) waits for the refresh when the cache is expired, and
+ * still falls back to the stale list if 10router can't answer.
  */
-const MODELS_TTL_MS = 10 * 60_000;
-let contextWindows: { map: Map<string, number>; fetchedAt: number } | undefined;
-
-export type ContextWindowFetch =
-  | { ok: true; map: Map<string, number> }
-  | { ok: false; reason: 'no-credentials' | 'fetch-failed'; map: Map<string, number> };
-
-export async function fetchContextWindowsDetailed(baseUrl: string): Promise<ContextWindowFetch> {
-  if (contextWindows && Date.now() - contextWindows.fetchedAt < MODELS_TTL_MS) {
-    return { ok: true, map: contextWindows.map };
+export async function fetchCombos(
+  cfg: TenRouterConfig,
+  opts: { waitForFresh?: boolean } = {},
+): Promise<ComboCatalog> {
+  lastConfig = cfg;
+  if (cache && !isStale(cache)) return { combos: cache.combos, source: 'cached' };
+  if (cache && !opts.waitForFresh) {
+    void refreshCombos(cfg);
+    return { combos: cache.combos, source: 'cached' };
   }
-  const routerToken = (process.env.AIDU_10ROUTER_TOKEN ?? '').trim();
-  const apiKey = (process.env.ANTHROPIC_API_KEY ?? '').trim();
-  const headers: Record<string, string> | undefined = routerToken
-    ? { 'x-10r-cli-token': routerToken }
-    : apiKey
-      ? { Authorization: `Bearer ${apiKey}` }
-      : undefined;
-  if (!headers) {
-    return { ok: false, reason: 'no-credentials', map: contextWindows?.map ?? new Map() };
-  }
+  const combos = await refreshCombos(cfg);
+  if (combos) return { combos, source: 'live' };
+  if (cache) return { combos: cache.combos, source: 'cached' };
+  return { combos: [], source: 'unavailable' };
+}
+
+/**
+ * f0.3.4: synchronous read for the conversation path. Returns whatever is
+ * cached (fresh or expired) and kicks a background refresh when it is
+ * expired or missing — never waits.
+ */
+export function cachedCombos(): TenRouterCombo[] | undefined {
+  if (lastConfig && (!cache || isStale(cache))) void refreshCombos(lastConfig);
+  return cache?.combos;
+}
+
+/** f0.3.4: warm the combo cache at startup (background; failures only log). */
+export async function prewarmCombos(cfg: AppConfig): Promise<void> {
   try {
-    const res = await fetchWithRetry(`${baseUrl.replace(/\/+$/, '')}/v1/models`, {
-      headers,
-      signal: AbortSignal.timeout(MODELS_TIMEOUT_MS),
-    });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const body = (await res.json()) as {
-      data?: Array<{ id?: string; capabilities?: { contextWindow?: number } }>;
-    };
-    const map = new Map<string, number>();
-    for (const m of body.data ?? []) {
-      const cw = m.capabilities?.contextWindow;
-      if (m.id && typeof cw === 'number' && cw > 0) map.set(m.id, cw);
-    }
-    if (map.size > 0) contextWindows = { map, fetchedAt: Date.now() };
-    return { ok: true, map };
+    const tr = await resolveTenRouterConfig(cfg);
+    if (!tr) return;
+    await refreshCombos(tr);
   } catch (err) {
-    log.warn('tenrouter', 'models-fetch-failed', {
-      auth: routerToken ? 'x-10r-cli-token' : 'bearer',
-      err: err instanceof Error ? err.message : String(err),
-    });
-    return { ok: false, reason: 'fetch-failed', map: contextWindows?.map ?? new Map() };
+    log.warn('tenrouter', 'prewarm-failed', { err: err instanceof Error ? err.message : String(err) });
   }
+}
+
+/**
+ * Mark the cache expired (e.g. after a preference write) so the next /model
+ * open refreshes it. The old list stays readable meanwhile (f0.3.4).
+ */
+export function invalidateComboCache(): void {
+  if (cache) cache = { ...cache, fetchedAt: 0 };
+}
+
+/** Test hook: forget cache, in-flight refresh and remembered config. */
+export function resetComboCacheForTests(): void {
+  cache = undefined;
+  inflight = undefined;
+  lastConfig = undefined;
 }

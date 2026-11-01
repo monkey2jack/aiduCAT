@@ -4,7 +4,16 @@ aiduCAT 的版本号用 `f` 前缀（f0.1、f0.2+ …），`package.json` 里是
 
 > **tag 说明**：`f0.2++` 原先误指 `6fa62f8`（package 0.2.1），**已于 2026-10-31 修正**为真实发布提交 `c7ff90d`（0.2.2）。`f0.2+`、`v0.2.1` 核实后保持 `6fa62f8`：f0.2+ 的 GitHub Release 于 2026-10-20 01:17 从 main 发布，当时 main 的头部就是 `6fa62f8`（package 0.2.1）；版本号提交 `f01fcd2` 与它只差文档和一个测试，没有代码差别。
 
-## f0.3.3 — 2026-11-02（package 0.3.3，tag 未打）
+## f0.3.4 — 2026-11-02（package 0.3.4，tag 未打）
+
+基于 f0.3.3（`1e70511`）。修飞书响应慢（猴哥 2026-11-02 反馈）。
+
+- **只加载 10router combo，不再拉 `/v1/models` 全量模型表**（715 个模型，约 200KB）：以前两条消息隔了 10 分钟以上，下一轮开跑前要同步重拉这张表，约一半轮次因此多等 4.5–5.5 秒。现在上下文窗口取 combo 自带的窗口字段（`/api/combos` 有 `contextWindow` / `context_window` / `capabilities.contextWindow` 时）→ provider 的 `contextWindow`；都没有时 aiduCAT 不覆盖，Claude Code 用自己 `settings.json` 的 `CLAUDE_CODE_MAX_CONTEXT_TOKENS` / `CLAUDE_CODE_AUTO_COMPACT_WINDOW`，`/status` 的分母和 🗜️ 也读这两项（同 f031-#8）。`/model` 下拉照旧只用 combo。
+- **combo 列表先用旧的、后台再刷新**（stale-while-revalidate）：缓存 5 分钟，过期时立刻返回旧列表、后台刷新一次（并发只发一个请求）；刷新失败保留旧列表；启动时预热一次。对话这条路只读缓存，从不等 10router。`/model` 提交校验在缓存过期时会等一次刷新（点卡片，不在对话路径上）。
+- **收到消息立刻加表情**：在本轮 flush 一开始就加（以前在排队拿到并发名额之后约 2 秒才加），不等附件、拿名额、起 Claude Code；加表情失败或慢都不影响本轮。
+- **一开跑就发卡片**：Claude 每轮一开始就发出流式卡片（「☤Thinking…」占位，面板头带模型图标），不再等第一次工具调用/文字（以前 10–200 秒）；之后的流式更新、长回答续卡、拒卡降级、`/stop`、空跑保护都沿用这张卡。Codex 仍按原来的「有内容才开卡」。
+
+## f0.3.3 — 2026-11-02（`1e70511`，package 0.3.3）
 
 基于 f0.3+（`8d6b4d1`）。
 

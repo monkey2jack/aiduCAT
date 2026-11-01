@@ -944,7 +944,7 @@ async function handleStatus(_args: string, ctx: CommandContext): Promise<void> {
       // and compact trigger the CLI takes from its own settings.json.
       const aiduWindow = isCodex
         ? undefined
-        : await resolveModelWindow(
+        : resolveModelWindow(
             ctx.controls.profileConfig,
             normalizeModelSelection(ctx.controls.profileConfig.agentKind, prefs.model),
           );
@@ -1568,7 +1568,9 @@ async function submitModelCard(ctx: CommandContext): Promise<void> {
   if (submittedProvider === DEFAULT_PROVIDER) {
     const tr = await resolveTenRouterConfig(cfg);
     if (tr) {
-      const catalog = await fetchCombos(tr);
+      // f0.3.4: validation may wait for an expired cache to refresh (a card
+      // click, not a conversation round) and still falls back to the stale list.
+      const catalog = await fetchCombos(tr, { waitForFresh: true });
       combos = catalog.combos;
     }
   } else {

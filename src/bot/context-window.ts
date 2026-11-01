@@ -2,50 +2,28 @@ import { readFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import type { ProfileConfig } from '../config/profile-schema';
-import { log } from '../core/logger';
-import { fetchContextWindowsDetailed } from './tenrouter';
+import { cachedCombos } from './tenrouter';
 
 /**
- * aiduCAT: context window for the run's model, from 10router's /v1/models
- * (cached 10 min). Returns undefined when 10router isn't configured or the
- * model isn't listed.
- *
- * f031-func-#1: a configured router that can't answer is no longer silent —
- * it logs a warn (throttled per reason+model) saying the run falls back to
- * the Claude CLI's own settings.json window / CLAUDE_CODE_AUTO_COMPACT_WINDOW.
+ * f0.3.4 (Wei: 「aiduCAT 天生就是配合 10router 用的，只加载 combo 最好」):
+ * the window comes from the 10router *combo* entry when /api/combos carries
+ * one — never from the 715-model /v1/models list, which used to be re-pulled
+ * synchronously in every flush and blocked a round for ~5s.
+ * Reads the combo cache only (stale-while-revalidate, see tenrouter.ts), so
+ * it never waits on the network. Undefined when the combo has no window —
+ * then the provider default applies, and failing that the run passes no
+ * override and the Claude CLI uses its own settings.json
+ * (CLAUDE_CODE_MAX_CONTEXT_TOKENS / CLAUDE_CODE_AUTO_COMPACT_WINDOW).
  */
-export async function contextWindowForModel(model: string | undefined): Promise<number | undefined> {
-  const url = (process.env.AIDU_10ROUTER_URL ?? '').trim();
-  if (!url || !model) return undefined;
-  const res = await fetchContextWindowsDetailed(url);
-  const win = res.map.get(model);
-  if (win) return win;
-  warnUnresolved(res.ok ? 'model-not-listed' : res.reason, model);
-  return undefined;
+export function contextWindowForModel(model: string | undefined): number | undefined {
+  if (!model) return undefined;
+  const combos = cachedCombos();
+  if (!combos) return undefined;
+  const hit = combos.find((c) => c.name === model) ?? combos.find((c) => c.id === model);
+  return hit?.contextWindow;
 }
 
-const WARN_EVERY_MS = 10 * 60_000;
-const lastWarn = new Map<string, number>();
-
-function warnUnresolved(reason: string, model: string): void {
-  const key = `${reason}:${model}`;
-  const now = Date.now();
-  const prev = lastWarn.get(key);
-  if (prev !== undefined && now - prev < WARN_EVERY_MS) return;
-  lastWarn.set(key, now);
-  log.warn('context-window', 'unresolved', {
-    reason,
-    model,
-    hint:
-      reason === 'no-credentials'
-        ? 'set AIDU_10ROUTER_TOKEN (or ANTHROPIC_API_KEY) in the bot env'
-        : undefined,
-    fallback: 'claude-cli settings.json (CLAUDE_CODE_AUTO_COMPACT_WINDOW / MAX_CONTEXT_TOKENS)',
-  });
-}
-
-/** Fallback when the router lookup has no answer (no AIDU_10ROUTER_URL, or a
- * gateway like CLIProxyAPI whose /v1/models carries no context size): use the
+/** Fallback when the combo carries no window (or no 10router at all): use the
  * active provider's declared `contextWindow`, so the 60% auto-compact still
  * applies on non-10router providers. */
 export function providerContextWindow(profile: ProfileConfig): number | undefined {
@@ -58,11 +36,11 @@ export function providerContextWindow(profile: ProfileConfig): number | undefine
 /** f031-#8: the window a run is spawned with (drives
  * CLAUDE_CODE_AUTO_COMPACT_WINDOW in run-flow). /status uses the SAME
  * resolution so its denominator and 🗜️ match what the CLI was told. */
-export async function resolveModelWindow(
+export function resolveModelWindow(
   profile: ProfileConfig,
   model: string | undefined,
-): Promise<number | undefined> {
-  return (await contextWindowForModel(model)) ?? providerContextWindow(profile);
+): number | undefined {
+  return contextWindowForModel(model) ?? providerContextWindow(profile);
 }
 
 /** Auto-compact trigger as % of the window (AIDUCAT_COMPACT_PCT, default 60). */

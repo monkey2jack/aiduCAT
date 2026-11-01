@@ -10,7 +10,7 @@
 >
 > Dress your Claude Code / Codex CLI in a Bubble-Wave Feishu card: deep-blue veins on paper white, one cat, zero noise.
 
-[![Version](https://img.shields.io/badge/version-f0.3.3-blue.svg)](https://github.com/monkey2jack/aiduCAT)
+[![Version](https://img.shields.io/badge/version-f0.3.4-blue.svg)](https://github.com/monkey2jack/aiduCAT)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Node 20+](https://img.shields.io/badge/node-20.12%2B-brightgreen.svg)](https://nodejs.org/)
 [![Claude Code](https://img.shields.io/badge/agent-Claude%20Code%20%7C%20Codex-orange.svg)](https://docs.anthropic.com/en/docs/claude-code/quickstart)
@@ -35,7 +35,7 @@ aiduCAT originates from and credits the upstream [zarazhangrui/lark-coding-agent
 | ☤ **One-line counter header** | Panel header: `model · 💭 thinking segments · 🛠️ tools · ⏱️ elapsed`; the live status word (☤Thinking… / ☤Processing… / ☤aiduCATing…) sits above the panel and disappears on completion |
 | 🏷 **Model logos** | 30 vendor marks (OpenAI/Gemini/Claude/Grok/DeepSeek/Qwen/Kimi/Doubao/Zhipu…) follow `/model` and show in the panel header |
 | 🔌 **Multi-provider** | `/model` card with Provider → Model → Effort dropdowns; provider keys resolve from env/secret refs, never plaintext; takes effect next turn without restart; 10router gateways only offer curated combos |
-| 🗜️ **Window-based auto-compact** | Compacts at 60% of the model window (`AIDUCAT_COMPACT_PCT`); the window comes from 10router `/v1/models` or the provider's `contextWindow`; when neither is available the Claude Code `settings.json` value is kept and a warn is logged |
+| 🗜️ **Window-based auto-compact** | Compacts at 60% of the model window (`AIDUCAT_COMPACT_PCT`); the window comes from the 10router combo (when `/api/combos` carries a window field) or the provider's `contextWindow`; when neither has one aiduCAT sets nothing and Claude Code keeps `CLAUDE_CODE_MAX_CONTEXT_TOKENS` / `CLAUDE_CODE_AUTO_COMPACT_WINDOW` from its own `settings.json` (since f0.3.4 the full 10router `/v1/models` list is never pulled) |
 | 🚦 **Border = status** | done green / stopped yellow / error red / running grey — no trailing notes |
 | 🛟 **Rejected cards never hang** | Image markdown becomes links, HTML is stripped, answers over 25KB are split into ordered "续 i/N" continuation cards (cut at paragraph/code/table boundaries); if Feishu rejects the card it degrades (strict card → plain text → failure notice) instead of sticking on "Thinking" |
 | 🎹 **Typing reaction** | A keyboard reaction lands on your message and disappears as soon as output starts |
@@ -248,7 +248,7 @@ Add a provider under `profiles.<name>.modelProviders` (see the JSON example abov
 - `baseUrl`: up to the **port root** (no trailing `/v1` — Claude Code appends it, doubling it trips gateway WAFs)
 - `apiKey`: prefer the `${MY_GATEWAY_KEY}` env template; keep secrets out of config files
 - `models`: list the model ids your gateway actually serves; omit it and aiduCAT discovers via `<baseUrl>/v1/models` at startup
-- `contextWindow`: **declare it if you can** — it is the denominator of the `/status` context readout and the 60% auto-compact trigger. Without it (and without 10router) aiduCAT does not override the compact point: Claude Code keeps `CLAUDE_CODE_AUTO_COMPACT_WINDOW` from its own `settings.json`, and a warn is logged (conversation itself is unaffected)
+- `contextWindow`: **declare it if you can** — it is the denominator of the `/status` context readout and the 60% auto-compact trigger. Without it (and without 10router) aiduCAT does not override the compact point: Claude Code keeps `CLAUDE_CODE_AUTO_COMPACT_WINDOW` from its own `settings.json` (conversation itself is unaffected)
 
 **C. Local inference (Ollama / llama.cpp / vLLM)**
 

@@ -10,7 +10,7 @@
 >
 > 给 Claude Code / Codex CLI 穿上泡波流的飞书卡片：宣白纸面上灌一道深蓝流光，一只猫，零噪音。
 
-[![Version](https://img.shields.io/badge/version-f0.3.3-blue.svg)](https://github.com/monkey2jack/aiduCAT)
+[![Version](https://img.shields.io/badge/version-f0.3.4-blue.svg)](https://github.com/monkey2jack/aiduCAT)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Node 20+](https://img.shields.io/badge/node-20.12%2B-brightgreen.svg)](https://nodejs.org/)
 [![Claude Code](https://img.shields.io/badge/agent-Claude%20Code%20%7C%20Codex-orange.svg)](https://docs.anthropic.com/en/docs/claude-code/quickstart)
@@ -35,7 +35,7 @@ aiduCAT 起源并致敬上游 [zarazhangrui/lark-coding-agent-bridge](https://gi
 | ☤ **单行计数头** | 面板头一行：`模型 · 💭 思考段数 · 🛠️ 工具数 · ⏱️ 用时`；运行中的状态词（☤Thinking… / ☤Processing… / ☤aiduCATing…）在面板上方，结束即消失 |
 | 🏷 **模型 Logo** | 30 家厂商标识（OpenAI/Gemini/Claude/Grok/DeepSeek/Qwen/Kimi/豆包/智谱…）随 `/model` 切换自动跟随，显示在面板头 |
 | 🔌 **多 Provider** | /model 卡三级下拉（Provider→Model→Effort）；provider 密钥走环境变量链不入配置明文；切换下一轮即生效，无需重启；10router 系网关自动识别并只拉 curated combo |
-| 🗜️ **按窗口自动压缩** | 上下文到模型窗口的 60%（`AIDUCAT_COMPACT_PCT`）自动压缩；窗口来自 10router `/v1/models` 或 provider 的 `contextWindow`，都拿不到时沿用 Claude Code 自己 `settings.json` 的设置并打 warn 日志 |
+| 🗜️ **按窗口自动压缩** | 上下文到模型窗口的 60%（`AIDUCAT_COMPACT_PCT`）自动压缩；窗口来自 10router combo（`/api/combos` 带窗口字段时）或 provider 的 `contextWindow`，都没有时 aiduCAT 不覆盖，沿用 Claude Code 自己 `settings.json` 的 `CLAUDE_CODE_MAX_CONTEXT_TOKENS` / `CLAUDE_CODE_AUTO_COMPACT_WINDOW`（f0.3.4 起不再拉 10router 的 `/v1/models` 全量模型表） |
 | 🚦 **边框即状态** | 完成绿 / 停止黄 / 出错红 / 运行中灰 —— 一眼看清结果，无结尾注脚 |
 | 🛟 **卡片被拒不卡死** | 图片 markdown 转链接、去 HTML、正文超 25KB 自动分成多张「续 i/N」卡片（按段落/代码块/表格边界切开）；飞书拒卡时自动降级（严格卡 → 纯文本 → 失败提示），不再停在「Thinking」 |
 | 🎹 **打字机反应** | 消息一落就打上敲键盘表情；真正开跑立刻消失 |
@@ -251,7 +251,7 @@ export ANTHROPIC_API_KEY="sk-ant-..."
 - `baseUrl`: 填到**端口根**（不带 `/v1`，Claude Code 自动补）
 - `apiKey`: 建议用 `${MY_GATEWAY_KEY}` 环境变量模板，密钥不进配置文件
 - `models`: 写你的网关实际提供的模型 id 清单；不写则启动时拉 `<baseUrl>/v1/models` 动态发现
-- `contextWindow`: **建议声明**。这是 `/status` 上下文占比与 60% 自动压缩触发的分母；不声明时（且没配 10router）aiduCAT 不覆盖压缩点，沿用 Claude Code 自己 `settings.json` 里的 `CLAUDE_CODE_AUTO_COMPACT_WINDOW`，并在日志里打一条 warn（不影响对话本身）
+- `contextWindow`: **建议声明**。这是 `/status` 上下文占比与 60% 自动压缩触发的分母；不声明时（且没配 10router）aiduCAT 不覆盖压缩点，沿用 Claude Code 自己 `settings.json` 里的 `CLAUDE_CODE_AUTO_COMPACT_WINDOW`（不影响对话本身）
 
 **C. 本地推理（Ollama / llama.cpp / vLLM）**
 
