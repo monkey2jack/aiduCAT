@@ -195,14 +195,14 @@ describe('f035 display', () => {
     expect(JSON.stringify(statusCard({ ...info, sessionStats: { ...st, tpsAvg: 57 } }))).toContain('⚡ 57 tok/s');
   });
 
-  it('card panel shows ⚡ only once the turn is finished', () => {
+  it('f036: the card panel never shows ⚡ tok/s (TPS only in /status)', () => {
     const base: RunState = { ...initialState, blocks: [{ kind: 'text', content: 'hi' }] as RunState['blocks'] };
-    const running = JSON.stringify(renderCard({ ...base, turnTps: 42 }, { model: 'm' }));
+    const running = JSON.stringify(renderCard({ ...base, footer: 'streaming' }, { model: 'm' }));
     expect(running).not.toContain('tok/s');
-    const finished = JSON.stringify(renderCard({ ...base, terminal: 'done', footer: null as never, turnTps: 42 }, { model: 'm' }));
-    expect(finished).toContain('⚡ 42 tok/s');
-    const unknown = JSON.stringify(renderCard({ ...base, terminal: 'done', footer: null as never }, { model: 'm' }));
-    expect(unknown).not.toContain('tok/s');
+    const finished = JSON.stringify(renderCard({ ...base, terminal: 'done', footer: null as never }, { model: 'm' }));
+    expect(finished).toContain('collapsible_panel');
+    expect(finished).not.toContain('tok/s');
+    expect(finished).not.toContain('⚡');
   });
 });
 

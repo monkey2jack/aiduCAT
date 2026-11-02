@@ -2271,15 +2271,13 @@ async function processAgentStream(
       const prevTerminal = state.terminal;
       const prevFooter = state.footer;
       state = reduce(state, evt);
-      // f0.3.5: a turn that ended normally gets its TPS on the card and into
-      // the session average (/status). Interrupted/failed turns are skipped.
+      // f0.3.5: a turn that ended normally feeds the session average
+      // (/status). Interrupted/failed turns are skipped. f0.3.6: no longer
+      // shown on the card (Wei: TPS only in /status).
       if (evt.type === 'done' && evt.terminationReason === 'normal') {
         const turn = tpsMeter.finish();
         log.info('agent', 'turn-tps', { outTok: turn.outputTokens, genMs: turn.genMs, tps: turn.tps ?? null });
-        if (turn.tps !== undefined) {
-          state = { ...state, turnTps: turn.tps };
-          stats.recordTurnTps(scope, turn.outputTokens, turn.genMs);
-        }
+        if (turn.tps !== undefined) stats.recordTurnTps(scope, turn.outputTokens, turn.genMs);
       }
       // f0.3.1 #4: must run AFTER reduce — reduce('done') unconditionally sets
       // terminal='done' and used to wipe the guard's error (f0.3 bug).

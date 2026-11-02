@@ -340,8 +340,8 @@ describe('f0.3.5 group chats get the same panel card as DMs', () => {
   });
 });
 
-describe('f0.3.5 turn TPS on the card and in /status', () => {
-  it('f035-tps a finished turn shows ⚡ tok/s on the card and feeds the session average', async () => {
+describe('f0.3.5 turn TPS in /status (f0.3.6: not on the card)', () => {
+  it('f035-tps a finished turn feeds the session average; f036: the card shows no ⚡ tok/s', async () => {
     const h = await setup({ events: workEvents('TPS_ANSWER'), stepMs: 60 });
     const info = vi.spyOn(log, 'info');
     await h.handlers.message?.(message('om_t1', 'hi'));
@@ -356,7 +356,9 @@ describe('f0.3.5 turn TPS on the card and in /status', () => {
     // the Bash window (tool_use → tool_result) is not generation time
     expect(tpsLog!.genMs).toBeGreaterThanOrEqual(200);
     expect(tpsLog!.tps).toBe(Math.round(100 / (tpsLog!.genMs / 1000)));
-    expect(panelOf(h.updates.at(-1))).toContain(`⚡ ${tpsLog!.tps} tok/s`);
+    // f0.3.6 (Wei): TPS only in /status — never on the card.
+    expect(JSON.stringify(h.updates)).not.toContain('tok/s');
+    expect(panelOf(h.updates.at(-1))).toContain('🛠️ 1');
     const st = h.sessions.getRaw('oc_dm')?.stats;
     expect(st?.genOut).toBe(100);
     expect(st?.genMs).toBe(tpsLog!.genMs);

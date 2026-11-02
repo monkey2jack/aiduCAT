@@ -10,7 +10,7 @@
 >
 > Dress your Claude Code / Codex CLI in a Bubble-Wave Feishu card: deep-blue veins on paper white, one cat, zero noise.
 
-[![Version](https://img.shields.io/badge/version-f0.3.5-blue.svg)](https://github.com/monkey2jack/aiduCAT)
+[![Version](https://img.shields.io/badge/version-f0.3.6-blue.svg)](https://github.com/monkey2jack/aiduCAT)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Node 20+](https://img.shields.io/badge/node-20.12%2B-brightgreen.svg)](https://nodejs.org/)
 [![Claude Code](https://img.shields.io/badge/agent-Claude%20Code%20%7C%20Codex-orange.svg)](https://docs.anthropic.com/en/docs/claude-code/quickstart)
@@ -38,7 +38,7 @@ aiduCAT originates from and credits the upstream [zarazhangrui/lark-coding-agent
 | 🗜️ **Window-based auto-compact** | Compacts at 60% of the model window (`AIDUCAT_COMPACT_PCT`); the window comes from the 10router combo (when `/api/combos` carries a window field) or the provider's `contextWindow`; when neither has one aiduCAT sets nothing and Claude Code keeps `CLAUDE_CODE_MAX_CONTEXT_TOKENS` / `CLAUDE_CODE_AUTO_COMPACT_WINDOW` from its own `settings.json` (since f0.3.4 the full 10router `/v1/models` list is never pulled) |
 | 🚦 **Border = status** | done green / stopped yellow / error red / running grey — no trailing notes |
 | 🛟 **Rejected cards never hang** | Image markdown becomes links, HTML is stripped, answers over 25KB are split into ordered "续 i/N" continuation cards (cut at paragraph/code/table boundaries); if Feishu rejects the card it degrades (strict card → plain text → failure notice) instead of sticking on "Thinking" |
-| ☤ **aiduCATing… placeholder card** | The moment a message lands (even while queued behind a running round) a card saying「☤aiduCATing…」appears and then streams the answer; card mode no longer adds a Feishu reaction (markdown/text modes and Codex keep it) |
+| ☤ **aiduCATing… placeholder card** | The moment a message lands (even while queued behind a running round) a card appears with just one line「☤aiduCATing…」(no panel); the panel joins the same card at the agent's first thinking, tool call or answer text and then streams as usual; card mode no longer adds a Feishu reaction (markdown/text modes and Codex keep it). ⚡ TPS is shown only in `/status` (session average) |
 | 🗣 **Free-form `/model`** | Passes any gateway combo id through (e.g. `Gemini-3.8-Flash`), no allow-list |
 
 ## Quick start (from scratch)

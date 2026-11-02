@@ -283,11 +283,13 @@ describe('f0.3.5 ☤aiduCATing… card at intake (no reaction)', () => {
     expect(summaryOf(h.updates[0])).toBe('☤aiduCATing…');
     expect(JSON.stringify(h.updates[0])).toContain('☤aiduCATing…');
     await waitFor(() => h.order.includes('agent-run'));
-    // the run adopted the same card: still the placeholder word, now with the model logo
+    // the run adopted the same card: still the placeholder word; f0.3.6: no
+    // panel (and so no model logo) until the agent shows something
     expect(h.order.filter((o) => o === 'card-open')).toHaveLength(1);
     expect(summaryOf(h.updates.at(-1))).toBe('☤aiduCATing…');
-    expect(JSON.stringify(h.updates.at(-1))).toContain('custom_icon');
+    expect(JSON.stringify(h.updates.at(-1))).not.toContain('collapsible_panel');
     g.open();
+    await waitFor(() => JSON.stringify(h.updates.at(-1)).includes('custom_icon'));
     await waitFor(() => summaryOf(h.updates.at(-1)) === '✅Done');
     await settle();
     expect(JSON.stringify(h.updates.at(-1))).toContain('EARLY_ANSWER');

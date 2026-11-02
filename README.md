@@ -10,7 +10,7 @@
 >
 > 给 Claude Code / Codex CLI 穿上泡波流的飞书卡片：宣白纸面上灌一道深蓝流光，一只猫，零噪音。
 
-[![Version](https://img.shields.io/badge/version-f0.3.5-blue.svg)](https://github.com/monkey2jack/aiduCAT)
+[![Version](https://img.shields.io/badge/version-f0.3.6-blue.svg)](https://github.com/monkey2jack/aiduCAT)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Node 20+](https://img.shields.io/badge/node-20.12%2B-brightgreen.svg)](https://nodejs.org/)
 [![Claude Code](https://img.shields.io/badge/agent-Claude%20Code%20%7C%20Codex-orange.svg)](https://docs.anthropic.com/en/docs/claude-code/quickstart)
@@ -38,7 +38,7 @@ aiduCAT 起源并致敬上游 [zarazhangrui/lark-coding-agent-bridge](https://gi
 | 🗜️ **按窗口自动压缩** | 上下文到模型窗口的 60%（`AIDUCAT_COMPACT_PCT`）自动压缩；窗口来自 10router combo（`/api/combos` 带窗口字段时）或 provider 的 `contextWindow`，都没有时 aiduCAT 不覆盖，沿用 Claude Code 自己 `settings.json` 的 `CLAUDE_CODE_MAX_CONTEXT_TOKENS` / `CLAUDE_CODE_AUTO_COMPACT_WINDOW`（f0.3.4 起不再拉 10router 的 `/v1/models` 全量模型表） |
 | 🚦 **边框即状态** | 完成绿 / 停止黄 / 出错红 / 运行中灰 —— 一眼看清结果，无结尾注脚 |
 | 🛟 **卡片被拒不卡死** | 图片 markdown 转链接、去 HTML、正文超 25KB 自动分成多张「续 i/N」卡片（按段落/代码块/表格边界切开）；飞书拒卡时自动降级（严格卡 → 纯文本 → 失败提示），不再停在「Thinking」 |
-| ☤ **aiduCATing… 占位卡** | 消息一落（还没开跑、在排队也一样）就出卡片「☤aiduCATing…」，之后同一张卡流式填充；卡片模式不再加飞书表情（markdown/text 模式和 Codex 仍用表情） |
+| ☤ **aiduCATing… 占位卡** | 消息一落（还没开跑、在排队也一样）就出卡片，先只有一行「☤aiduCATing…」（没有面板）；agent 第一次思考、调工具或出字时，面板出现在同一张卡里并继续流式；卡片模式不再加飞书表情（markdown/text 模式和 Codex 仍用表情）。⚡ TPS 只在 `/status` 显示（会话平均） |
 | 🗣 **`/model` 自由切模型** | pass-through 任意 gateway combo id（如 `Gemini-3.8-Flash`），不做白名单收口 |
 
 ## 快速开始（从零安装）

@@ -48,9 +48,6 @@ export interface RunState {
   /** aiduCAT: latest token usage seen this run (assistant messages carry
    * per-message usage; the result event carries the final one). Drives the
    * context-window percentage in the panel header. */
-  /** f0.3.5: this turn's TPS (main-line output / generation time), set by
-   * the channel when the turn ends normally; shown on the finished card. */
-  turnTps?: number;
   usage?: {
     inputTokens?: number;
     outputTokens?: number;

@@ -256,7 +256,7 @@ const answer = (text: string): AgentEvent[] =>
   [{ type: 'text', delta: text }, { type: 'done', terminationReason: 'normal' }] as AgentEvent[];
 
 describe('f0.3.4 latency: early reaction + early card', () => {
-  it('f034-#3/#4 (f0.3.5: card replaces the reaction) the ☤aiduCATing… card (with model logo) goes out before the agent says anything', async () => {
+  it('f034-#3/#4 (f0.3.5: card replaces the reaction) the ☤aiduCATing… card goes out before the agent says anything (f0.3.6: one line, panel+logo join with the first agent output)', async () => {
     const g = gate();
     const h = await setup({ events: answer('FINAL_SENTINEL'), gate: g.promise, model: 'Gemini-3.8-Flash' });
     await h.handlers.message?.(message('om_a', 'hi'));
@@ -269,16 +269,18 @@ describe('f0.3.4 latency: early reaction + early card', () => {
     expect(summaryOf(first)).toBe('☤aiduCATing…');
     const firstJson = JSON.stringify(first);
     expect(firstJson).toContain('☤aiduCATing…');
-    expect(firstJson).toContain('Gemini-3.8-Flash');
-    expect(firstJson).toContain('custom_icon');
+    expect(firstJson).not.toContain('collapsible_panel');
+    expect(firstJson).not.toContain('custom_icon');
     expect(firstJson).not.toContain('FINAL_SENTINEL');
     expect(h.sent).toHaveLength(0);
 
     g.open();
     await waitFor(() => summaryOf(h.updates.at(-1)) === '✅Done');
     await settle();
-    // same single card carries the answer; nothing sent separately
+    // same single card carries the answer + the panel (model logo); nothing sent separately
     expect(JSON.stringify(h.updates.at(-1))).toContain('FINAL_SENTINEL');
+    expect(JSON.stringify(h.updates.at(-1))).toContain('Gemini-3.8-Flash');
+    expect(JSON.stringify(h.updates.at(-1))).toContain('custom_icon');
     expect(h.order.filter((o) => o === 'card-open')).toHaveLength(1);
     expect(h.sent).toHaveLength(0);
     expect(h.recalled).toHaveLength(0);

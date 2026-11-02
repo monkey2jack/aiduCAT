@@ -429,38 +429,6 @@ exports[`run card renderer snapshots > renders initial running state 1`] = `
         "tag": "markdown",
         "text_size": "notation",
       },
-      {
-        "border": {
-          "color": "grey",
-          "corner_radius": "5px",
-        },
-        "elements": [
-          {
-            "content": "_（无过程记录）_",
-            "tag": "markdown",
-            "text_size": "notation",
-          },
-        ],
-        "expanded": false,
-        "header": {
-          "icon": {
-            "size": "16px 16px",
-            "tag": "standard_icon",
-            "token": "down-small-ccm_outlined",
-          },
-          "icon_expanded_angle": -180,
-          "icon_position": "right",
-          "title": {
-            "content": "💭 0 · 🛠️ 0",
-            "tag": "markdown",
-            "text_size": "notation",
-          },
-          "vertical_align": "center",
-        },
-        "padding": "6px 8px 6px 8px",
-        "tag": "collapsible_panel",
-        "vertical_spacing": "4px",
-      },
     ],
   },
   "config": {

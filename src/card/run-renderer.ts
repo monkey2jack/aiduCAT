@@ -214,7 +214,10 @@ function buildCard(
 
   // aiduCAT: one collapsed panel carrying reasoning + every tool call + the
   // run meta header (aiduPOP layout). Hidden when there is nothing to show.
-  const popPanel = aiduPopPanel(state, options, budget);
+  // f0.3.6: two-stage placeholder — until the agent shows anything (first
+  // thinking, tool call or answer text) the card is the single「☤aiduCATing…」
+  // line; the panel joins the same card on the next full-card update.
+  const popPanel = awaitingAgent(state) ? null : aiduPopPanel(state, options, budget);
   // f0.2+ 猴哥点单: notation size so the status line reads as a caption,
   // matching the panel body size instead of full answer text.
   if (statusWord) elements.push(noteMd(`☤${statusWord}`));
@@ -359,6 +362,23 @@ function aiduPopPanel(state: RunState, options: RunCardRenderOptions, budget: Re
   });
 }
 
+/**
+ * f0.3.6: the run is still on the「☤aiduCATing…」placeholder — the agent has
+ * produced no thinking, tool call or answer yet. Every such event moves
+ * `footer` off 'received' (see run-state reduce); `finalText` covers gateways
+ * that only send the final answer. Terminal states always keep the panel
+ * (its border colour carries the result).
+ */
+export function awaitingAgent(state: RunState): boolean {
+  return (
+    state.terminal === 'running' &&
+    state.footer === 'received' &&
+    state.blocks.length === 0 &&
+    !state.reasoning.content.trim() &&
+    !(state.finalText && state.finalText.trim())
+  );
+}
+
 /** aiduCAT: 完成绿 / 停止黄 / 出错红 / 运行或无过程灰。 */
 function panelBorderColor(state: RunState): 'grey' | 'green' | 'yellow' | 'red' {
   if (state.terminal === 'done') return 'green';
@@ -386,8 +406,8 @@ function metaHeader(state: RunState, options: RunCardRenderOptions): string {
     const label = secs >= 60 ? `${Math.floor(secs / 60)}m${secs % 60}s` : `${secs}s`;
     parts.push(`⏱️ ${label}`);
   }
-  // f0.3.5: finished turn shows its own TPS (generation time only).
-  if (state.terminal !== 'running' && state.turnTps !== undefined) parts.push(`⚡ ${state.turnTps} tok/s`);
+  // f0.3.6 (Wei 2026-11-02): no per-turn ⚡ here — TPS lives only in
+  // /status (session average), so the card and /status never disagree.
   return parts.join(" · ");
 }
 
