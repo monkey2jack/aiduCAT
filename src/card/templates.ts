@@ -103,6 +103,8 @@ export interface StatusInfo {
     ctxUsed?: number;
     ctxTotal?: number;
     compactPct?: number;
+    /** f04-group-cmd-model: where the model comes from (本群设置 / 跟随默认 / 默认). */
+    source?: string;
   };
 }
 
@@ -119,7 +121,7 @@ export function statusCard(info: StatusInfo): object {
   };
   const ml = info.modelLine;
   const modelBits = [
-    ml?.model,
+    ml?.model ? (ml.source ? `${ml.model}（${ml.source}）` : ml.model) : ml?.source ? `模型（${ml.source}）` : undefined,
     ml?.effort,
     // 🗜️ = auto-compact trigger as a % of the model window (setting display)
     ml?.compactPct !== undefined ? `🗜️ ${ml.compactPct}%` : undefined,
@@ -228,7 +230,7 @@ export const HELP_COMMANDS: Array<{ cmd: string; note: string }> = [
   { cmd: 'ws', note: '工作目录管理' },
   { cmd: 'account', note: '查看/更换飞书应用凭据' },
   { cmd: 'config', note: '偏好、访问控制与身份策略' },
-  { cmd: 'model', note: '切换模型与推理强度' },
+  { cmd: 'model', note: '切换模型与推理强度（群里只改本群）' },
   { cmd: 'status', note: '当前状态' },
   { cmd: 'stop', note: '结束正在跑的任务' },
   { cmd: 'timeout', note: '会话探活设置' },

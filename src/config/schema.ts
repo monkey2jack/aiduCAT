@@ -91,6 +91,15 @@ export interface AppAccess {
   chatAllowAllUsers?: string[];
 }
 
+/** f04-group-cmd-model: one group's own model choice (all fields optional:
+ * unset model = no --model, unset provider = default gateway, unset effort =
+ * CLI default — same meaning as the profile-level fields). */
+export interface ChatModelPref {
+  model?: string;
+  provider?: string;
+  effort?: string;
+}
+
 export interface AppPreferences {
   /** Reply rendering mode for IM (group/p2p) messages. Default 'card'. */
   messageReply?: MessageReplyMode;
@@ -124,6 +133,13 @@ export interface AppPreferences {
   model?: string;
   /** f0.2 stored provider choice. 'default'/unset = service env credentials. */
   provider?: string;
+  /**
+   * f04-group-cmd-model: per-group model override, keyed by chat_id. A group
+   * listed here runs with its own model / provider / effort (set by /model in
+   * that group); groups not listed — and every DM — follow the profile
+   * default above. See config/chat-model.ts.
+   */
+  chatModels?: Record<string, ChatModelPref>;
   /**
    * Claude Code reasoning-effort level forwarded as `--effort`. Valid values
    * (per the claude CLI): low / medium / high / xhigh / max. `undefined` means

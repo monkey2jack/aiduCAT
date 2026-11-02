@@ -12,6 +12,7 @@ import {
   readUserSettingsEnvNames,
 } from './owner-only-settings';
 import { cleanupSandboxPlaceholders, snapshotPlaceholders } from './sandbox-placeholders';
+import { planRuntimeDirMask, wrapWithRuntimeDirMask } from './runtime-dir-mask';
 import { spawnProcess, type SpawnedProcessByStdio } from '../../platform/spawn';
 import { buildBridgeSystemPrompt } from '../bridge-system-prompt';
 import { buildLarkChannelEnv, type LarkChannelEnvContext } from '../lark-channel-env';
@@ -95,7 +96,12 @@ export class ClaudeAdapter implements AgentAdapter {
       : (() => {
           const configDir = claudeUserConfigDir({ ...process.env, ...(opts.envOverrides ?? {}) });
           return JSON.stringify(
-            buildNonOwnerSettings({ configDir, settingsEnvNames: readUserSettingsEnvNames(configDir) }),
+            buildNonOwnerSettings({
+              configDir,
+              settingsEnvNames: readUserSettingsEnvNames(configDir),
+              // f04 C: Bash (sandboxed) + read/write inside cwd, secrets denied.
+              cwd: opts.cwd,
+            }),
             null,
             2,
           );
@@ -144,7 +150,11 @@ export class ClaudeAdapter implements AgentAdapter {
       }
     }
 
-    const child = spawnProcess(this.binary, args, {
+    // f04 C: on hosts where containerd's 0711 runtime dir breaks the scrub
+    // sandbox (claude-code#93144), start the non-owner run in a private mount
+    // namespace that hides it — see runtime-dir-mask.ts. Owner runs: unchanged.
+    const masked = ownerRun ? undefined : wrapWithRuntimeDirMask(this.binary, args, planRuntimeDirMask());
+    const child = spawnProcess(masked?.command ?? this.binary, masked?.args ?? args, {
       cwd: opts.cwd,
       // f0.2: per-run provider overrides (envOverrides) layer last, on top of
       // the Lark channel env — /model provider switches take effect per run.
@@ -169,6 +179,7 @@ export class ClaudeAdapter implements AgentAdapter {
       hasSession: Boolean(opts.sessionId),
       promptChars: opts.prompt.length,
       model: opts.model,
+      ...(ownerRun ? {} : { ownerRun: false, runtimeDirMask: Boolean(masked) }),
     });
 
     // Listeners MUST be attached synchronously here, before we return.

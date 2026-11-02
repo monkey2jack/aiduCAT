@@ -8,7 +8,7 @@ import {
   withConfigFileLock,
 } from './profile-store';
 import { saveConfig } from './store';
-import { secretKeyForApp, type AppConfig, type AppPreferences } from './schema';
+import { secretKeyForApp, type AppConfig, type AppPreferences, type ChatModelPref } from './schema';
 import type { ProfileAccess, ProfileConfig, ProfileMode } from './profile-schema';
 import { applyLarkCliIdentityPolicy } from '../lark-cli/identity-policy';
 import { log, reportMetric } from '../core/logger';
@@ -182,8 +182,12 @@ export async function savePreferencesConfig(
   };
   await withConfigFileLock(state.configPath, async () => {
     const root = await loadRootConfig(state.configPath);
+    // f04-group-cmd-model: per-group models are owned by saveChatModelConfig;
+    // a default/preferences save never rewrites (or drops) them.
+    const { chatModels: _ignoredChatModels, ...incoming } = preferences;
     if (!root) {
-      state.cfg.preferences = preferences;
+      const keptChats = state.cfg.preferences?.chatModels;
+      state.cfg.preferences = keptChats ? { ...incoming, chatModels: keptChats } : incoming;
       state.profileConfig.larkCli = larkCli;
       state.profileConfig.mode = mode;
       if (meeting) state.profileConfig.meeting = meeting;
@@ -193,7 +197,7 @@ export async function savePreferencesConfig(
 
     const profile = root.profiles[state.profile];
     if (!profile) throw new Error(`profile not found: ${state.profile}`);
-    const { requireMentionInGroup: _requireMention, access: _access, ...profilePreferences } = preferences;
+    const { requireMentionInGroup: _requireMention, access: _access, ...profilePreferences } = incoming;
     root.profiles[state.profile] = {
       ...profile,
       mode,
@@ -212,4 +216,63 @@ export async function savePreferencesConfig(
     state.profileConfig = root.profiles[state.profile]!;
     state.cfg = runtimeProfileConfig(root, state.profile);
   });
+}
+
+/**
+ * f04-group-cmd-model: set (`pref`) or clear (`undefined`) one group's own
+ * model choice under the config file lock, persist, and refresh the in-memory
+ * state (hot — the next round in that group uses it). Other groups' entries
+ * and the profile default are never touched.
+ */
+export async function saveChatModelConfig(
+  state: MutableProfileState,
+  chatId: string,
+  pref: ChatModelPref | undefined,
+): Promise<{ changed: boolean }> {
+  const apply = (prefs: AppPreferences | ProfileConfig['preferences'] | undefined) => {
+    const current = { ...(prefs?.chatModels ?? {}) };
+    const had = Object.prototype.hasOwnProperty.call(current, chatId);
+    if (pref) current[chatId] = { ...pref };
+    else delete current[chatId];
+    const { chatModels: _old, ...rest } = prefs ?? {};
+    const next = Object.keys(current).length > 0 ? { ...rest, chatModels: current } : rest;
+    return { next, changed: pref ? true : had };
+  };
+  try {
+    return await withConfigFileLock(state.configPath, async () => {
+      const root = await loadRootConfig(state.configPath);
+      if (!root) {
+        const { next, changed } = apply(state.cfg.preferences);
+        state.cfg.preferences = next as AppPreferences;
+        state.profileConfig = {
+          ...state.profileConfig,
+          preferences: apply(state.profileConfig.preferences).next as ProfileConfig['preferences'],
+        };
+        if (changed) await saveConfig(state.cfg, state.configPath);
+        return { changed };
+      }
+      const profile = root.profiles[state.profile];
+      if (!profile) throw new Error(`profile not found: ${state.profile}`);
+      const { next, changed } = apply(profile.preferences);
+      if (changed) {
+        root.profiles[state.profile] = {
+          ...profile,
+          preferences: next as ProfileConfig['preferences'],
+        };
+        await saveRootConfig(root, state.configPath);
+      }
+      state.profileConfig = root.profiles[state.profile]!;
+      state.cfg = runtimeProfileConfig(root, state.profile);
+      log.info('config-ops', 'chat-model-saved', {
+        chat: chatId.slice(-6),
+        cleared: !pref,
+        changed,
+        chats: Object.keys(state.profileConfig.preferences.chatModels ?? {}).length,
+      });
+      return { changed };
+    });
+  } catch (err) {
+    reportMetric('command_fail', 1, { step: 'chat-model.save' });
+    throw err;
+  }
 }

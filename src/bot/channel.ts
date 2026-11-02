@@ -34,6 +34,12 @@ import {
 } from '../card/run-state';
 import { renderText } from '../card/text-renderer';
 import { tryHandleCommand, type Controls } from '../commands';
+import {
+  GROUP_SLASH_ADMIN_ONLY_REPLY,
+  groupSlashDenied,
+  isSlashMessage,
+  slashName,
+} from '../policy/group-commands';
 import type { AppConfig } from '../config/schema';
 import {
   getAgentStopGraceMs,
@@ -94,6 +100,7 @@ import { lookupMessageThreadId } from './thread-id';
 import { addWorkingReaction, removeReaction } from './reaction';
 import { fetchKnownChats } from './lark-info';
 import { contextWindowForModel, resolveModelWindow } from './context-window';
+import { profileForChat } from '../config/chat-model';
 import { prewarmCombos } from './tenrouter';
 import type { AppPaths } from '../config/app-paths';
 // f03p-slim-#7: the CoT module is loaded only when a run actually uses CoT.
@@ -365,7 +372,12 @@ export async function startChannel(deps: StartChannelDeps): Promise<BridgeChanne
     return new EarlyCard(
       channel as unknown as ConstructorParameters<typeof EarlyCard>[0],
       msg.chatId,
-      renderCard(initialState, { model: controls.profileConfig.preferences.model }),
+      renderCard(initialState, {
+        model: profileForChat(
+          controls.profileConfig,
+          msg.chatType === 'p2p' ? undefined : msg.chatId,
+        ).preferences.model,
+      }),
       earlySendOpts(msg),
       scope,
     );
@@ -1081,6 +1093,35 @@ async function intakeMessage(deps: IntakeDeps): Promise<void> {
     return;
   }
 
+  // f04-group-cmd-model: in a group only the owner/admins may use slash
+  // commands — registered or not. A non-admin's `/…` (also `@bot /…`) is
+  // neither run as our command nor queued for the agent (Claude Code / Codex
+  // would treat it as their own built-in command). It does not cancel what
+  // others have queued in this scope either. Hint only when the bot was
+  // @-mentioned (the sender is clearly talking to it); otherwise silent, so a
+  // no-@ group never gets a bot reply to someone pasting a path.
+  if (
+    emsg.chatType !== 'p2p' &&
+    isSlashMessage(emsg) &&
+    groupSlashDenied(controls.profileConfig, controls, { isGroup: true, senderId: emsg.senderId })
+  ) {
+    log.info('intake', 'group-slash-denied', {
+      scope,
+      sender: emsg.senderId.slice(-6),
+      cmd: slashName(emsg),
+      hinted: emsg.mentionedBot === true,
+    });
+    if (emsg.mentionedBot) {
+      const opts = emsg.threadId
+        ? { replyTo: emsg.messageId, replyInThread: true }
+        : { replyTo: emsg.messageId };
+      void channel
+        .send(emsg.chatId, { text: GROUP_SLASH_ADMIN_ONLY_REPLY }, opts)
+        .catch((err: unknown) => log.warn('intake', 'group-slash-hint-failed', { err: String(err) }));
+    }
+    return;
+  }
+
   const handled = await tryHandleCommand({
     channel,
     msg: emsg,
@@ -1327,7 +1368,14 @@ async function runAgentBatch(deps: RunBatchDeps): Promise<void> {
   // changed. `requestedModel` (the `--model` value, or undefined for default)
   // is reused below to log requested-vs-actual against the init event.
   const agentKind = controls.profileConfig.agentKind;
-  const modelPref = controls.profileConfig.preferences.model;
+  // f04-group-cmd-model: a group with its own /model runs that; everyone else
+  // the profile default. The run (model arg, provider env, effort, window,
+  // 60% compact) is started from this per-chat view of the profile.
+  const runProfile = profileForChat(
+    controls.profileConfig,
+    firstMsg.chatType === 'p2p' ? undefined : chatId,
+  );
+  const modelPref = runProfile.preferences.model;
   const modelSelection = normalizeModelSelection(agentKind, modelPref);
   const requestedModel = resolveModelArg(agentKind, modelPref);
   const prevModel = lastRunModelByScope.get(scope);
@@ -1388,13 +1436,13 @@ async function runAgentBatch(deps: RunBatchDeps): Promise<void> {
     scopeId: scope,
     // f0.2+: the selected model's declared window drives the 60% compact env.
     // f0.3.4: combo cache only — never waits on 10router.
-    modelWindow: resolveModelWindow(controls.profileConfig, modelSelection),
+    modelWindow: resolveModelWindow(runProfile, modelSelection),
     scope: scopeContext,
     prompt,
     attachments: attachments.map(toPolicyAttachment),
     access: accessDecision,
     capability,
-    profileConfig: controls.profileConfig,
+    profileConfig: runProfile,
     sessions,
     sessionCatalog,
     workspaces,
@@ -1501,7 +1549,7 @@ async function runAgentBatch(deps: RunBatchDeps): Promise<void> {
     startedAt: Date.now(),
     // aiduCAT: reasoning effort + this model's context window (f0.3.4: from
     // the cached 10router combo entry, never a network wait).
-    effort: controls.profileConfig.preferences.effort,
+    effort: runProfile.preferences.effort,
     contextWindow: contextWindowForModel(modelSelection),
     ...(callbackAuth
       ? {

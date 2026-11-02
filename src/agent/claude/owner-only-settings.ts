@@ -50,13 +50,48 @@ export function readUserSettingsEnvNames(configDir: string): string[] {
 
 export interface NonOwnerSettings {
   env: Record<string, string>;
-  permissions: { deny: string[] };
+  permissions: { allow?: string[]; deny: string[] };
+  sandbox?: {
+    enabled: true;
+    autoAllowBashIfSandboxed: true;
+    allowUnsandboxedCommands: false;
+  };
 }
+
+/**
+ * Where secrets usually live, relative to $HOME. Denied to the Read/Edit tools
+ * AND (Claude Code merges `Read(…)` deny rules into the sandbox's
+ * filesystem.denyRead) to sandboxed Bash. Directory entries deny their whole
+ * subtree.
+ */
+const HOME_SECRET_DIRS = [
+  '.ssh',
+  '.gnupg',
+  '.aws',
+  '.azure',
+  '.kube',
+  '.docker',
+  '.config/gh',
+  '.config/gcloud',
+  '.config/aiduCAT',
+  '.aiducat',
+  '.lark-channel',
+  '.lark-cli',
+  '.local/share/keyrings',
+];
+const HOME_SECRET_FILES = ['.netrc', '.git-credentials', '.npmrc', '.pypirc', '.claude.json'];
 
 export function buildNonOwnerSettings(input: {
   configDir: string;
   settingsEnvNames: readonly string[];
   home?: string;
+  /**
+   * f04-group-cmd-model (C, Wei 11:52): the run's working directory. When set
+   * the run may use Bash (sandboxed) and read/write files in it, like a normal
+   * agent — credentials stay out of reach. Unset = the f03p-infra-#2 shape
+   * (no allow rules), kept for callers that only want the scrub.
+   */
+  cwd?: string;
 }): NonOwnerSettings {
   const env: Record<string, string> = { CLAUDE_CODE_SUBPROCESS_ENV_SCRUB: '1' };
   for (const name of [...ALWAYS_BLANK, ...input.settingsEnvNames]) {
@@ -77,5 +112,57 @@ export function buildNonOwnerSettings(input: {
     ...files.map((f) => `Edit(${abs(f)})`),
     `Read(${abs(join(home, '.config', 'gh'))}/**)`,
   ];
-  return { env, permissions: { deny } };
+  if (!input.cwd) return { env, permissions: { deny } };
+
+  const cwd = resolve(input.cwd);
+  const cwdRule = `${abs(cwd)}/**`;
+  // Project settings in the working directory carry hooks and often their own
+  // `env` block (keys!) — never readable, never writable by a non-owner run.
+  // CLAUDE.md / .mcp.json steer every later run (the owner's too) — read-only.
+  const projectSecret = [
+    join(cwd, '.claude', 'settings.json'),
+    join(cwd, '.claude', 'settings.local.json'),
+  ];
+  const projectSteering = [join(cwd, 'CLAUDE.md'), join(cwd, '.mcp.json'), join(cwd, '.claude')];
+  const extraDeny = [
+    ...projectSecret.map((f) => `Read(${abs(f)})`),
+    ...HOME_SECRET_DIRS.map((d) => `Read(${abs(join(home, d))}/**)`),
+    ...HOME_SECRET_FILES.map((f) => `Read(${abs(join(home, f))})`),
+    // Process environments (Claude's own holds the gateway key; so does the bridge's).
+    'Read(//proc/**)',
+    // dotenv files anywhere.
+    'Read(//**/.env)',
+    'Read(//**/.env.*)',
+    ...[...projectSecret, ...projectSteering].flatMap((f) => [
+      `Edit(${abs(f)})`,
+      `Write(${abs(f)})`,
+    ]),
+    `Edit(${abs(join(cwd, '.claude'))}/**)`,
+    `Write(${abs(join(cwd, '.claude'))}/**)`,
+    ...HOME_SECRET_DIRS.flatMap((d) => [`Edit(${abs(join(home, d))}/**)`, `Write(${abs(join(home, d))}/**)`]),
+  ];
+  // SCRUB=1 forces permission mode `default` ("Declare allowedTools
+  // explicitly"), and `-p` has nobody to approve — so declare them. Deny rules
+  // above still win over these. Bash runs inside Claude Code's bubblewrap
+  // sandbox (auto-allowed only because it is sandboxed; the
+  // dangerouslyDisableSandbox escape is off).
+  const allow = [
+    'Bash',
+    'Read',
+    'Glob',
+    'Grep',
+    'LS',
+    'TodoWrite',
+    'WebSearch',
+    'WebFetch',
+    `Edit(${cwdRule})`,
+    `Write(${cwdRule})`,
+    `MultiEdit(${cwdRule})`,
+    `NotebookEdit(${cwdRule})`,
+  ];
+  return {
+    env,
+    permissions: { allow, deny: [...deny, ...extraDeny] },
+    sandbox: { enabled: true, autoAllowBashIfSandboxed: true, allowUnsandboxedCommands: false },
+  };
 }

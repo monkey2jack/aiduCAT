@@ -78,7 +78,7 @@ node bin/lark-channel-bridge.mjs run
 | `/reset` | 同 `/new` |
 | `/stop` | 停止当前正在运行的任务；没有任务时回一句提示 |
 | `/status` | 六行状态卡：会话 id、模型 · 强度 · 🗜️ 压缩点、权限/owner、lark-cli/运行/队列、🚩 会话开始时间 · 时长 · 消息数、⏳ 上下文与 token 统计 |
-| `/model` | 查看 / 切换模型与推理强度（支持任意 gateway combo id；`/model default` 还原默认；非 Claude 模型标「经网关翻译」，不传强度）（管理员） |
+| `/model` | 查看 / 切换模型与推理强度（支持任意 gateway combo id；`/model default` 还原默认；非 Claude 模型标「经网关翻译」，不传强度）。**私聊里改的是默认；在群里改只影响这个群**（没单独设的群跟默认；`/model reset` 或卡片「恢复跟随默认」取消本群设置；`/status` 显示当前模型来自「本群设置」还是「跟随默认」）（管理员） |
 | `/resume` | 列出并恢复本工作目录的历史会话 |
 | `/cd <path>` | 切换工作目录（管理员；拒绝 `~/.ssh`、`~/.claude`、`~/.aiducat`、`~/.lark-channel`、`/etc` 等凭据/系统目录及其子目录） |
 | `/ws` | 管理命名工作区：`list` / `save <name>` / `use <name>` / `remove <name>`（管理员） |
@@ -192,7 +192,9 @@ aiduCAT profile export <name> --include-secrets --yes
 
 群在白名单还不够：群里发言的人本人也要在 allowedUsers / admins / owner 里——除非在该群发 `/invite alluser` 开了「全员可用」（写进 `access.chatAllowAllUsers`，只对已在白名单的群生效，再发一次关闭）；别的机器人默认被拒（bot-at-bot 要在 `access.allowedBots` 里显式写，且群在白名单）；team 模式只对 owner 同租户的人开放。卡片按钮点击按同一规则复核。回复里的 @所有人 会变成文字「@所有人」，不会真的 @全员。群里的回复和私聊一样是带折叠面板的流式卡片；面板里的工具行在群里默认隐藏，`preferences.showToolCallsInGroups: true` 才显示。
 
-非 owner 的轮次（群里别人 @、白名单用户）在 Linux 上需要 bubblewrap：`sudo apt-get install -y bubblewrap socat`（没装时启动日志会 warn `bwrap-missing`，这类轮次的 Claude Code 起不来）。这类轮次带隔离，只能对话和读文件，不能跑 Bash、不能改文件；agent 出错时群里只显示「暂时没法处理」，完整报错只进日志，只有 owner 私聊会看到一行简短原因。
+**群里只有 owner / 管理员能用斜杠命令**：其他人发的任何 `/` 开头的消息（`/help`、`/new`、`/stop` 这些，以及没注册的 `/xxx`，包括 `@机器人 /xxx`）都不执行、也不会交给 Claude Code / Codex（防止触发它们自带的斜杠命令）；@了机器人时回一句「群里只有管理员能用命令。」，没 @ 时不出声。卡片按钮在群里也按这条复核。私聊不变。
+
+非 owner 的轮次（群里别人 @、白名单用户）在 Linux 上需要 bubblewrap：`sudo apt-get install -y bubblewrap socat`（没装时启动日志会 warn `bwrap-missing`，这类轮次的 Claude Code 起不来）。这类轮次带隔离（`CLAUDE_CODE_SUBPROCESS_ENV_SCRUB=1`）但能正常干活：Bash 在 Claude Code 的 bubblewrap 沙箱里跑，可以读写工作目录里的文件；读不到 settings.json（用户级和项目级 `.claude/settings*.json`）、`~/.ssh`、`~/.aiducat`、`~/.config/aiduCAT`、`~/.lark-cli`、`.env`、`/proc` 等放密钥的地方，环境变量里也没有密钥；工作目录的 `CLAUDE.md`、`.claude/`、`.mcp.json` 只读；沙箱里的 Bash 不能上网（WebFetch / WebSearch 可用）。装了 containerd 的机器上（`/run/containerd` 是 0711），aiduCAT 会让这类轮次在一个私有挂载命名空间里起 Claude Code，把 `/run/containerd` 盖成空目录，绕开 bubblewrap 0.12 的 `Can't mkdir parents for /run/containerd/containerd.sock`（anthropics/claude-code#93144），**不改 `/run/containerd` 权限**（需要 util-linux 的 `unshare`、`setpriv`，Debian/Ubuntu 自带）。owner 的轮次不受影响。agent 出错时群里只显示「暂时没法处理」，完整报错只进日志，只有 owner 私聊会看到一行简短原因。
 
 ### 云文档评论
 

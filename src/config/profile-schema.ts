@@ -1,3 +1,4 @@
+import { normalizeChatModels } from './chat-model';
 import { isAbsolute, join } from 'node:path';
 import { devNull } from 'node:os';
 import type {
@@ -445,15 +446,20 @@ function normalizePreferences(
     access: _access,
     requireMentionInGroup: _mention,
     messageReply,
+    chatModels: rawChatModels,
     ...rest
   } = preferences ?? {};
+  // f04-group-cmd-model: keep every well-formed per-group model entry (load
+  // and save never trim valid ones); drop only malformed junk.
+  const chatModels = normalizeChatModels(rawChatModels);
+  const withChats = Object.keys(chatModels).length > 0 ? { ...rest, chatModels } : rest;
   if (messageReply !== undefined && isMessageReply(messageReply)) {
     return {
-      ...rest,
+      ...withChats,
       messageReply,
     };
   }
-  return rest;
+  return withChats;
 }
 
 function isMessageReply(value: unknown): value is MessageReplyMode {

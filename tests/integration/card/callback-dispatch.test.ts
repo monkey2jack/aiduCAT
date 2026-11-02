@@ -23,6 +23,8 @@ describe('signed card callback dispatch', () => {
 
   it('runs built-in command callbacks only when the bridge token verifies', async () => {
     const h = await createHarness();
+    // f04-group-cmd-model: command buttons in a group are owner/admin only.
+    h.controls.profileConfig.access.admins.push('ou_operator');
     const activeRun = h.agent.run({ runId: 'run-active', prompt: 'running' }) as FakeAgentRun;
     h.activeRuns.register('oc_group', activeRun);
 
@@ -125,6 +127,8 @@ describe('signed card callback dispatch', () => {
     const h = await createHarness();
 
     // f031-sec-M1: /model became admin-only, so the non-admin operator picks /status.
+    // f04-group-cmd-model: in a group any command pick needs owner/admin.
+    h.controls.profileConfig.access.admins.push('ou_operator');
     await h.dispatch({ cmd: 'help.run' }, undefined, 'status');
 
     expect(h.channel.recalled).not.toContain('om_card');
@@ -132,6 +136,16 @@ describe('signed card callback dispatch', () => {
       JSON.stringify(m.content).includes('当前状态'),
     );
     expect(statusCard).toBeDefined();
+  });
+
+  it('f04: a non-admin group member cannot run command buttons (help pick, signed stop)', async () => {
+    const h = await createHarness();
+    const activeRun = h.agent.run({ runId: 'run-active', prompt: 'running' }) as FakeAgentRun;
+    h.activeRuns.register('oc_group', activeRun);
+    await h.dispatch({ cmd: 'stop', __bridge_cb: true, bridge_token: h.token('stop') });
+    expect(activeRun.stopped).toBe(false);
+    await h.dispatch({ cmd: 'help.run' }, undefined, 'status');
+    expect(h.channel.sent.find((m) => JSON.stringify(m.content).includes('当前状态'))).toBeUndefined();
   });
 
   it('ignores a help.run callback that carries no selected option', async () => {

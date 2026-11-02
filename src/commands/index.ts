@@ -37,6 +37,7 @@ import { requestScopeGrantLink } from '../bot/wizard';
 import {
   modelCancelledCard,
   modelCard,
+  modelResetCard,
   modelSavedCard,
   parseModelCardSubmit,
 } from '../card/model-card';
@@ -70,6 +71,13 @@ import {
   type OwnerRefreshState,
 } from '../policy/access';
 import { buildEncryptedAccountConfig } from '../config/store';
+import { groupSlashDenied, isSlashMessage, slashName } from '../policy/group-commands';
+import {
+  chatModelEntry,
+  chatModelSourceLabel,
+  effectiveModelPrefs,
+  profileForChat,
+} from '../config/chat-model';
 import * as configOps from '../config/config-ops';
 import { log, reportMetric } from '../core/logger';
 import { renderCard } from '../card/run-renderer';
@@ -227,7 +235,7 @@ const ADMIN_COMMANDS = new Set([
   // Joining a meeting makes the bot visible to every participant and exposes
   // meeting content to the agent — owner/admin only.
   '/meeting',
-  // f031-sec-M1: /model rewrites the profile-wide model/provider for every chat.
+  // f031-sec-M1: /model rewrites the profile default (DM) or a group's own model (f04).
   '/model',
 ]);
 
@@ -254,7 +262,37 @@ function isAdminCommand(cmd: string): boolean {
   return ADMIN_COMMANDS.has(cmd.startsWith('/') ? cmd : `/${cmd}`);
 }
 
+/**
+ * f04-group-cmd-model: group/topic chat. A typed message carries its real
+ * chat_type; a card click arrives with a synthetic p2p msg (dispatcher
+ * makeFakeMsg), so there the resolved chatMode is authoritative.
+ */
+function inGroup(ctx: CommandContext): boolean {
+  return ctx.msg.rawContentType === 'interactive'
+    ? ctx.chatMode !== 'p2p'
+    : ctx.msg.chatType !== 'p2p';
+}
+
+/** f04-group-cmd-model: key for the per-chat model (groups only; DMs use the default). */
+function chatModelKey(ctx: CommandContext): string | undefined {
+  return inGroup(ctx) ? ctx.msg.chatId : undefined;
+}
+
 export async function tryHandleCommand(ctx: CommandContext): Promise<boolean> {
+  // f04-group-cmd-model: belt and braces for the intake gate — a non-admin's
+  // slash message in a group is swallowed here too (never reaches a handler
+  // or the agent). The intake gate already replied/logged.
+  if (
+    inGroup(ctx) &&
+    isSlashMessage(ctx.msg) &&
+    groupSlashDenied(ctx.controls.profileConfig, ctx.controls, { isGroup: true, senderId: ctx.msg.senderId })
+  ) {
+    log.info('command', 'group-slash-denied', {
+      cmd: slashName(ctx.msg),
+      sender: ctx.msg.senderId.slice(-6),
+    });
+    return true;
+  }
   const trimmed = ctx.msg.content.trim();
   if (!trimmed.startsWith('/')) return false;
   const parts = trimmed.split(/\s+/);
@@ -294,6 +332,19 @@ export async function runCommandHandler(
 ): Promise<boolean> {
   const h = handlers[`/${name}`];
   if (!h) return false;
+  // f04-group-cmd-model: card buttons in a group obey the same rule as typed
+  // commands — only the owner/admins. Silent (a click has no message to reply to).
+  if (
+    inGroup(ctx) &&
+    groupSlashDenied(ctx.controls.profileConfig, ctx.controls, { isGroup: true, senderId: ctx.msg.senderId })
+  ) {
+    log.info('command', 'group-slash-denied', {
+      cmd: name,
+      sender: ctx.msg.senderId.slice(-6),
+      via: 'card',
+    });
+    return true;
+  }
   if (commandFeatureOff(name, ctx.controls.profileConfig)) {
     await reply(ctx, FEATURE_OFF_REPLY);
     return true;
@@ -398,11 +449,14 @@ async function handleNew(args: string, ctx: CommandContext): Promise<void> {
   // will inherit, so the user isn't surprised by a silently-persisted /model
   // card choice. Display only — changing it still goes through /model.
   const agentKind = ctx.controls.profileConfig.agentKind;
-  const modelPref = ctx.controls.cfg.preferences?.model;
-  const effortPref = ctx.controls.cfg.preferences?.effort;
+  // f04-group-cmd-model: the model THIS chat runs (group's own or default).
+  const eff = effectiveModelPrefs(ctx.controls.profileConfig, chatModelKey(ctx));
+  const modelPref = eff.model;
+  const effortPref = eff.effort;
   const snapshot = [
     modelPref ? `模型 ${resolveModelArg(agentKind, modelPref) ?? modelPref}` : '模型 跟随默认',
     effortPref ? `effort ${effortPref}` : 'effort 默认',
+    ...(inGroup(ctx) ? [chatModelSourceLabel(eff.source, true)] : []),
   ].join(' · ');
   await reply(
     ctx,
@@ -939,14 +993,18 @@ async function handleStatus(_args: string, ctx: CommandContext): Promise<void> {
       // for the spawned CLI (the bot process itself never has that env, so
       // the old read always fell back to a made-up 1M and hid 🗜️).
       const st = sess?.stats;
-      const prefs = ctx.controls.profileConfig.preferences;
+      // f04-group-cmd-model: this chat's effective model (group's own or default);
+      // the window follows it exactly as run-flow does.
+      const chatProfile = profileForChat(ctx.controls.profileConfig, chatModelKey(ctx));
+      const prefs = chatProfile.preferences;
+      const source = effectiveModelPrefs(ctx.controls.profileConfig, chatModelKey(ctx)).source;
       // aiduCAT override first (it sets the spawn env); otherwise the window
       // and compact trigger the CLI takes from its own settings.json.
       const aiduWindow = isCodex
         ? undefined
         : resolveModelWindow(
-            ctx.controls.profileConfig,
-            normalizeModelSelection(ctx.controls.profileConfig.agentKind, prefs.model),
+            chatProfile,
+            normalizeModelSelection(chatProfile.agentKind, prefs.model),
           );
       const cli = isCodex || aiduWindow ? undefined : await claudeCliWindow();
       const window = aiduWindow ?? cli?.window;
@@ -962,6 +1020,7 @@ async function handleStatus(_args: string, ctx: CommandContext): Promise<void> {
         ctxUsed: st?.contextTokens,
         ctxTotal: window,
         compactPct: pct,
+        source: chatModelSourceLabel(source, inGroup(ctx)),
       };
     })(),
   });
@@ -1498,6 +1557,9 @@ async function handleModel(args: string, ctx: CommandContext): Promise<void> {
       return submitModelCard(ctx);
     case 'cancel':
       return cancelModelCard(ctx);
+    case 'reset':
+      // f04-group-cmd-model: this group goes back to following the default.
+      return resetChatModel(ctx);
     default:
       // Back-compat: `/model <name>` still works for typing diehards, validates
       // the same free-form rule as before. `/model default` restores.
@@ -1505,13 +1567,48 @@ async function handleModel(args: string, ctx: CommandContext): Promise<void> {
   }
 }
 
+/**
+ * f04-group-cmd-model: persist a model choice for where the command was sent —
+ * a DM rewrites the profile default (unchanged behaviour); a group writes only
+ * its own `preferences.chatModels[chatId]` entry. Hot: the next round uses it.
+ */
+async function saveModelChoice(
+  ctx: CommandContext,
+  next: { model?: string; provider?: string; effort?: string },
+): Promise<void> {
+  const key = chatModelKey(ctx);
+  if (key) {
+    await configOps.saveChatModelConfig(ctx.controls, key, {
+      ...(next.model ? { model: next.model } : {}),
+      ...(next.provider && next.provider !== DEFAULT_PROVIDER ? { provider: next.provider } : {}),
+      ...(next.effort ? { effort: next.effort } : {}),
+    });
+    return;
+  }
+  const preferences: AppPreferences = {
+    ...(ctx.controls.cfg.preferences ?? {}),
+    model: next.model,
+    effort: next.effort,
+    provider: next.provider === DEFAULT_PROVIDER ? undefined : next.provider,
+  };
+  await configOps.savePreferencesConfig(
+    ctx.controls,
+    preferences,
+    getRequireMentionInGroup(ctx.controls.cfg),
+    ctx.controls.profileConfig.larkCli.identityPreset,
+    ctx.controls.profileConfig.mode,
+  );
+}
+
 /** aiduCAT f0.1: interactive /model card (10router combos + effort). f0.2: + provider dropdown. */
 async function showModelCard(ctx: CommandContext): Promise<void> {
   const tr = await resolveTenRouterConfig(ctx.controls.cfg);
-  const currentModel = ctx.controls.cfg.preferences?.model;
-  const currentEffort = ctx.controls.cfg.preferences?.effort;
+  // f04-group-cmd-model: preselect what THIS chat runs (group's own or default).
+  const eff = effectiveModelPrefs(ctx.controls.profileConfig, chatModelKey(ctx));
+  const currentModel = eff.model;
+  const currentEffort = eff.effort;
   const providers = ctx.controls.profileConfig.modelProviders ?? {};
-  const currentProvider = normalizeProvider(providers, ctx.controls.cfg.preferences?.provider);
+  const currentProvider = normalizeProvider(providers, eff.provider);
 
   let combos: Array<{ id: string; name: string; label?: string }> = [];
   let source: 'live' | 'cached' | 'unavailable' = 'unavailable';
@@ -1548,6 +1645,7 @@ async function showModelCard(ctx: CommandContext): Promise<void> {
     ...(union.length === 0 && providerChoicesList.length > 1
       ? { providers: providerChoicesList, currentProvider }
       : {}),
+    ...(inGroup(ctx) ? { chatScope: { own: eff.source === 'chat' } } : {}),
   });
   if (ctx.fromCardAction) await recallMessage(ctx, ctx.msg.messageId);
   await sendManagedCard(ctx.channel, ctx.msg.chatId, card, commandReplyOptions(ctx));
@@ -1612,13 +1710,14 @@ async function submitModelCard(ctx: CommandContext): Promise<void> {
       parsed.provider = null;
     }
   }
-  const currentModel = cfg.preferences?.model;
-  const currentEffort = cfg.preferences?.effort;
+  // f04-group-cmd-model: "keep current" means what THIS chat runs now.
+  const eff = effectiveModelPrefs(ctx.controls.profileConfig, chatModelKey(ctx));
+  const currentModel = eff.model;
+  const currentEffort = eff.effort;
   const nextModel = parsed.model ?? currentModel;
   const nextEffort = parsed.effort ?? currentEffort;
   // Provider: the card's provider select when present, else keep current.
-  const nextProvider =
-    parsed.provider ?? normalizeProvider(providers, cfg.preferences?.provider);
+  const nextProvider = parsed.provider ?? normalizeProvider(providers, eff.provider);
 
   if (!parsed.model && !parsed.effort) {
     // Both selects empty — the "pick both" rule wasn't satisfied. Re-prompt.
@@ -1626,20 +1725,8 @@ async function submitModelCard(ctx: CommandContext): Promise<void> {
     return;
   }
 
-  const preferences: AppPreferences = {
-    ...(cfg.preferences ?? {}),
-    model: nextModel,
-    effort: nextEffort,
-    provider: nextProvider === DEFAULT_PROVIDER ? undefined : nextProvider,
-  };
   try {
-    await configOps.savePreferencesConfig(
-      ctx.controls,
-      preferences,
-      getRequireMentionInGroup(cfg),
-      ctx.controls.profileConfig.larkCli.identityPreset,
-      ctx.controls.profileConfig.mode,
-    );
+    await saveModelChoice(ctx, { model: nextModel, effort: nextEffort, provider: nextProvider });
   } catch (err) {
     log.fail('command', err, { cmd: '/model submit' });
     await reply(ctx, '❌ 模型/强度保存失败,详情见日志。');
@@ -1651,6 +1738,7 @@ async function submitModelCard(ctx: CommandContext): Promise<void> {
     provider: nextProvider,
     effort: nextEffort ?? 'default',
     via: 'card',
+    scope: inGroup(ctx) ? 'chat' : 'default',
   });
 
   const formMsgId = ctx.msg.messageId;
@@ -1665,6 +1753,7 @@ async function submitModelCard(ctx: CommandContext): Promise<void> {
         nextProvider,
         ctx.controls.profileConfig.defaultProviderName,
         ctx.controls.profileConfig.agentKind,
+        inGroup(ctx) ? 'chat' : 'default',
       ),
     );
   })();
@@ -1680,6 +1769,36 @@ async function cancelModelCard(ctx: CommandContext): Promise<void> {
   }
 }
 
+/** f04-group-cmd-model: `/model reset` / card「恢复跟随默认」— drop this group's own model. */
+async function resetChatModel(ctx: CommandContext): Promise<void> {
+  const key = chatModelKey(ctx);
+  if (!key) {
+    await reply(ctx, '私聊里 /model 改的就是默认模型；要回到 CLI 默认模型用 `/model default`。');
+    return;
+  }
+  let changed = false;
+  try {
+    ({ changed } = await configOps.saveChatModelConfig(ctx.controls, key, undefined));
+  } catch (err) {
+    log.fail('command', err, { cmd: '/model reset' });
+    await reply(ctx, '❌ 恢复失败,详情见日志。');
+    return;
+  }
+  log.info('command', 'model-reset', { changed, via: ctx.fromCardAction ? 'card' : 'text' });
+  const text = changed
+    ? '✅ 本群已恢复跟随默认模型（下一轮对话生效）。'
+    : '本群本来就跟随默认模型，无需恢复。';
+  if (ctx.fromCardAction) {
+    const formMsgId = ctx.msg.messageId;
+    void (async () => {
+      await new Promise((r) => setTimeout(r, FORM_SETTLE_MS));
+      await showResultCardInPlace(ctx, formMsgId, modelResetCard(text));
+    })();
+    return;
+  }
+  await reply(ctx, text);
+}
+
 /** Direct-text model switch — kept from f0.1 for `/model <name>` typing. */
 async function setModelDirect(value: string, ctx: CommandContext): Promise<void> {
   if (!/^[\w.:@/-]{1,120}$/.test(value)) {
@@ -1692,30 +1811,30 @@ async function setModelDirect(value: string, ctx: CommandContext): Promise<void>
   const hit = next
     ? unionProviderModels(ctx.controls.profileConfig.modelProviders ?? {}).find((c) => c.name === next)
     : undefined;
-  const preferences: AppPreferences = {
-    ...(ctx.controls.cfg.preferences ?? {}),
-    model: next,
-    ...(hit ? { provider: hit.provider } : {}),
-  };
+  // f04-group-cmd-model: keep this chat's current provider/effort (group's own or default).
+  const eff = effectiveModelPrefs(ctx.controls.profileConfig, chatModelKey(ctx));
   try {
-    await configOps.savePreferencesConfig(
-      ctx.controls,
-      preferences,
-      getRequireMentionInGroup(ctx.controls.cfg),
-      ctx.controls.profileConfig.larkCli.identityPreset,
-      ctx.controls.profileConfig.mode,
-    );
+    await saveModelChoice(ctx, {
+      model: next,
+      provider: hit ? hit.provider : eff.provider,
+      effort: eff.effort,
+    });
   } catch (err) {
     log.fail('command', err, { cmd: '/model' });
     await reply(ctx, '❌ 模型保存失败,详情见日志。');
     return;
   }
-  log.info('command', 'model-set', { model: next ?? 'default', via: 'text' });
+  log.info('command', 'model-set', {
+    model: next ?? 'default',
+    via: 'text',
+    scope: inGroup(ctx) ? 'chat' : 'default',
+  });
+  const where = inGroup(ctx) ? '（只改本群）' : '';
   await reply(
     ctx,
     next === undefined
-      ? '✅ 已恢复默认模型(下次会话不传 --model)。'
-      : `✅ 模型已切换为 \`${next}\`(下次会话生效)。${
+      ? `✅ 已恢复默认模型${where}(下次会话不传 --model)。`
+      : `✅ 模型已切换为 \`${next}\`${where}(下次会话生效)。${
           ctx.controls.profileConfig.agentKind === 'claude' && !isClaudeModelId(next)
             ? `\n_非 Claude 模型：${GATEWAY_TRANSLATED}，effort 不生效_`
             : ''
@@ -2075,6 +2194,14 @@ async function handleRemove(args: string, ctx: CommandContext): Promise<void> {
       }
       return next;
     });
+    // f04-group-cmd-model: a removed group drops its own model setting too.
+    if (chatModelEntry(ctx.controls.profileConfig, chatId)) {
+      try {
+        await configOps.saveChatModelConfig(ctx.controls, chatId, undefined);
+      } catch (err) {
+        log.fail('command', err, { cmd: '/remove group chat-model' });
+      }
+    }
     if (missing) {
       await reply(ctx, '✅ 当前群本来就不在响应名单里，无需移除。');
       return;

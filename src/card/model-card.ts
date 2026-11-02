@@ -44,6 +44,12 @@ export interface ModelCardOpts {
   currentEffort?: string;
   /** Agent runtime kind (claude or codex), used for dynamic effort hints and options. */
   agentKind?: 'claude' | 'codex';
+  /**
+   * f04-group-cmd-model: set when /model was opened in a group — the card
+   * then only changes this group. `own` = the group already has its own
+   * model (shows the「恢复跟随默认」button); otherwise it follows the default.
+   */
+  chatScope?: { own: boolean };
 }
 
 /** /model — the selection card. */
@@ -185,7 +191,15 @@ export function modelCard(opts: ModelCardOpts): object {
     config: {},
     body: {
       elements: [
-        { tag: 'markdown', content: '**模型切换**' },
+        { tag: 'markdown', content: opts.chatScope ? '**模型切换（只改本群）**' : '**模型切换**' },
+        ...(opts.chatScope
+          ? [{
+              tag: 'markdown',
+              content: opts.chatScope.own
+                ? '_本群用自己的模型；不想单独设了就点「恢复跟随默认」_'
+                : '_本群现在跟随默认模型；在这里选了就只对本群生效_',
+            }]
+          : []),
         ...(hint
           ? [{ tag: 'markdown', content: `_当前: ${currentBits} · ${hint.replace(/\n/g, ' ')}_` }]
           : [{ tag: 'markdown', content: `_当前: ${currentBits}_` }]),
@@ -223,6 +237,20 @@ export function modelCard(opts: ModelCardOpts): object {
                     behaviors: [{ type: 'callback', value: { cmd: 'model.cancel' } }],
                   }],
                 },
+                ...(opts.chatScope?.own
+                  ? [{
+                      tag: 'column',
+                      width: 'auto',
+                      vertical_align: 'center',
+                      elements: [{
+                        tag: 'button',
+                        text: { tag: 'plain_text', content: '↩️ 恢复跟随默认' },
+                        type: 'default',
+                        name: 'model_reset',
+                        behaviors: [{ type: 'callback', value: { cmd: 'model.reset' } }],
+                      }],
+                    }]
+                  : []),
               ],
             },
           ],
@@ -239,6 +267,8 @@ export function modelSavedCard(
   provider?: string,
   defaultProviderName?: string,
   agentKind?: 'claude' | 'codex',
+  /** f04-group-cmd-model: 'chat' = saved for this group only. */
+  scope?: 'chat' | 'default',
 ): object {
   const note =
     agentKind === 'claude' && model !== '跟随默认' && !isClaudeModelId(model)
@@ -257,9 +287,20 @@ export function modelSavedCard(
         {
           tag: 'markdown',
           content:
-            `✅ 已保存：模型 \`${model}\`${providerBit} · effort \`${effortLabel(effort)}\`${note}\n\n_下一轮对话生效; 已在跑的任务不受影响_`,
+            `✅ 已保存${scope === 'chat' ? '（只改本群）' : ''}：模型 \`${model}\`${providerBit} · effort \`${effortLabel(effort)}\`${note}\n\n_下一轮对话生效; 已在跑的任务不受影响_`,
         },
       ],
+    },
+  };
+}
+
+/** f04-group-cmd-model: /model reset result, shown in place of the form. */
+export function modelResetCard(text: string): object {
+  return {
+    schema: '2.0',
+    config: {},
+    body: {
+      elements: [{ tag: 'markdown', content: text }],
     },
   };
 }
