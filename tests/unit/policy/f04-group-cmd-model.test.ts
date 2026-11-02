@@ -119,10 +119,11 @@ describe('f04 C: non-owner settings let the agent work, secrets stay denied', ()
 });
 
 describe('f04 C: runtime-dir mask (containerd 0711, claude-code#93144)', () => {
-  const probe = (o: { readable?: boolean; exists?: boolean; tools?: boolean } = {}): MaskProbe => ({
+  const probe = (o: { readable?: boolean; exists?: boolean; tools?: boolean; userns?: boolean } = {}): MaskProbe => ({
     exists: (p) => (o.exists ?? true) && p === '/run/containerd',
     readable: () => o.readable ?? false,
     onPath: () => o.tools ?? true,
+    usernsWorks: () => o.userns ?? true,
   });
 
   it('plans a mask only on Linux for an existing, unreadable runtime dir', () => {
@@ -146,8 +147,9 @@ describe('f04 C: runtime-dir mask (containerd 0711, claude-code#93144)', () => {
     expect(w.args.slice(10)).toEqual(['aiducat-mask', '/usr/local/bin/claude', '-p', '--settings', '/tmp/x y.json']);
   });
 
-  it('no wrap when nothing to mask or util-linux tools are missing', () => {
+  it('no wrap when nothing to mask, util-linux tools are missing, or user namespaces are blocked (Ubuntu AppArmor)', () => {
     expect(wrapWithRuntimeDirMask('claude', [], { dirs: [] }, probe())).toBeUndefined();
     expect(wrapWithRuntimeDirMask('claude', [], planRuntimeDirMask('linux', probe()), probe({ tools: false }))).toBeUndefined();
+    expect(wrapWithRuntimeDirMask('claude', [], planRuntimeDirMask('linux', probe()), probe({ userns: false }))).toBeUndefined();
   });
 });

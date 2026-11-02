@@ -1,4 +1,6 @@
+import { spawnSync } from 'node:child_process';
 import { accessSync, constants, existsSync } from 'node:fs';
+import { log } from '../../core/logger';
 import { delimiter, join } from 'node:path';
 
 /**
@@ -42,6 +44,33 @@ export interface MaskProbe {
   exists(path: string): boolean;
   readable(path: string): boolean;
   onPath(binary: string): boolean;
+  /**
+   * Whether this host lets an unprivileged process create a user + mount
+   * namespace. Ubuntu ≥ 23.10 blocks it by default via AppArmor
+   * (kernel.apparmor_restrict_unprivileged_userns=1: "write failed
+   * /proc/self/uid_map"); then we must NOT wrap, or the whole run would die.
+   */
+  usernsWorks(): boolean;
+}
+
+let usernsCache: boolean | undefined;
+function usernsWorksDefault(): boolean {
+  if (usernsCache !== undefined) return usernsCache;
+  try {
+    const r = spawnSync('unshare', ['--user', '--map-current-user', '--mount', '--', 'true'], {
+      stdio: 'ignore',
+      timeout: 3000,
+    });
+    usernsCache = r.status === 0;
+  } catch {
+    usernsCache = false;
+  }
+  if (!usernsCache) {
+    log.warn('agent', 'runtime-dir-mask-unavailable', {
+      hint: 'unprivileged user namespaces are blocked here; non-owner Bash may hit claude-code#93144',
+    });
+  }
+  return usernsCache;
 }
 
 function onPathDefault(binary: string, pathEnv = process.env.PATH): boolean {
@@ -68,6 +97,7 @@ export const defaultMaskProbe: MaskProbe = {
     }
   },
   onPath: (b) => onPathDefault(b),
+  usernsWorks: () => usernsWorksDefault(),
 };
 
 /**
@@ -96,9 +126,9 @@ function safePath(p: string): boolean {
 
 /**
  * Wrap `binary args…` so it starts inside the masked mount namespace. Returns
- * undefined when nothing needs masking or the tools (unshare, setpriv from
- * util-linux) are missing — the caller then spawns Claude directly, exactly
- * as before.
+ * undefined when nothing needs masking, the tools (unshare, setpriv from
+ * util-linux) are missing, or the host blocks unprivileged user namespaces
+ * (checked once) — the caller then spawns Claude directly, exactly as before.
  */
 export function wrapWithRuntimeDirMask(
   binary: string,
@@ -108,6 +138,7 @@ export function wrapWithRuntimeDirMask(
 ): { command: string; args: string[] } | undefined {
   if (plan.dirs.length === 0) return undefined;
   if (!probe.onPath('unshare') || !probe.onPath('setpriv')) return undefined;
+  if (!probe.usernsWorks()) return undefined;
   const steps: string[] = [];
   for (const { dir, socket } of plan.dirs) {
     if (!safePath(dir) || !/^[A-Za-z0-9._-]+$/.test(socket)) return undefined;
