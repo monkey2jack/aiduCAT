@@ -56,7 +56,12 @@ export async function createRuntimeAgent(
       envPassthrough: profileConfig.agentEnv?.passthrough ?? [],
     });
   }
-  return new ClaudeAdapter({ larkChannel, envPassthrough: profileConfig.agentEnv?.passthrough ?? [] });
+  return new ClaudeAdapter({
+    larkChannel,
+    envPassthrough: profileConfig.agentEnv?.passthrough ?? [],
+    // f0.4 之后的修复: extra paths non-owner runs may not read.
+    outsiderDenyRead: profileConfig.access.outsiderDenyRead ?? [],
+  });
 }
 
 export async function checkRuntimeAgentAvailability(agent: AgentAdapter): Promise<AgentAvailability> {

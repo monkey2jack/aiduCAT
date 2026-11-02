@@ -45,6 +45,13 @@ export interface ProfileAccess {
    * Empty/absent = sender allowlist applies (f031-sec-#3 default).
    */
   chatAllowAllUsers?: string[];
+  /**
+   * f0.4 之后的修复: extra paths a non-owner (outsider) run may not read — on
+   * top of the built-in credential list. Absolute or `~/`; a `*` in the last
+   * segment matches existing files (backups). Claude Code profiles only; the
+   * owner's runs are unaffected. Edit config.json and restart to change.
+   */
+  outsiderDenyRead?: string[];
 }
 
 export interface SandboxConfig {
@@ -478,6 +485,9 @@ function normalizeAccess(
   const chatRequireMention = normalizeChatMentionMap(access?.chatRequireMention);
   const allowedBots = stringArray(access?.allowedBots);
   const chatAllowAllUsers = stringArray(access?.chatAllowAllUsers);
+  const outsiderDenyRead = stringArray(access?.outsiderDenyRead)
+    .map((p) => p.trim())
+    .filter(Boolean);
   return {
     allowedUsers: stringArray(access?.allowedUsers),
     allowedChats: stringArray(access?.allowedChats),
@@ -487,6 +497,7 @@ function normalizeAccess(
     ...(Object.keys(chatRequireMention).length > 0 ? { chatRequireMention } : {}),
     ...(allowedBots.length > 0 ? { allowedBots } : {}),
     ...(chatAllowAllUsers.length > 0 ? { chatAllowAllUsers } : {}),
+    ...(outsiderDenyRead.length > 0 ? { outsiderDenyRead } : {}),
   };
 }
 

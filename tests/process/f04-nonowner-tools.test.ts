@@ -45,8 +45,8 @@ async function setup() {
   return { cwd, bin, record };
 }
 
-async function runOnce(bin: string, cwd: string, ownerRun: boolean) {
-  const run = new ClaudeAdapter({ binary: bin }).run({ runId: 'r', prompt: 'hi', cwd, ownerRun } as never);
+async function runOnce(bin: string, cwd: string, ownerRun: boolean, outsiderDenyRead?: string[]) {
+  const run = new ClaudeAdapter({ binary: bin, outsiderDenyRead }).run({ runId: 'r', prompt: 'hi', cwd, ownerRun } as never);
   for await (const _e of run.events) { /* drain */ }
   await run.waitForExit(2000);
 }
@@ -65,6 +65,18 @@ describe('f04 C non-owner tools', () => {
     expect(settings.sandbox).toEqual({ enabled: true, autoAllowBashIfSandboxed: true, allowUnsandboxedCommands: false });
     // Wei 12:43: sandboxed Bash reaches the internet like a normal agent.
     expect(settings.permissions.allow).toContain('WebFetch(domain:*)');
+  });
+
+  it('profile outsiderDenyRead reaches the non-owner settings; owner still gets none', async () => {
+    const { cwd, bin, record } = await setup();
+    const secret = join(cwd, '..', 'secret-notes.md');
+    await writeFile(secret, 'x');
+    await runOnce(bin, cwd, false, [secret]);
+    const { settings } = JSON.parse(await readFile(record, 'utf8'));
+    expect(settings.permissions.deny).toEqual(expect.arrayContaining([`Read(/${secret})`, `Read(/${secret}/**)`]));
+    await runOnce(bin, cwd, true, [secret]);
+    const owner = JSON.parse(await readFile(record, 'utf8'));
+    expect(owner.settings).toBeNull();
   });
 
   it('owner: no --settings at all (unchanged)', async () => {

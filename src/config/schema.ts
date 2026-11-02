@@ -89,6 +89,8 @@ export interface AppAccess {
   chatRequireMention?: Record<string, boolean>;
   /** Allowlisted groups where every human member may use the bot. */
   chatAllowAllUsers?: string[];
+  /** Extra paths non-owner runs may not read (see ProfileAccess). */
+  outsiderDenyRead?: string[];
 }
 
 /** f04-group-cmd-model: one group's own model choice (all fields optional:

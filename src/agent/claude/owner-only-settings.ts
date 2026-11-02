@@ -1,6 +1,6 @@
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { basename, dirname, join, resolve } from 'node:path';
 
 /**
  * f03p-infra-#2: tokens in the user's Claude settings (`~/.claude/settings.json`
@@ -91,6 +91,12 @@ export function buildNonOwnerSettings(input: {
    * read/write files in it, like a normal agent — credentials stay out of reach.
    */
   cwd?: string;
+  /**
+   * f0.4 之后的修复 (outsider deny): profile `access.outsiderDenyRead` — extra
+   * paths a non-owner run must not read (e.g. 小猴²'s server notes). See
+   * {@link expandOutsiderDenyRead}.
+   */
+  outsiderDenyRead?: readonly string[];
 }): NonOwnerSettings {
   const env: Record<string, string> = { CLAUDE_CODE_SUBPROCESS_ENV_SCRUB: '1' };
   for (const name of [...ALWAYS_BLANK, ...input.settingsEnvNames]) {
@@ -137,6 +143,16 @@ export function buildNonOwnerSettings(input: {
     `Edit(${abs(join(cwd, '.claude'))}/**)`,
     `Write(${abs(join(cwd, '.claude'))}/**)`,
     ...HOME_SECRET_DIRS.flatMap((d) => [`Edit(${abs(join(home, d))}/**)`, `Write(${abs(join(home, d))}/**)`]),
+    // Profile-configured extras: the path itself and, if it is a directory,
+    // everything under it. Read rules also fence sandboxed Bash (cat/python).
+    ...expandOutsiderDenyRead(input.outsiderDenyRead ?? [], home).flatMap((p) => [
+      `Read(${abs(p)})`,
+      `Read(${abs(p)}/**)`,
+      `Edit(${abs(p)})`,
+      `Edit(${abs(p)}/**)`,
+      `Write(${abs(p)})`,
+      `Write(${abs(p)}/**)`,
+    ]),
   ];
   // SCRUB=1 forces permission mode `default` ("Declare allowedTools
   // explicitly"), and `-p` has nobody to approve — so declare them. Deny rules
@@ -167,4 +183,43 @@ export function buildNonOwnerSettings(input: {
     permissions: { allow, deny: [...deny, ...extraDeny] },
     sandbox: { enabled: true, autoAllowBashIfSandboxed: true, allowUnsandboxedCommands: false },
   };
+}
+
+/**
+ * f0.4 之后的修复 (outsider deny): turn `access.outsiderDenyRead` entries into
+ * absolute paths. `~/` = $HOME; relative entries are ignored (ambiguous). A
+ * `*` in the LAST path segment matches what is there now (e.g.
+ * `~/.xiaohou/memory/服务器信息.md*` also catches its `.bak_*` copies) — each
+ * match is listed as a concrete path, because the Bash sandbox only fences
+ * concrete paths. Expanded per run, so copies made later are caught next run.
+ */
+export function expandOutsiderDenyRead(entries: readonly string[], home: string = homedir()): string[] {
+  const out = new Set<string>();
+  for (const raw of entries) {
+    const entry = raw.trim();
+    if (!entry) continue;
+    const full = entry === '~' ? home : entry.startsWith('~/') ? join(home, entry.slice(2)) : entry;
+    if (!full.startsWith('/')) continue;
+    const path = resolve(full);
+    const name = basename(path);
+    if (!name.includes('*')) {
+      out.add(path);
+      continue;
+    }
+    const parent = dirname(path);
+    if (parent.includes('*')) continue;
+    const re = new RegExp(`^${name.split('*').map(escapeRegExp).join('.*')}$`, 'u');
+    try {
+      for (const child of readdirSync(parent)) {
+        if (re.test(child)) out.add(join(parent, child));
+      }
+    } catch {
+      // Parent missing / unreadable: nothing to deny there.
+    }
+  }
+  return [...out].sort();
+}
+
+function escapeRegExp(text: string): string {
+  return text.replace(/[.+?^${}()|[\]\\]/g, '\\$&');
 }

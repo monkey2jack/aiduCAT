@@ -32,6 +32,8 @@ export interface ClaudeAdapterOptions {
   larkChannel?: LarkChannelEnvContext;
   /** f031-sec-#4: daemon env names the owner explicitly passes to the agent. */
   envPassthrough?: readonly string[];
+  /** f0.4 之后的修复: profile `access.outsiderDenyRead` (non-owner runs only). */
+  outsiderDenyRead?: readonly string[];
 }
 
 type ClaudeChild = SpawnedProcessByStdio<Writable, Readable, Readable>;
@@ -48,12 +50,14 @@ export class ClaudeAdapter implements AgentAdapter {
   private readonly binary: string;
   private readonly larkChannel: LarkChannelEnvContext | undefined;
   private readonly envPassthrough: readonly string[];
+  private readonly outsiderDenyRead: readonly string[];
   private botIdentity: AgentBotIdentity | undefined;
 
   constructor(opts: ClaudeAdapterOptions = {}) {
     this.binary = opts.binary ?? 'claude';
     this.larkChannel = opts.larkChannel;
     this.envPassthrough = opts.envPassthrough ?? [];
+    this.outsiderDenyRead = opts.outsiderDenyRead ?? [];
   }
 
   setBotIdentity(identity: AgentBotIdentity): void {
@@ -101,6 +105,7 @@ export class ClaudeAdapter implements AgentAdapter {
               settingsEnvNames: readUserSettingsEnvNames(configDir),
               // f04 C: Bash (sandboxed) + read/write inside cwd, secrets denied.
               cwd: opts.cwd,
+              outsiderDenyRead: this.outsiderDenyRead,
             }),
             null,
             2,
@@ -179,7 +184,9 @@ export class ClaudeAdapter implements AgentAdapter {
       hasSession: Boolean(opts.sessionId),
       promptChars: opts.prompt.length,
       model: opts.model,
-      ...(ownerRun ? {} : { ownerRun: false, runtimeDirMask: Boolean(masked) }),
+      ...(ownerRun
+        ? {}
+        : { ownerRun: false, runtimeDirMask: Boolean(masked), outsiderDenyRead: this.outsiderDenyRead.length }),
     });
 
     // Listeners MUST be attached synchronously here, before we return.

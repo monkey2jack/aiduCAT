@@ -93,6 +93,9 @@ export async function saveAccessConfig(
             ...(access.chatAllowAllUsers && access.chatAllowAllUsers.length > 0
               ? { chatAllowAllUsers: access.chatAllowAllUsers }
               : {}),
+            ...(access.outsiderDenyRead && access.outsiderDenyRead.length > 0
+              ? { outsiderDenyRead: access.outsiderDenyRead }
+              : {}),
           },
           requireMentionInGroup: access.requireMentionInGroup,
         };
