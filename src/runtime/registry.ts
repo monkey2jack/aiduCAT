@@ -18,6 +18,7 @@ import { paths } from '../config/paths';
 import type { AgentKind } from '../config/profile-schema';
 import type { TenantBrand } from '../config/schema';
 import { writeFileAtomic } from '../platform/atomic-write';
+import { SHARED_LOCK_RETRIES, SHARED_LOCK_STALE_MS, SHARED_LOCK_UPDATE_MS } from '../platform/lock-retries';
 import { checkRuntimeLock } from './locks';
 
 /**
@@ -254,12 +255,22 @@ export function resolveTarget(target: string): ProcessEntry | undefined {
   return undefined;
 }
 
+// f0.4-lockfix: several `aiduCAT start` processes (two profiles under systemd)
+// share this file; the lock only guards a tiny read-modify-write, so a busy
+// lock means "wait", never "exit" (summer 2026-10-27/10-30/11-02 crash).
+const REGISTRY_LOCK_STALE_MS = SHARED_LOCK_STALE_MS;
+const REGISTRY_LOCK_UPDATE_MS = SHARED_LOCK_UPDATE_MS;
+/** Sync path (exit hooks) cannot sleep for long: ~2s, best-effort. */
+const REGISTRY_LOCK_SYNC_ATTEMPTS = 40;
+const REGISTRY_LOCK_SYNC_DELAY_MS = 50;
+
 async function withRegistryFileLock<T>(registryFile: string, fn: () => Promise<T>): Promise<T> {
   await ensureRegistryFile(registryFile);
   const release = await lockfile.lock(registryFile, {
     realpath: false,
-    stale: 30_000,
-    update: 10_000,
+    stale: REGISTRY_LOCK_STALE_MS,
+    update: REGISTRY_LOCK_UPDATE_MS,
+    retries: SHARED_LOCK_RETRIES,
   });
   try {
     return await fn();
@@ -270,16 +281,32 @@ async function withRegistryFileLock<T>(registryFile: string, fn: () => Promise<T
 
 function withRegistryFileLockSync<T>(registryFile: string, fn: () => T): T {
   ensureRegistryFileSync(registryFile);
-  const release = lockfile.lockSync(registryFile, {
-    realpath: false,
-    stale: 30_000,
-    update: 10_000,
-  });
+  const release = lockRegistrySync(registryFile);
   try {
     return fn();
   } finally {
     release();
   }
+}
+
+/** proper-lockfile's sync API has no `retries` option: retry by hand. */
+function lockRegistrySync(registryFile: string): () => void {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return lockfile.lockSync(registryFile, {
+        realpath: false,
+        stale: REGISTRY_LOCK_STALE_MS,
+        update: REGISTRY_LOCK_UPDATE_MS,
+      });
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== 'ELOCKED' || attempt >= REGISTRY_LOCK_SYNC_ATTEMPTS) throw err;
+      sleepSync(REGISTRY_LOCK_SYNC_DELAY_MS);
+    }
+  }
+}
+
+function sleepSync(ms: number): void {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
 }
 
 async function ensureRegistryFile(registryFile: string): Promise<void> {
@@ -325,6 +352,10 @@ async function readForWriteState(
 }
 
 async function isEntryStale(entry: ProcessEntry, registryFile: string): Promise<boolean> {
+  // f0.4-lockfix: a dead pid is stale whatever its locks say. Without this, an
+  // entry left by a killed process made a concurrent start fail closed while the
+  // restarted holder was between taking its lock and writing the lock metadata.
+  if (!isAlive(entry.pid)) return true;
   const rootDir = rootDirFromRegistryFile(registryFile);
   const appPaths = resolveAppPaths({ rootDir, profile: entry.profileName });
   const [profileLock, appLock] = await Promise.all([

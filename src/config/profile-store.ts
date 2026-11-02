@@ -1,6 +1,7 @@
 import { chmod, mkdir, readFile, rename, rm, rmdir, stat, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import * as lockfile from 'proper-lockfile';
+import { SHARED_LOCK_RETRIES, SHARED_LOCK_STALE_MS, SHARED_LOCK_UPDATE_MS } from '../platform/lock-retries';
 import { writeFileAtomic } from '../platform/atomic-write';
 import { resolveAppPaths } from './app-paths';
 import {
@@ -123,13 +124,12 @@ export async function withConfigFileLock<T>(configPath: string, fn: () => Promis
   await chmod(lockTarget, 0o600).catch(() => {});
   const release = await lockfile.lock(lockTarget, {
     realpath: false,
-    stale: 30_000,
-    update: 10_000,
-    retries: {
-      retries: 10,
-      minTimeout: 10,
-      maxTimeout: 100,
-    },
+    stale: SHARED_LOCK_STALE_MS,
+    update: SHARED_LOCK_UPDATE_MS,
+    // f0.4-lockfix: was 10 × ≤100ms (~1s) — too short when the other profile
+    // holds config.json across a lark-cli import at startup, and shorter than
+    // `stale`, so a lock left by a killed process failed instead of being taken over.
+    retries: SHARED_LOCK_RETRIES,
   });
   try {
     return await fn();

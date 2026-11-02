@@ -43,6 +43,11 @@ aiduCAT 的版本号用 `f` 前缀（f0.1、f0.2+ …），`package.json` 里是
 ### 一份代码跑两个机器人（双 profile）
 - 同一个代码目录、同一份 `dist`，用两个服务分别跑 `--profile claude` 和 `--profile xiaohou`，各连自己的飞书 app，数据各在 `~/.aiducat/profiles/<名字>/`（sessions.json、run-journal.json、logs/）。换 `dist` 只影响之后启动的进程，**两个服务都要重启才换版本**。停服务时有在途轮次会先排空（最多 `shutdownDrainMinutes`），被打断的轮次起来后自动在同一张卡上续跑。
 
+### f0.4 之后的修复（main，版本号仍 0.4.0，未打新 tag）
+- **两个服务同时启动不再撞锁**：两个 profile 共用 `~/.aiducat/registry`，以前 registry 锁拿不到就直接报 `Lock file is already being held` 退出（开机或一起重启时其中一个要等 systemd 5 秒后拉起，NRestarts=1）。现在登记/改名/注销都会退避重试（约 35 秒，比 30 秒的过期判定长，被强杀进程留下的旧锁也会被接管）；退出钩子里的同步注销也会短暂重试。
+- 共用的 `config.json` 锁原来只等约 1 秒，同样改成上面的重试。
+- 注册表里进程已死的旧记录直接清掉，不会因为对方刚拿锁还没写完锁信息而让本进程启动失败。
+
 ## f0.3+ — 2026-10-31（`8d6b4d1`，package 0.3.2）
 
 基于 f0.3.1（`bd79bcb`）。嘟嘟和猴哥自己用，体验优先：不用的模块可以关掉，收紧不能让日常用起来更麻烦。
