@@ -6,8 +6,8 @@ const read = (f: string) => readFile(new URL(`../../../${f}`, import.meta.url), 
 const READMES = ['README.md', 'README.zh.md', 'README.en.md'];
 
 describe('f033 version f0.3.3 (package 0.3.3) docs', () => {
-  it('f033 package moved past 0.3.3 (now 0.3.6) and no README still carries the f0.3+ / f0.3.3 badge', async () => {
-    expect(pkg.version).toBe('0.3.6');
+  it('f033 package moved past 0.3.3 (now 0.4.0) and no README still carries the f0.3+ / f0.3.3 badge', async () => {
+    expect(pkg.version).toBe('0.4.0');
     for (const f of READMES) {
       const md = await read(f);
       expect(md, f).not.toContain('badge/version-f0.3.3-blue');
@@ -15,11 +15,11 @@ describe('f033 version f0.3.3 (package 0.3.3) docs', () => {
     }
   });
 
-  it('f033 CHANGELOG has an f0.3.3 section above f0.3+ covering aiduPARK, no "下一版" left', async () => {
+  it('f033 (merged into f0.4) the f0.4 section above f0.3+ covers aiduPARK, no "下一版" left', async () => {
     const md = await read('CHANGELOG.md');
-    const start = md.indexOf('## f0.3.3 ');
+    const start = md.indexOf('## f0.4 ');
     expect(start).toBeGreaterThan(0);
-    expect(start).toBeGreaterThan(md.indexOf('## f0.3.4 '));
+    expect(md).not.toContain('## f0.3.3 ');
     expect(start).toBeLessThan(md.indexOf('## f0.3+ '));
     const section = md.slice(start, md.indexOf('## f0.3+ '));
     for (const s of ['0.3.3', 'aiduPARK', 'monkey', 'aidupark']) expect(section).toContain(s);

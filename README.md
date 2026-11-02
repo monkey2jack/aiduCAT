@@ -10,7 +10,7 @@
 >
 > 给 Claude Code / Codex CLI 穿上泡波流的飞书卡片：宣白纸面上灌一道深蓝流光，一只猫，零噪音。
 
-[![Version](https://img.shields.io/badge/version-f0.3.6-blue.svg)](https://github.com/monkey2jack/aiduCAT)
+[![Version](https://img.shields.io/badge/version-f0.4-blue.svg)](https://github.com/monkey2jack/aiduCAT)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Node 20+](https://img.shields.io/badge/node-20.12%2B-brightgreen.svg)](https://nodejs.org/)
 [![Claude Code](https://img.shields.io/badge/agent-Claude%20Code%20%7C%20Codex-orange.svg)](https://docs.anthropic.com/en/docs/claude-code/quickstart)
@@ -131,7 +131,17 @@ aiduCAT secrets set --app-id <id>
 - **空跑**（agent 什么都没产出就退出）：直接显示红色报错卡和原因，提示重发
 - **超长 / 被拒**：正文超 25KB 时，第 1 张卡显示到预算边界（在段落、代码块、表格边界切开，末尾「…（未完，见下一张卡）」），其余按顺序发「续 2/N」「续 3/N」卡片，markdown 正常渲染、每张 <30KB、内容不重复；超大代码块按行切开并重新开合代码围栏，超大表格按行切开并重复表头；只有续卡被飞书拒收时，该张起的剩余部分才改发一次纯文本。飞书拒收卡片时先用严格卡（无图片链接、正文 12KB）重试，再不行发纯文本，最后发一句「卡片发送失败」
 
-## 更新日志（f0.3+）
+## 更新日志（f0.4）
+
+- 收到消息立刻出一张只有一行「☤aiduCATing…」的卡；agent 第一次思考、调工具或出字时，面板才出现在同一张卡里；排队的消息各自一张卡，没用上的占位卡自动撤回；卡片模式不再加飞书表情
+- 开跑更快：只拉 10router combo（不再拉 `/v1/models` 全量表），combo 列表后台刷新、启动预热
+- 上下文窗口没有 combo 字段时跟 Claude Code 的 `settings.json` 走（如 1M）
+- TPS 按每轮有效生成时间（扣掉工具时间）重算，只在 `/status` 显示，卡片上不再有 ⚡
+- 群聊也用带面板的流式卡片，工具行默认隐藏，卡片里 @ 人是真 @
+- 模型含 `aiduPARK` 显示专属翅膀图标；日志带毫秒耗时（`atMs` / `sinceMsgMs`）
+- 一份代码可以用两个服务跑两个 `--profile`（各连各的飞书 app）
+
+### f0.3+
 
 - 新增 profile 级功能开关 `features`（会议 / Web 控制台 / Codex / CoT），关掉的模块不加载，命令在 `/help` 隐藏并回「此功能未开启」；默认全开
 - 会议、CoT、Codex、Web 控制台改为按需加载，启动加载的代码减少约 46%

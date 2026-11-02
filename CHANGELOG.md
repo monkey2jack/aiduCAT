@@ -4,43 +4,44 @@ aiduCAT 的版本号用 `f` 前缀（f0.1、f0.2+ …），`package.json` 里是
 
 > **tag 说明**：`f0.2++` 原先误指 `6fa62f8`（package 0.2.1），**已于 2026-10-31 修正**为真实发布提交 `c7ff90d`（0.2.2）。`f0.2+`、`v0.2.1` 核实后保持 `6fa62f8`：f0.2+ 的 GitHub Release 于 2026-10-20 01:17 从 main 发布，当时 main 的头部就是 `6fa62f8`（package 0.2.1）；版本号提交 `f01fcd2` 与它只差文档和一个测试，没有代码差别。
 
-## f0.3.6 — 2026-11-02（package 0.3.6，tag 未打）
+## f0.4 — 2026-11-02（package 0.4.0）
 
-基于 f0.3.5（`7a0b536` / `5d06858`）。猴哥 2026-11-02 07:55 点单。
+基于 f0.3+（`8d6b4d1`）。把没单独发布的 0.3.3、0.3.4、0.3.5、0.3.6 合成一个版本发布（这四个版本号只在 summer / winter 上跑过，没打 tag）。主题：飞书里回得更快、卡片更干净、数字更准。
 
-- **卡片面板头不再显示 `⚡ N tok/s`**：卡片上是本轮 TPS、`/status` 是会话平均，两个数不一样容易看糊涂（猴哥截图：卡片 59、/status 62），只留 `/status`。`/status` 的 ⚡ 口径不变（Σ本轮主线输出 ÷ Σ本轮生成时间，还没测到显示「—」）；每轮照样记 `turn-tps` 日志、照样计入会话平均。
-- **占位卡分两段**：消息一落先出的卡**只有一行「☤aiduCATing…」**，没有折叠面板、没有空面板框（排队中的卡、开跑后 agent 还没出声时也一样）。agent **第一次出现思考、调工具或开始出正文**（任何一个先到都算；只发最终答案的网关在答案到时）时，面板出现在**同一张卡**里，之后照常流式（☤Thinking… / ☤Processing… / ☤aiduCATing…）。纯正文、没思考没工具的轮次：面板和第一段正文一起出现，头是 `模型 · 💭 0 · 🛠️ 0 · ⏱️ 用时`，结束变绿，和以前的完成卡一样。群里工具行隐藏时，只调工具也会让面板出现（🛠️ 0）。
-- 实现：流式卡片本来就是每帧整卡更新（`im.v1.message.patch`，250ms 节流、串行），面板只是下一帧多出来的元素，不加新接口、不改节流；某一帧失败下一帧会带上全部内容重来，最后一帧失败走原来的降级（同卡修复 / 纯文本），不丢内容。没用 CardKit 元素插入接口：卡片是直接按 JSON 发的消息，没有 card_id，元素接口要另建卡片实体并管 sequence，多一种失败方式。
-- 排队、撤回、结束、⭕️Stop、❌Error、⚠️Timeout 这些状态不变（结束态照样带面板，边框颜色表示结果）。
+### 一收到消息就有反应
+- **收到即出卡**：消息一被接收（过了权限、@、命令判断、进队列的那一刻）就发出一张流式卡片，只有一行「☤aiduCATing…」。不等 0.6 秒防抖、不等上一轮跑完、不等并发名额、不等起 Claude Code。
+- **面板等 agent 开口才出现**（0.3.6）：这张卡一开始没有折叠面板、没有空面板框；agent **第一次思考、调工具或出正文**（谁先到算谁；只发最终答案的网关在答案到时），面板才出现在**同一张卡**里，之后照常流式（☤Thinking… / ☤Processing… / ☤aiduCATing…）。纯正文、没思考没工具的轮次，面板和第一段正文一起出现，头是 `模型 · 💭 0 · 🛠️ 0 · ⏱️ 用时`。结束态（✅ ⭕️ ❌ ⚠️）照样带面板，边框颜色说结果。
+- **排队的消息各自一张卡**：上一轮还在跑时新来的消息马上有自己的卡，轮到它时接着用；同一批合并的多条消息共用一张卡。
+- **没用上的占位卡会撤回**：这一批被命令清掉队列、服务停机排空、开跑前被拒或预处理失败时，撤回那张占位卡，不留空卡。
+- **不再加飞书表情**：卡片模式的 Claude 用这张卡当"收到了"的信号，不再调表情接口（0.3.4 曾把表情提前到 flush 一开始，0.3.5 起卡片模式直接不用）。markdown/text 模式（没有卡）和 Codex（仍按有内容才开卡）保留表情。
+- 实现：流式卡片本来就是每帧整卡更新（`im.v1.message.patch`，250ms 节流、串行），面板只是下一帧多出来的元素，不加新接口、不改节流；某一帧失败下一帧带全部内容重来，最后一帧失败走原来的降级（同卡修复 / 纯文本），不丢内容。没用 CardKit 元素插入接口（要另建卡片实体、管 sequence，多一种失败方式）。
 
-## f0.3.5 — 2026-11-02（`7a0b536`，package 0.3.5，tag 未打）
+### 开跑更快：只拉 10router combo
+- **不再拉 `/v1/models` 全量模型表**（715 个模型，约 200KB）：以前两条消息隔 10 分钟以上，下一轮开跑前要同步重拉这张表，约一半轮次因此多等 4.5–5.5 秒。现在只用 `/api/combos`。`/model` 下拉照旧只列 combo。
+- **combo 列表先用旧的、后台再刷新**：缓存 5 分钟，过期时立刻用旧列表、后台刷新一次（并发只发一个请求），刷新失败保留旧列表；**启动时预热一次**。对话这条路只读缓存，从不等 10router。`/model` 提交校验在缓存过期时会等一次刷新（点卡片时，不在对话路径上）。
 
-基于 f0.3.4（`729921a`）。
+### 上下文窗口跟 settings.json 走（1M）
+- 窗口取 combo 自带的窗口字段（`/api/combos` 有 `contextWindow` / `context_window` / `capabilities.contextWindow` 时）→ provider 的 `contextWindow`；都没有时 aiduCAT 不覆盖，Claude Code 用自己 `settings.json` 的 `CLAUDE_CODE_MAX_CONTEXT_TOKENS` / `CLAUDE_CODE_AUTO_COMPACT_WINDOW`，`/status` 的分母和 🗜️ 也读这两项。
+- 部署时 summer 的 `CLAUDE_CODE_MAX_CONTEXT_TOKENS` 900000 → 1000000（与 winter 一致），`AUTO_COMPACT_WINDOW=600000`、`MAX_OUTPUT_TOKENS=32000` 不变，`/status` 分母 1M。注意：同一台机器上多个 profile 共用这一份 `settings.json`。
 
-- **TPS 改成真的**：以前 `/status` 的 ⚡ 用「累计输出 ÷ 累计 claude result 的 `duration_api_ms`」，但续接会话（`--resume`）时 `duration_api_ms` 是**整个会话的累计值**，每轮再加一遍就越滚越大（summer 嘟嘟一个会话 43 轮累出 78,227,379 ms ≈ 21.7 小时，⚡ 只有 4 tok/s）。现在 aiduCAT 自己给每轮计时：从 Claude Code 起来（随即发模型请求）到模型最后一次输出，**扣掉所有工具执行区间**（tool_use → 对应 tool_result，并行工具算到最后一个返回），不含排队、起进程、等工具。分子是本轮主线的输出 token（每次 API 调用最终的 `message_delta` 用量相加，子代理 sidechain 不算，和 f031-#8 一致；与整轮 result 的输出取较小值防重复）；没有逐次用量时（Codex）用整轮输出。
-- **卡片面板头显示本轮 ⚡ N tok/s**（正常结束的轮次才显示；被停止/失败的轮次不显示、不计入平均）。`/status` 的 ⚡ 是会话平均 = Σ本轮输出 ÷ Σ本轮生成时间；还没测到时显示「—」，不再显示 0。
-- **旧会话的错误数据**：`sessions.json` 里旧的 `activeMs` / `tpsAvg` 加载时丢掉（无法从历史重算：CLI 从没记录每轮生成时间），其它计数（📥📤🎯、消息数、上下文）保留；下一轮起按新口径累计。
-- **群聊也用带面板的流式卡片**：上游代码把群聊写死成富文本（post）回复，所以群里没有卡片、没有折叠面板，也没有 f0.3.4 的「☤Thinking…」开跑卡（winter 2026-11-02 01:44 一轮群聊 93 秒后才出第一条输出）。现在群聊和私聊一样按 `messageReply`（默认 card）。面板里的工具行在群里仍默认隐藏（f031-sec-#4），`preferences.showToolCallsInGroups: true` 才显示。查过两台配置：没有群级渲染开关，bot 也没改过配置，是代码问题。
-- **卡片保留真人 @**：agent 写的 `<at user_id="ou_…">名字</at>` 在卡片里改写成卡片格式 `<at id=ou_…></at>`（以前卡片会把所有 HTML 标签删掉）；@所有人 仍变成文字。
-- **收到消息立刻出「☤aiduCATing…」卡，不再加飞书表情**（猴哥 2026-11-02 02:03「直接跳出 aiduCATing，就不需要飞书表情响应了，更简约」）：消息一被接收（通过权限、@、命令判断后进队列的那一刻）就发出流式卡片，摘要和状态行都是「☤aiduCATing…」——不等 0.6 秒防抖、不等同一会话上一轮跑完、不等拿并发名额和起 Claude Code。这一批开跑时直接接管这张卡（之后流式更新、续卡、拒卡降级、`/stop`、空跑报错都在这张卡上，结束/停止态不变）；同一批的多条消息共用一张卡；上一轮还在跑时新来的消息马上有自己的卡，轮到它时接着用。这一批没用上卡（被命令清掉队列、服务停机排空、开跑前被拒或预处理失败）就撤回这张占位卡。卡片模式的 Claude 不再加表情；markdown/text 模式（没有卡）和 Codex（仍按有内容才开卡）保留表情。状态词：开跑后有思考才变「☤Thinking…」，调工具「☤Processing…」，输出「☤aiduCATing…」。用 ☤ 前缀是沿用卡片现有的「☤aiduCATing…」写法（早期纯文本回执是「🐱 aiduCATing…」，b13899c 已删）。
-- **usage 日志能看了**：日志会把含 `token` 的键名打码，以前 `inputTokens`/`outputTokens` 全是 `[REDACTED]`；改成 `inTok`/`outTok`，并加 `callFinal`。claude 的 `total_cost_usd` 在续接会话里也是会话累计，日志字段改名 `sessionCostUsd`、指标改名 `session_cost_usd`。新增每轮一条 `turn-tps`（`outTok`、`genMs`、`tps`）。
-- 部署（只 summer，Wei 2026-11-02 01:57 定 winter 不动）：summer Claude Code `settings.json` 的 `CLAUDE_CODE_MAX_CONTEXT_TOKENS` 900000 → 1000000（与 winter 一致），`CLAUDE_CODE_AUTO_COMPACT_WINDOW=600000`、`CLAUDE_CODE_MAX_OUTPUT_TOKENS=32000` 不变，`/status` 分母 1M。
+### TPS 算对了，只在 /status 显示
+- **以前的 ⚡ 是错的**：用「累计输出 ÷ 累计 `duration_api_ms`」，但续接会话（`--resume`）时 claude 给的 `duration_api_ms` 是**整个会话的累计值**，每轮再加一遍越滚越大（嘟嘟一个会话 43 轮累出约 21.7 小时，⚡ 只有 4 tok/s）。
+- **现在按轮自己计时**：从 Claude Code 起来到模型最后一次输出，**扣掉所有工具执行时间**（并行工具算到最后一个返回），不含排队、起进程、等工具。分子是本轮主线输出（每次 API 调用最终的 `message_delta` 用量相加，子代理不算，与整轮 result 取较小值防重复）；Codex 没有逐次用量时用整轮输出。
+- **只在 `/status` 显示**：⚡ = Σ本轮输出 ÷ Σ本轮有效生成时间（会话平均），还没测到显示「—」。卡片面板头**不再显示 `⚡ N tok/s`**（卡上是本轮、/status 是平均，两个数不一样容易看糊涂）。被停止/失败的轮次不计入。旧会话里错的 `activeMs` / `tpsAvg` 加载时丢掉，其它计数保留。
 
-## f0.3.4 — 2026-11-02（`729921a`，package 0.3.4）
+### 群聊也用面板卡片
+- 上游把群聊写死成富文本（post）回复，群里没有卡片和面板。现在群聊和私聊一样走流式卡片，也有「☤aiduCATing…」占位卡。**工具行在群里默认隐藏**，`preferences.showToolCallsInGroups: true` 才显示；只调工具也会让面板出现（🛠️ 0）。
+- **卡片里的 @ 是真 @**：agent 写的 `<at user_id="ou_…">名字</at>` 改写成卡片格式 `<at id=ou_…></at>`，对方会收到提醒（以前卡片把所有 HTML 标签删掉）；@所有人 仍变成文字。
 
-基于 f0.3.3（`1e70511`）。修飞书响应慢（猴哥 2026-11-02 反馈）。
+### aiduPARK 图标
+- **专属黑白翅膀 logo 从 combo `monkey` 挪到 `aiduPARK`**：模型 id 含 `aidupark`（不分大小写，带前缀/后缀也算，如 `10router/aiduPARK`、`aiduPARK[1m]`）就显示这个图标，排在所有厂商规则前面。旧 combo `monkey` 不再有专属图标。`assets/lark-logo-keys.json` 键名 `monkey` → `aidupark`，img_key 不变，不用重传图片。
 
-- **只加载 10router combo，不再拉 `/v1/models` 全量模型表**（715 个模型，约 200KB）：以前两条消息隔了 10 分钟以上，下一轮开跑前要同步重拉这张表，约一半轮次因此多等 4.5–5.5 秒。现在上下文窗口取 combo 自带的窗口字段（`/api/combos` 有 `contextWindow` / `context_window` / `capabilities.contextWindow` 时）→ provider 的 `contextWindow`；都没有时 aiduCAT 不覆盖，Claude Code 用自己 `settings.json` 的 `CLAUDE_CODE_MAX_CONTEXT_TOKENS` / `CLAUDE_CODE_AUTO_COMPACT_WINDOW`，`/status` 的分母和 🗜️ 也读这两项（同 f031-#8）。`/model` 下拉照旧只用 combo。
-- **combo 列表先用旧的、后台再刷新**（stale-while-revalidate）：缓存 5 分钟，过期时立刻返回旧列表、后台刷新一次（并发只发一个请求）；刷新失败保留旧列表；启动时预热一次。对话这条路只读缓存，从不等 10router。`/model` 提交校验在缓存过期时会等一次刷新（点卡片，不在对话路径上）。
-- **收到消息立刻加表情**：在本轮 flush 一开始就加（以前在排队拿到并发名额之后约 2 秒才加），不等附件、拿名额、起 Claude Code；加表情失败或慢都不影响本轮。
-- **一开跑就发卡片**：Claude 每轮一开始就发出流式卡片（「☤Thinking…」占位，面板头带模型图标），不再等第一次工具调用/文字（以前 10–200 秒）；之后的流式更新、长回答续卡、拒卡降级、`/stop`、空跑保护都沿用这张卡。Codex 仍按原来的「有内容才开卡」。
-- **日志带毫秒耗时**：`intake enter`、`flush start`、`reaction added`、`progress-stream-open` 多了 `atMs`（本机毫秒时间）和 `sinceMsgMs`（距飞书消息创建时间），jsonl 时间戳只到分钟，排查慢的时候看这两个字段。
+### 日志
+- **毫秒耗时**：`intake enter`、`flush start`、`early-card-open`、`progress-stream-open`（非卡片模式还有 `reaction added`）带 `atMs`（本机毫秒）和 `sinceMsgMs`（距飞书消息创建），jsonl 时间戳只到分钟，查慢先看这两个字段。
+- **用量日志能看了**：日志会把键名含 `token` 的字段打码，以前 `inputTokens`/`outputTokens` 全是 `[REDACTED]`；改成 `inTok`/`outTok`，加 `callFinal`。claude 的 `total_cost_usd` 在续接会话里也是累计，改名 `sessionCostUsd`。每轮一条 `turn-tps`（`outTok`、`genMs`、`tps`）。
 
-## f0.3.3 — 2026-11-02（`1e70511`，package 0.3.3）
-
-基于 f0.3+（`8d6b4d1`）。
-
-- **专属 logo 从 combo `monkey` 挪到 `aiduPARK`**（猴哥 2026-11-02 新建的 10router combo）：模型 id 含 `aidupark`（不分大小写，带前缀/后缀也算，如 `10router/aiduPARK`、`aiduPARK[1m]`）就显示黑白翅膀徽标，且排在所有厂商规则前面，不会被别的规则截走。旧 combo `monkey` 不再有专属图标（名字里带厂商词的按厂商显示，否则面板头无图标）。`assets/lark-logo-keys.json` 键名 `monkey` → `aidupark`，img_key 值不变，不用重传图片。
+### 一份代码跑两个机器人（双 profile）
+- 同一个代码目录、同一份 `dist`，用两个服务分别跑 `--profile claude` 和 `--profile xiaohou`，各连自己的飞书 app，数据各在 `~/.aiducat/profiles/<名字>/`（sessions.json、run-journal.json、logs/）。换 `dist` 只影响之后启动的进程，**两个服务都要重启才换版本**。停服务时有在途轮次会先排空（最多 `shutdownDrainMinutes`），被打断的轮次起来后自动在同一张卡上续跑。
 
 ## f0.3+ — 2026-10-31（`8d6b4d1`，package 0.3.2）
 

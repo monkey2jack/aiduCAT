@@ -5,16 +5,16 @@ import pkg from '../../../package.json';
 const read = (f: string) => readFile(new URL(`../../../${f}`, import.meta.url), 'utf8');
 const READMES = ['README.md', 'README.zh.md', 'README.en.md'];
 
-describe('f036 version f0.3.6 (package 0.3.6) docs', () => {
-  it('f036 package 0.3.6 and every README carries the f0.3.6 badge', async () => {
-    expect(pkg.version).toBe('0.3.6');
-    for (const f of READMES) expect(await read(f), f).toContain('badge/version-f0.3.6-blue');
+describe('f036 version f0.3.6 (merged into f0.4, package 0.4.0) docs', () => {
+  it('f036 package moved past 0.3.6 (now 0.4.0) and no README still carries the f0.3.6 badge', async () => {
+    expect(pkg.version).toBe('0.4.0');
+    for (const f of READMES) expect(await read(f), f).not.toContain('badge/version-f0.3.6-blue');
   });
 
-  it('f036 CHANGELOG has an f0.3.6 section above f0.3.5 covering the TPS move and the two-stage card', async () => {
+  it('f036 (merged into f0.4) the f0.4 section covers the TPS move and the two-stage card', async () => {
     const md = await read('CHANGELOG.md');
-    const start = md.indexOf('## f0.3.6 ');
-    const prev = md.indexOf('## f0.3.5 ');
+    const start = md.indexOf('## f0.4 ');
+    const prev = md.indexOf('## f0.3+ ');
     expect(start).toBeGreaterThan(0);
     expect(start).toBeLessThan(prev);
     const section = md.slice(start, prev);

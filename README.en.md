@@ -10,7 +10,7 @@
 >
 > Dress your Claude Code / Codex CLI in a Bubble-Wave Feishu card: deep-blue veins on paper white, one cat, zero noise.
 
-[![Version](https://img.shields.io/badge/version-f0.3.6-blue.svg)](https://github.com/monkey2jack/aiduCAT)
+[![Version](https://img.shields.io/badge/version-f0.4-blue.svg)](https://github.com/monkey2jack/aiduCAT)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Node 20+](https://img.shields.io/badge/node-20.12%2B-brightgreen.svg)](https://nodejs.org/)
 [![Claude Code](https://img.shields.io/badge/agent-Claude%20Code%20%7C%20Codex-orange.svg)](https://docs.anthropic.com/en/docs/claude-code/quickstart)
@@ -131,7 +131,17 @@ One card, top to bottom:
 - **Empty run** (the agent exits without output): a red error card with the reason, asking you to resend
 - **Too long / rejected**: an answer over 25KB fills card 1 up to the budget (cut at a paragraph, code-block or table boundary, ending in "…（未完，见下一张卡）"), then continues on ordered "续 2/N", "续 3/N" cards — rendered markdown, each <30KB, nothing repeated; an oversized code block is split between lines with the fence reopened, an oversized table between rows with the header repeated; only if Feishu rejects a continuation card does the rest from that card on go out once as plain text. if Feishu rejects the card, a strict card (no image links, 12KB answer) is retried, then plain text, then a one-line "card failed" notice
 
-## Changelog (f0.3+)
+## Changelog (f0.4)
+
+- A message gets a one-line 「☤aiduCATing…」 card right away; the panel joins the same card when the agent first thinks, calls a tool or writes; queued messages get their own card each, unused placeholder cards are recalled; no Feishu reaction in card mode
+- Faster start: only 10router combos are loaded (no full `/v1/models` pull), the combo list refreshes in the background and is prewarmed at start
+- With no window field on the combo, the context window follows Claude Code's `settings.json` (e.g. 1M)
+- TPS is recomputed from each turn's real generation time (tool time removed) and shown only in `/status`; no ⚡ on cards
+- Group chats use the panel card too (tool rows hidden by default); @mentions in cards are real @mentions
+- Models containing `aiduPARK` get the dedicated wing logo; logs carry ms timings (`atMs` / `sinceMsgMs`)
+- One code dir can run two services with two `--profile`s (each on its own Feishu app)
+
+### f0.3+
 
 - New per-profile `features` switches (meeting / web console / Codex / CoT): a module that is off is not loaded, its commands are hidden from `/help` and answer 「此功能未开启」 (feature not enabled); all on by default
 - Meeting, CoT, Codex and the web console load on demand; code loaded at startup down ~46%

@@ -6,15 +6,15 @@ const read = (f: string) => readFile(new URL(`../../../${f}`, import.meta.url), 
 const READMES = ['README.md', 'README.zh.md', 'README.en.md'];
 
 describe('f034 version f0.3.4 (package 0.3.4) docs', () => {
-  it('f034 package moved past 0.3.4 (now 0.3.6) and no README still carries the f0.3.4 badge', async () => {
-    expect(pkg.version).toBe('0.3.6');
+  it('f034 package moved past 0.3.4 (now 0.4.0) and no README still carries the f0.3.4 badge', async () => {
+    expect(pkg.version).toBe('0.4.0');
     for (const f of READMES) expect(await read(f), f).not.toContain('badge/version-f0.3.4-blue');
   });
 
-  it('f034 CHANGELOG has an f0.3.4 section above f0.3.3 covering the latency fixes', async () => {
+  it('f034 (merged into f0.4) the f0.4 section covers the latency fixes', async () => {
     const md = await read('CHANGELOG.md');
-    const start = md.indexOf('## f0.3.4 ');
-    const prev = md.indexOf('## f0.3.3 ');
+    const start = md.indexOf('## f0.4 ');
+    const prev = md.indexOf('## f0.3+ ');
     expect(start).toBeGreaterThan(0);
     expect(start).toBeLessThan(prev);
     const section = md.slice(start, prev);
