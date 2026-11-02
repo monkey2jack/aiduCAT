@@ -1,9 +1,11 @@
-# aiduCAT☤爱嘟可爱糖 — Coding Agent Texting · 飞书泡波流式卡
+# aiduCAT☤爱嘟妙咪飞 — Coding Agent Texting · 绝妙设计的迷人简洁飞书卡片
 
 <p align="center">
-  <img src="docs/images/aidububble-banner.webp" alt="aiduCAT 爱嘟可爱糖 · 泡波横幅（aidu 家族同款）" width="100%">
+  <img src="docs/images/aidububble-banner.webp" alt="aiduCAT 爱嘟妙咪飞 · 泡波横幅（aidu 家族同款）" width="100%">
 </p>
 
+> **爱嘟妙咪飞：妙（喵）+ 咪（猫）+ 飞（飞书）——绝妙设计的迷人简洁飞书卡片**
+>
 > **aiduCAT = Coding Agent Texting ——一只住在飞书里的猫，随时替你敲代码**
 >
 > **提问在上方，过程收进一只小面板，结果由面板颜色说话。**
@@ -25,7 +27,7 @@
 
 ## aiduCAT 是什么？
 
-**aiduCAT☤爱嘟可爱糖**，全称 **Coding Agent Texting**（编程代理短信/消息化），是给 **Claude Code / Codex CLI / Hermes Agent** 装上的一只飞书猫（按 profile 三选一，f0.4+ 起支持 Hermes） —— 把本地编程 agent 的思考、工具调用和最终答案，实时装进一张仿 [aiduPOP](https://github.com/monkey2jack/aiduPOP) 泡波样式的飞书流式卡片。
+**aiduCAT☤爱嘟妙咪飞**，全称 **Coding Agent Texting**（编程代理短信/消息化），是给 **Claude Code / Codex CLI / Hermes Agent** 装上的一只飞书猫（按 profile 三选一，f0.4+ 起支持 Hermes） —— 把本地编程 agent 的思考、工具调用和最终答案，实时装进一张仿 [aiduPOP](https://github.com/monkey2jack/aiduPOP) 泡波样式的飞书流式卡片。
 
 aiduCAT 起源并致敬上游 [zarazhangrui/lark-coding-agent-bridge](https://github.com/zarazhangrui/lark-coding-agent-bridge)（npm 包 `lark-channel-bridge`），在 MIT 协议的代码基础之上，做了一套完整的**泡波化改造**：
 
