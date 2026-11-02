@@ -1,10 +1,10 @@
-# aiduCAT☤爱嘟可爱糖 — Claude-code Agent Texting on Feishu
+# aiduCAT☤爱嘟可爱糖 — Coding Agent Texting on Feishu
 
 <p align="center">
   <img src="docs/images/aidububble-banner.webp" alt="aiduCAT 爱嘟可爱糖 · 泡波横幅（aidu 家族同款）" width="100%">
 </p>
 
-> **aiduCAT = Claude-code Agent Texting — a cat living inside Feishu, typing code for you**
+> **aiduCAT = Coding Agent Texting — a cat living inside Feishu, typing code for you**
 >
 > **Ask on top, process folded into one small panel, the result told by the panel's color.**
 >
@@ -25,7 +25,7 @@
 
 ## What is aiduCAT?
 
-**aiduCAT☤爱嘟可爱糖** — **Claude-code Agent Texting** — is a Feishu cat for **Claude Code / Codex CLI / Hermes Agent** (one per profile; Hermes since f0.4+): it streams your local coding agent's thinking, tool calls and final answer into a single Feishu card styled after [aiduPOP](https://github.com/monkey2jack/aiduPOP)'s Bubble Wave.
+**aiduCAT☤爱嘟可爱糖** — **Coding Agent Texting** — is a Feishu cat for **Claude Code / Codex CLI / Hermes Agent** (one per profile; Hermes since f0.4+): it streams your local coding agent's thinking, tool calls and final answer into a single Feishu card styled after [aiduPOP](https://github.com/monkey2jack/aiduPOP)'s Bubble Wave.
 
 aiduCAT originates from and credits the upstream [zarazhangrui/lark-coding-agent-bridge](https://github.com/zarazhangrui/lark-coding-agent-bridge) (npm package `lark-channel-bridge`), an MIT-licensed project. On top of that code, aiduCAT adds a complete **Bubble Wave transformation**:
 
