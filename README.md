@@ -184,12 +184,13 @@ aiduCAT profile export <name> --include-secrets --yes
 /invite admin @name    添加访问控制管理员
 /invite group          允许某个群
 /invite all group      允许所有群
+/invite alluser        当前群全员可用（开/关）
 /remove user @name
 /remove admin @name
 /remove group
 ```
 
-群在白名单还不够：群里发言的人本人也要在 allowedUsers / admins / owner 里；别的机器人默认被拒（bot-at-bot 要在 `access.allowedBots` 里显式写，且群在白名单）；team 模式只对 owner 同租户的人开放。卡片按钮点击按同一规则复核。回复里的 @所有人 会变成文字「@所有人」，不会真的 @全员。群里的回复和私聊一样是带折叠面板的流式卡片；面板里的工具行在群里默认隐藏，`preferences.showToolCallsInGroups: true` 才显示。
+群在白名单还不够：群里发言的人本人也要在 allowedUsers / admins / owner 里——除非在该群发 `/invite alluser` 开了「全员可用」（写进 `access.chatAllowAllUsers`，只对已在白名单的群生效，再发一次关闭）；别的机器人默认被拒（bot-at-bot 要在 `access.allowedBots` 里显式写，且群在白名单）；team 模式只对 owner 同租户的人开放。卡片按钮点击按同一规则复核。回复里的 @所有人 会变成文字「@所有人」，不会真的 @全员。群里的回复和私聊一样是带折叠面板的流式卡片；面板里的工具行在群里默认隐藏，`preferences.showToolCallsInGroups: true` 才显示。
 
 ### 云文档评论
 

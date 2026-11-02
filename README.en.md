@@ -184,12 +184,13 @@ DMs do not require an @ mention; groups and topics require `@bot` by default. Ma
 /invite admin @name    add an access-control admin
 /invite group          allow a group
 /invite all group      allow all groups
+/invite alluser        let every member of this group use the bot (toggle)
 /remove user @name
 /remove admin @name
 /remove group
 ```
 
-An allowlisted group is not enough: the sender must also be in allowedUsers / admins / owner. Other bots are rejected unless listed in `access.allowedBots` (and the group is allowlisted). Team mode only serves the owner's own tenant. Card button clicks are re-checked with the same rules. `@all` in replies becomes the plain text "@所有人". Groups get the same streaming card (with its panel) as DMs; tool lines in the panel are hidden in groups unless `preferences.showToolCallsInGroups` is `true`.
+An allowlisted group is not enough: the sender must also be in allowedUsers / admins / owner — unless `/invite alluser` was sent in that group to let every member use the bot (stored in `access.chatAllowAllUsers`, only for allowlisted groups; send it again to turn it off). Other bots are rejected unless listed in `access.allowedBots` (and the group is allowlisted). Team mode only serves the owner's own tenant. Card button clicks are re-checked with the same rules. `@all` in replies becomes the plain text "@所有人". Groups get the same streaming card (with its panel) as DMs; tool lines in the panel are hidden in groups unless `preferences.showToolCallsInGroups` is `true`.
 
 ### Cloud-doc comments
 

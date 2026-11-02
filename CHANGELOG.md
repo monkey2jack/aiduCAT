@@ -47,6 +47,7 @@ aiduCAT 的版本号用 `f` 前缀（f0.1、f0.2+ …），`package.json` 里是
 - **两个服务同时启动不再撞锁**：两个 profile 共用 `~/.aiducat/registry`，以前 registry 锁拿不到就直接报 `Lock file is already being held` 退出（开机或一起重启时其中一个要等 systemd 5 秒后拉起，NRestarts=1）。现在登记/改名/注销都会退避重试（约 35 秒，比 30 秒的过期判定长，被强杀进程留下的旧锁也会被接管）；退出钩子里的同步注销也会短暂重试。
 - 共用的 `config.json` 锁原来只等约 1 秒，同样改成上面的重试。
 - 注册表里进程已死的旧记录直接清掉，不会因为对方刚拿锁还没写完锁信息而让本进程启动失败。
+- **群里可以开「全员可用」**：以前群在白名单还不够，发言人本人也得在 allowedUsers / admins / owner 里，否则静默不回（小猴² 11-02 09:53 群里被别人 @ 不回，日志 `skip-not-allowed-user reason=denied-user`）。现在 profile `access.chatAllowAllUsers` 列出的群（且在 `allowedChats` 里）所有真人成员都能用；在群里发 `/invite alluser` 开/关（只有 owner/管理员能发，热更新不用重启）；`/remove group` 会一起清掉这个开关。其它机器人仍按 `allowedBots` 拒绝，owner/管理员、@ 规则不变；不开的群行为不变。非 owner 的轮次照旧不带 settings.json 里的凭据。
 
 ## f0.3+ — 2026-10-31（`8d6b4d1`，package 0.3.2）
 

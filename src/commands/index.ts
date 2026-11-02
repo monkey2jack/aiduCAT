@@ -1923,6 +1923,11 @@ async function handleInvite(args: string, ctx: CommandContext): Promise<void> {
     return;
   }
 
+  if (tokens.includes('alluser')) {
+    await toggleGroupAllowAllUsers(ctx);
+    return;
+  }
+
   const kind = tokens.find((token) => /^(user|admin|group)$/.test(token)) as
     | 'user'
     | 'admin'
@@ -1935,7 +1940,8 @@ async function handleInvite(args: string, ctx: CommandContext): Promise<void> {
         '• `/invite user @某人` — 加入允许私聊\n' +
         '• `/invite admin @某人` — 加入管理员\n' +
         '• `/invite group` — 把当前群加入响应群名单\n' +
-        '• `/invite all group` — 把 bot 所在的所有群一键加入',
+        '• `/invite all group` — 把 bot 所在的所有群一键加入\n' +
+        '• `/invite alluser` — 当前群全员可用（开/关切换，群须已在响应名单）',
     );
     return;
   }
@@ -2000,6 +2006,39 @@ async function handleInvite(args: string, ctx: CommandContext): Promise<void> {
   await reply(ctx, parts.join('\n'));
 }
 
+/**
+ * `/invite alluser` in a group: toggle whether every human member of this
+ * (already allowlisted) group may use the bot, not only allowedUsers/admins.
+ */
+async function toggleGroupAllowAllUsers(ctx: CommandContext): Promise<void> {
+  if (ctx.chatMode === 'p2p') {
+    await reply(ctx, '❌ `/invite alluser` 只能在群里发，开关只对当前群生效。');
+    return;
+  }
+  const chatId = ctx.msg.chatId;
+  let notAllowed = false;
+  let enabled = false;
+  await saveAccessConfig(ctx, (current) => {
+    notAllowed = !current.allowedChats.includes(chatId);
+    if (notAllowed) return current;
+    const set = new Set(current.chatAllowAllUsers ?? []);
+    enabled = !set.has(chatId);
+    if (enabled) set.add(chatId);
+    else set.delete(chatId);
+    return { ...current, chatAllowAllUsers: [...set] };
+  });
+  if (notAllowed) {
+    await reply(ctx, '❌ 当前群还不在响应名单里，请先发 `/invite group`，再发 `/invite alluser`。');
+    return;
+  }
+  await reply(
+    ctx,
+    enabled
+      ? '✅ 已开启：本群所有成员 @ bot 都能用（其它机器人仍被拒）。再发一次 `/invite alluser` 关闭。'
+      : '✅ 已关闭：本群只有白名单用户、管理员和 owner 能用。',
+  );
+}
+
 async function handleRemove(args: string, ctx: CommandContext): Promise<void> {
   const tokens = args.trim().split(/\s+/).filter(Boolean).map((token) => token.toLowerCase());
   const kind = tokens.find((token) => /^(user|admin|group)$/.test(token)) as
@@ -2029,10 +2068,12 @@ async function handleRemove(args: string, ctx: CommandContext): Promise<void> {
       const list = new Set(current.allowedChats);
       missing = !list.has(chatId);
       list.delete(chatId);
-      return {
-        ...current,
-        allowedChats: [...list],
-      };
+      const next = { ...current, allowedChats: [...list] };
+      // A removed group must not keep its "every member" switch around.
+      if (current.chatAllowAllUsers?.includes(chatId)) {
+        next.chatAllowAllUsers = current.chatAllowAllUsers.filter((id) => id !== chatId);
+      }
+      return next;
     });
     if (missing) {
       await reply(ctx, '✅ 当前群本来就不在响应名单里，无需移除。');

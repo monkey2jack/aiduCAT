@@ -37,6 +37,13 @@ export interface ProfileAccess {
    * bot still has to be in an allowlisted group.
    */
   allowedBots?: string[];
+  /**
+   * chat_ids of allowlisted groups where every human member may use the bot
+   * (not only allowedUsers/admins/owner). Only takes effect for chats that are
+   * also in {@link allowedChats}. Toggle in the group with `/invite alluser`.
+   * Empty/absent = sender allowlist applies (f031-sec-#3 default).
+   */
+  chatAllowAllUsers?: string[];
 }
 
 export interface SandboxConfig {
@@ -464,6 +471,7 @@ function normalizeAccess(
 ): ProfileAccess {
   const chatRequireMention = normalizeChatMentionMap(access?.chatRequireMention);
   const allowedBots = stringArray(access?.allowedBots);
+  const chatAllowAllUsers = stringArray(access?.chatAllowAllUsers);
   return {
     allowedUsers: stringArray(access?.allowedUsers),
     allowedChats: stringArray(access?.allowedChats),
@@ -472,6 +480,7 @@ function normalizeAccess(
     // Omit when empty so configs without per-chat overrides stay clean.
     ...(Object.keys(chatRequireMention).length > 0 ? { chatRequireMention } : {}),
     ...(allowedBots.length > 0 ? { allowedBots } : {}),
+    ...(chatAllowAllUsers.length > 0 ? { chatAllowAllUsers } : {}),
   };
 }
 

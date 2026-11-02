@@ -108,6 +108,14 @@ export function canUseGroup(
   if (isCreator(controls, senderId)) return allow('owner');
   if (profile.access.admins.includes(senderId)) return allow('allowed-admin');
   if (profile.mode === 'team' && sameHomeTenant(controls, facts)) return allow('allowed-team');
+  // Per-group opt-in (`/invite alluser`): an allowlisted group listed in
+  // chatAllowAllUsers lets every human member run. Bots stay gated above.
+  if (
+    profile.access.allowedChats.includes(chatId) &&
+    profile.access.chatAllowAllUsers?.includes(chatId)
+  ) {
+    return allow('allowed-chat');
+  }
   // f031-sec-#3: an allowlisted group is not enough — the sender must be
   // allowlisted too (anyone pulled into the group used to be able to run).
   if (profile.access.allowedChats.includes(chatId)) {

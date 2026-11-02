@@ -304,6 +304,40 @@ describe('Bridge command contracts', () => {
     expect(root?.profiles.claude?.access.allowedUsers).not.toContain('ou-alice');
   });
 
+  it('f04 toggles group allow-all-users through /invite alluser (hot, persisted)', async () => {
+    const h = await createHarness();
+    const group = { chatId: 'oc-group-1', scope: 'oc-group-1', chatMode: 'group' as const };
+
+    // not allowlisted yet: refused, nothing written
+    await expect(h.run('/invite alluser', group)).resolves.toBe(true);
+    let root = await loadRootConfig(h.controls.configPath);
+    expect(root?.profiles.claude?.access.chatAllowAllUsers ?? []).toEqual([]);
+    expect(JSON.stringify(lastContent(h.channel))).toContain('/invite group');
+
+    await h.run('/invite group', group);
+    await h.run('/invite alluser', group);
+    root = await loadRootConfig(h.controls.configPath);
+    expect(root?.profiles.claude?.access.chatAllowAllUsers).toEqual(['oc-group-1']);
+    // hot: the in-memory profile the access check reads is updated too
+    expect(h.controls.profileConfig.access.chatAllowAllUsers).toEqual(['oc-group-1']);
+
+    // second time switches it off
+    await h.run('/invite alluser', group);
+    root = await loadRootConfig(h.controls.configPath);
+    expect(root?.profiles.claude?.access.chatAllowAllUsers ?? []).toEqual([]);
+
+    // /remove group also clears the switch
+    await h.run('/invite alluser', group);
+    await h.run('/remove group', group);
+    root = await loadRootConfig(h.controls.configPath);
+    expect(root?.profiles.claude?.access.allowedChats).not.toContain('oc-group-1');
+    expect(root?.profiles.claude?.access.chatAllowAllUsers ?? []).toEqual([]);
+
+    // in a DM it is refused
+    await h.run('/invite alluser');
+    expect(JSON.stringify(lastContent(h.channel))).toContain('只能在群里发');
+  });
+
   it('adds every known bot group through /invite all group', async () => {
     const h = await createHarness();
     h.controls.knownChats = [

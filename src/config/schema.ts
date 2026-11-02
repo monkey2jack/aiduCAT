@@ -87,6 +87,8 @@ export interface AppAccess {
   /** Per-chat @-mention override (chat_id → bool); overrides the global
    * requireMentionInGroup for the listed chats. */
   chatRequireMention?: Record<string, boolean>;
+  /** Allowlisted groups where every human member may use the bot. */
+  chatAllowAllUsers?: string[];
 }
 
 export interface AppPreferences {
