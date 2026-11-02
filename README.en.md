@@ -359,7 +359,7 @@ Same as B: point `baseUrl` at `http://127.0.0.1:11434` (Ollama: enable its OpenA
 
 ### Model logos (panel header icon)
 
-The panel header shows a vendor icon (OpenAI/Claude/Gemini, 30 vendors). Feishu cards reject external image URLs for `custom_icon` — they only render `img_key` values from images uploaded **to your own tenant** via `POST /open-apis/im/v1/images`. The shipped `assets/lark-logo-keys.json` is only valid for the tenant that uploaded them. For your own deployment:
+The panel header shows a vendor icon (OpenAI/Claude/Gemini, 30 vendors) at its far left, right before the model id; it does not rotate when the panel expands. Models without an icon show the collapse chevron on the right instead. Feishu cards reject external image URLs for `custom_icon` — they only render `img_key` values from images uploaded **to your own tenant** via `POST /open-apis/im/v1/images`. The shipped `assets/lark-logo-keys.json` is only valid for the tenant that uploaded them. For your own deployment:
 
 1. Prepare 30 vendor PNGs at 128px (icons: [lobehub icons-static-png](https://github.com/lobehub/lobe-icons), ~1.97.x), named after the `VendorLogo` union in `src/card/model-logo.ts` (`openai.png`, `claude.png`, ...).
 2. Upload each via the im/v1/images API with your app credentials and collect the returned `img_key`s.

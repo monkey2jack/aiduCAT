@@ -456,15 +456,24 @@ function panelHeader(titleMd: string, logoImgKey?: string): object {
     title: { tag: 'markdown', content: titleMd, text_size: 'notation' },
     vertical_align: 'center',
     // f0.2 猴哥点单: logo replaces the chevron in the header icon slot.
-    // Omitting icon_position puts the mark at the title's left edge — the
-    // closest structural approximation to "before the model id". When the
-    // model has no logo we fall back to the chevron pinned right so the
-    // collapse affordance stays.
-    icon: logoImgKey
-      ? { tag: 'custom_icon', img_key: logoImgKey, size: '16px 16px' }
-      : { tag: 'standard_icon', token: 'down-small-ccm_outlined', size: '16px 16px' },
-    ...(logoImgKey ? {} : { icon_position: 'right' }),
-    icon_expanded_angle: -180,
+    // Feishu's icon_position defaults to `right` (open.feishu.cn card JSON 2.0
+    // collapsible_panel: left = far left of the title area, right = far right,
+    // follow_text = right after the text), so the logo must ask for `left`
+    // explicitly to sit just before the model id (f0.4+ fix, Wei 11-02 19:33).
+    // A logo is not an arrow: angle 0 keeps it upright when the panel expands.
+    // Without a logo we keep the chevron pinned right, flipping -180 on expand,
+    // so the collapse affordance stays.
+    ...(logoImgKey
+      ? {
+          icon: { tag: 'custom_icon', img_key: logoImgKey, size: '16px 16px' },
+          icon_position: 'left',
+          icon_expanded_angle: 0,
+        }
+      : {
+          icon: { tag: 'standard_icon', token: 'down-small-ccm_outlined', size: '16px 16px' },
+          icon_position: 'right',
+          icon_expanded_angle: -180,
+        }),
   };
 }
 

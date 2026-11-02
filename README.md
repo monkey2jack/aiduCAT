@@ -362,7 +362,7 @@ export ANTHROPIC_API_KEY="sk-ant-..."
 
 ### 模型 logo（面板头图标）
 
-面板头会显示模型厂商图标（OpenAI/Claude/Gemini 等 30 家）。飞书卡片 `custom_icon` 只认**本租户**上传图片的 `img_key`，外部 URL 会被飞书拒绝，因此仓库里的 `assets/lark-logo-keys.json` 只对上传过它们的那套飞书环境有效——**外部部署者需要自行上传一次并替换 key**：
+面板头会显示模型厂商图标（OpenAI/Claude/Gemini 等 30 家），在面板头最左侧、紧挨模型名，展开面板时不翻转；没有图标的模型在右侧显示折叠箭头。飞书卡片 `custom_icon` 只认**本租户**上传图片的 `img_key`，外部 URL 会被飞书拒绝，因此仓库里的 `assets/lark-logo-keys.json` 只对上传过它们的那套飞书环境有效——**外部部署者需要自行上传一次并替换 key**：
 
 1. 准备 30 张 128px 厂商 PNG（图标源：[lobehub icons-static-png](https://github.com/lobehub/lobe-icons)，建议 1.97.x）。命名对齐 `src/card/model-logo.ts` 里的 `VendorLogo` 枚举（`openai.png`、`claude.png`…）。
 2. 用你的飞书应用凭证逐张调 `POST /open-apis/im/v1/images`（`image_type=message`）拿到 `img_key`。可用任意脚本/Postman 循环上传。
