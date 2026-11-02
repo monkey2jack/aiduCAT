@@ -4,6 +4,33 @@ aiduCAT 的版本号用 `f` 前缀（f0.1、f0.2+ …），`package.json` 里是
 
 > **tag 说明**：`f0.2++` 原先误指 `6fa62f8`（package 0.2.1），**已于 2026-10-31 修正**为真实发布提交 `c7ff90d`（0.2.2）。`f0.2+`、`v0.2.1` 核实后保持 `6fa62f8`：f0.2+ 的 GitHub Release 于 2026-10-20 01:17 从 main 发布，当时 main 的头部就是 `6fa62f8`（package 0.2.1）；版本号提交 `f01fcd2` 与它只差文档和一个测试，没有代码差别。
 
+## f0.4+ — 2026-11-02（package 0.4.1）
+
+基于 f0.4（`8b210ba`）。主题：**Hermes Agent 成为第三种 agent**——同一套飞书泡波卡片，背后可以按 profile 选 Claude Code、Codex 或 Hermes Agent。f0.4 发布后在 main 上陆续上线的修复（群全员可用、外人轮次能干活、群命令只给管理员、按聊天配模型等）也一起收进这个版本。
+
+### 亮点：Hermes Agent 接入（`agentKind: hermes`）
+- **一个 profile 选一种 agent**：`aiduCAT profile create <名字> --agent hermes`。建 profile 时把 `hermes` 的绝对路径记进配置（Hermes 安装器放在 `~/.local/bin`，systemd 用户服务的 PATH 里常常没有它；也可用 `LARK_CHANNEL_HERMES_BIN` 指定）。配置块 `hermes: { binaryPath, profile?, outsiderToolsets? }`，`profile` 对应 `hermes --profile <名字>`，不写就用 Hermes 自己的默认 profile。功能开关 `features.hermes`（默认开）。现有 Claude Code / Codex profile 行为不变。
+- **每轮起一个 `hermes chat` 客户端**：`hermes chat --query-file - --format stream-json --source tool`，消息走 stdin，不经过命令行和 shell；正文增量、工具调用、工具结果实时进卡片面板。`--source tool` 让这些轮次不混进 Hermes 自己的终端会话列表。
+- **owner 和其他人各一份 Hermes 会话**：Hermes 在建会话时把模型、工具集、`--yolo` 这些启动参数冻结，换参数续会话会被拒绝，受限会话续下去又会一直受限。所以每个聊天存两份会话：owner 的、其他人的。外人看不到 owner 的对话，owner 也不会被外人的限制拖住；换模型自动开新会话；万一续会话被拒，自动开新会话重试一次。
+- **owner 轮次无人值守**：带 `--yolo`（飞书里没人能点 Hermes 的审批），工作目录 = 当前聊天的工作目录。
+- **外人轮次只给安全工具**：群里别人 @、白名单用户、文档评论的轮次带 `-t todo --ignore-rules`：只剩 todo（可在 `hermes.outsiderToolsets` 加 `web`，其他工具集一律滤掉），不加载 AGENTS.md / SOUL.md / 记忆 / 技能。原因：Hermes 的 terminal、文件、代码执行等工具都在 owner 自己的 Hermes 进程里、用 owner 的权限跑，没法像 Claude Code 那样套沙箱，干脆不给。传给 Hermes 的环境变量不带任何 provider 密钥和 `HERMES_*` 开关（Hermes 用它自己 `~/.hermes/.env` 里的模型配置）。
+- **/stop 只能停卡片**：Hermes 0.22 的 `hermes chat` 把活交给本机按需启动的 Hermes 后台进程；aiduCAT 停的是客户端（SIGINT，卡片立刻变黄结束），后台会把已经接下的那一轮做完。README 写明了。
+- `/status` 显示 owner 和其他人的会话 id，权限一行显示「owner 全部（--yolo）/ 其他人 todo」；`/resume` 对 Hermes 回一句说明（历史由 Hermes 自己保管，同一聊天自动续，`/new` 开新会话）。Hermes 的协议里没有思考内容，卡片没有思考段；token 是整轮累计，不显示上下文占比。
+- **真机实测**（instabox-rose，Hermes Agent 0.22.5，模型走 10router）：owner 调 terminal、工作目录正确、同会话续聊、外人轮次拿不到密钥也看不到 owner 对话、外人之后 owner 照常续自己的会话、换模型开新会话、/stop 后卡片 0.1 秒内结束而 Hermes 后台把那一轮做完，全部符合预期。
+
+### 并入 f0.4 之后的修复
+- **两个服务同时启动不再撞锁**：两个 profile 共用 `~/.aiducat/registry`，以前 registry 锁拿不到就直接报 `Lock file is already being held` 退出（开机或一起重启时其中一个要等 systemd 5 秒后拉起，NRestarts=1）。现在登记/改名/注销都会退避重试（约 35 秒，比 30 秒的过期判定长，被强杀进程留下的旧锁也会被接管）；退出钩子里的同步注销也会短暂重试。
+- 共用的 `config.json` 锁原来只等约 1 秒，同样改成上面的重试。
+- 注册表里进程已死的旧记录直接清掉，不会因为对方刚拿锁还没写完锁信息而让本进程启动失败。
+- **群里可以开「全员可用」**：以前群在白名单还不够，发言人本人也得在 allowedUsers / admins / owner 里，否则静默不回（小猴² 11-02 09:53 群里被别人 @ 不回，日志 `skip-not-allowed-user reason=denied-user`）。现在 profile `access.chatAllowAllUsers` 列出的群（且在 `allowedChats` 里）所有真人成员都能用；在群里发 `/invite alluser` 开/关（只有 owner/管理员能发，热更新不用重启）；`/remove group` 会一起清掉这个开关。其它机器人仍按 `allowedBots` 拒绝，owner/管理员、@ 规则不变；不开的群行为不变。非 owner 的轮次照旧不带 settings.json 里的凭据。
+- **非 owner 轮次启动失败不再把原始英文报错发到群里**（小猴² 11-02 11:14 群里被别人 @，回了「⚠️ claude exited with code 1: … bubblewrap is required …」）。原因：非 owner 的轮次设了 `CLAUDE_CODE_SUBPROCESS_ENV_SCRUB=1`，Claude Code 2.1.3xx 在 Linux 上因此必须有 bubblewrap，没装就直接起不来；与私聊并发无关。现在 agent 进程启动失败/异常退出时：群聊、非 owner 私聊、文档评论一律只显示「暂时没法处理这条消息，请稍后再试。原因已记到日志，管理员会去看。」；owner 私聊显示一行简短原因；完整报错只进日志（`run failed`）。消息预处理失败（附件、引用等）同样按这个规则。隔离不变（非 owner 仍设 SCRUB=1）。Linux 上启动时如果 PATH 里没有 `bwrap`，日志里 warn `bwrap-missing`（装 `bubblewrap socat`）。
+- 非 owner 轮次结束后清掉 Claude Code 沙箱在工作目录里留下的空占位文件（`.env*`、`package.json`、各种 lock、`.npmrc`、`node_modules/.bin`、`.claude/{agents,commands}` 等）：只删这一轮新建、并且仍是空文件/只有空目录的；原来就有的、有内容的一律不动。owner 轮次不受影响。
+- **群里非管理员不能用斜杠命令**（Wei 11-02 11:35「群里非管理员一概不能用 slash 命令」）：群里不是 owner/管理员的人发任何 `/` 开头的消息（已注册的 /help /status /new /stop /resume /timeout /doc…，以及没注册的 `/xxx`；`@机器人 /xxx` 去掉 @ 后同样算），都不执行，也不交给 Claude Code / Codex（以前没注册的 `/xxx` 会当成提示词交给 agent，可能触发 Claude Code 自带的斜杠命令）。@了机器人时回一句「群里只有管理员能用命令。」，没 @ 时静默；被拦的消息不会打断/清掉同一会话里已排队的消息。卡片按钮在群里同样只认 owner/管理员。私聊、群里 owner/管理员不变。日志 `group-slash-denied`。
+- **模型按聊天单独配置**：私聊里 `/model` 改 profile 默认（和以前一样）；在某个群里 `/model` 只改这个群（存 `profiles.<name>.preferences.chatModels[chat_id]`，热更新）；没单独设的群跟默认（默认改了它也跟着变）。每轮的 `--model`、provider 环境变量、effort、上下文窗口和 60% 自动压缩都按该聊天实际用的模型算。`/status`、`/new` 显示当前模型和来源（本群设置 / 跟随默认）。群里 `/model` 卡片多一个「↩️ 恢复跟随默认」，也可发 `/model reset`。`/remove group` 一起清掉该群的模型设置。`/model` 仍是管理员命令。
+- **群里别人 @ 的轮次能正常干活了**（Wei 11-02 11:52）：非 owner 轮次仍开 `CLAUDE_CODE_SUBPROCESS_ENV_SCRUB=1`（Claude Code 因此强制 permission mode = default），现在通过 `--settings` 显式放行 Bash（只在 bubblewrap 沙箱里跑、关掉绕过沙箱的口子）和工作目录内的读写；同时拒读 settings.json（含项目级 `.claude/settings*.json`，以前项目级的漏了）、`~/.ssh`、`~/.aiducat`、`~/.config/aiduCAT`、`~/.lark-cli` 等凭据目录、`.env`、`/proc`，工作目录的 `CLAUDE.md` / `.claude/` / `.mcp.json` 只读。装了 containerd 的机器（`/run/containerd` 0711）上沙箱 Bash 原来每条都报 `Can't mkdir parents for /run/containerd/containerd.sock`（bubblewrap 0.12 + claude-code#93144）：现在这类轮次在私有挂载命名空间里起 Claude Code（`unshare --user --map-current-user --mount`，只映射自己的 uid，起 Claude 前 `setpriv` 清掉能力），把 `/run/containerd` 盖成空目录再交给沙箱——**不改 `/run/containerd` 权限**，这类轮次反而更碰不到 containerd。主机禁止非特权用户命名空间时（如 Ubuntu 24.04 的 AppArmor 默认）自动不套这一层（启动后第一次用到时探测一次，日志 warn `runtime-dir-mask-unavailable`），照旧直接起 Claude Code。owner 轮次不变。沙箱里的 Bash 不能联网（Claude Code 沙箱默认），WebFetch/WebSearch 可用。
+- **群里别人 @ 的轮次，沙箱里的 Bash 也能上外网了**（Wei 11-02 12:43「让小猴在群里跟正常的 agent 一样就行，只是不能让非管理员用 slash 命令，不要太复杂」）：非 owner 的 `--settings` 多放行一条 `WebFetch(domain:*)`，Claude Code 会把它当成沙箱网络白名单（≥ 2.1.186），`curl`/`pip`/`npm` 直接通。文件隔离不变：settings、`~/.ssh`、`~/.aiducat`、`~/.config/aiduCAT`、`~/.lark-cli`、`.env`、`/proc` 照样读不到；本机回环/内网地址仍被沙箱代理拒绝（摸不到 aiduMEI、网页控制台）；非管理员仍不能用斜杠命令。顺手删掉 `buildNonOwnerSettings` 不传 cwd 时的旧分支（只剩一种形状）。注意：`git` 会用机器自己 `~/.gitconfig` 里的 `http.proxy`，如果那是本机回环代理（summer 是 `127.0.0.1:18888`），沙箱里的 git 访问 GitHub 会失败。
+- **外人轮次可以额外封掉指定文件**（Wei 11-02 13:52）：profile 新增 `access.outsiderDenyRead`（路径列表，绝对路径或 `~/…`；最后一段可带 `*`，按运行时目录里现有文件展开，备份 `.bak_*` 一起盖住）。非 owner 轮次里这些路径 Read 工具读不到、沙箱 Bash 的 `cat`/`python` 等也读不到，也不能改写；owner 轮次不变；不配就没有额外限制（嘟嘟没配）。小猴² 配上了 `角色记忆.md`、`服务器信息.md`、`救火手册.md`（含备份）——这三份有服务器/拓扑信息，以前外人轮次照小猴守则第 1–3 条会去读；守则文件本身照常每轮带上。改配置要重启该服务。
+
 ## f0.4 — 2026-11-02（package 0.4.0）
 
 基于 f0.3+（`8d6b4d1`）。把没单独发布的 0.3.3、0.3.4、0.3.5、0.3.6 合成一个版本发布（这四个版本号只在 summer / winter 上跑过，没打 tag）。主题：飞书里回得更快、卡片更干净、数字更准。
@@ -42,19 +69,6 @@ aiduCAT 的版本号用 `f` 前缀（f0.1、f0.2+ …），`package.json` 里是
 
 ### 一份代码跑两个机器人（双 profile）
 - 同一个代码目录、同一份 `dist`，用两个服务分别跑 `--profile claude` 和 `--profile xiaohou`，各连自己的飞书 app，数据各在 `~/.aiducat/profiles/<名字>/`（sessions.json、run-journal.json、logs/）。换 `dist` 只影响之后启动的进程，**两个服务都要重启才换版本**。停服务时有在途轮次会先排空（最多 `shutdownDrainMinutes`），被打断的轮次起来后自动在同一张卡上续跑。
-
-### f0.4 之后的修复（main，版本号仍 0.4.0，未打新 tag）
-- **两个服务同时启动不再撞锁**：两个 profile 共用 `~/.aiducat/registry`，以前 registry 锁拿不到就直接报 `Lock file is already being held` 退出（开机或一起重启时其中一个要等 systemd 5 秒后拉起，NRestarts=1）。现在登记/改名/注销都会退避重试（约 35 秒，比 30 秒的过期判定长，被强杀进程留下的旧锁也会被接管）；退出钩子里的同步注销也会短暂重试。
-- 共用的 `config.json` 锁原来只等约 1 秒，同样改成上面的重试。
-- 注册表里进程已死的旧记录直接清掉，不会因为对方刚拿锁还没写完锁信息而让本进程启动失败。
-- **群里可以开「全员可用」**：以前群在白名单还不够，发言人本人也得在 allowedUsers / admins / owner 里，否则静默不回（小猴² 11-02 09:53 群里被别人 @ 不回，日志 `skip-not-allowed-user reason=denied-user`）。现在 profile `access.chatAllowAllUsers` 列出的群（且在 `allowedChats` 里）所有真人成员都能用；在群里发 `/invite alluser` 开/关（只有 owner/管理员能发，热更新不用重启）；`/remove group` 会一起清掉这个开关。其它机器人仍按 `allowedBots` 拒绝，owner/管理员、@ 规则不变；不开的群行为不变。非 owner 的轮次照旧不带 settings.json 里的凭据。
-- **非 owner 轮次启动失败不再把原始英文报错发到群里**（小猴² 11-02 11:14 群里被别人 @，回了「⚠️ claude exited with code 1: … bubblewrap is required …」）。原因：非 owner 的轮次设了 `CLAUDE_CODE_SUBPROCESS_ENV_SCRUB=1`，Claude Code 2.1.3xx 在 Linux 上因此必须有 bubblewrap，没装就直接起不来；与私聊并发无关。现在 agent 进程启动失败/异常退出时：群聊、非 owner 私聊、文档评论一律只显示「暂时没法处理这条消息，请稍后再试。原因已记到日志，管理员会去看。」；owner 私聊显示一行简短原因；完整报错只进日志（`run failed`）。消息预处理失败（附件、引用等）同样按这个规则。隔离不变（非 owner 仍设 SCRUB=1）。Linux 上启动时如果 PATH 里没有 `bwrap`，日志里 warn `bwrap-missing`（装 `bubblewrap socat`）。
-- 非 owner 轮次结束后清掉 Claude Code 沙箱在工作目录里留下的空占位文件（`.env*`、`package.json`、各种 lock、`.npmrc`、`node_modules/.bin`、`.claude/{agents,commands}` 等）：只删这一轮新建、并且仍是空文件/只有空目录的；原来就有的、有内容的一律不动。owner 轮次不受影响。
-- **群里非管理员不能用斜杠命令**（Wei 11-02 11:35「群里非管理员一概不能用 slash 命令」）：群里不是 owner/管理员的人发任何 `/` 开头的消息（已注册的 /help /status /new /stop /resume /timeout /doc…，以及没注册的 `/xxx`；`@机器人 /xxx` 去掉 @ 后同样算），都不执行，也不交给 Claude Code / Codex（以前没注册的 `/xxx` 会当成提示词交给 agent，可能触发 Claude Code 自带的斜杠命令）。@了机器人时回一句「群里只有管理员能用命令。」，没 @ 时静默；被拦的消息不会打断/清掉同一会话里已排队的消息。卡片按钮在群里同样只认 owner/管理员。私聊、群里 owner/管理员不变。日志 `group-slash-denied`。
-- **模型按聊天单独配置**：私聊里 `/model` 改 profile 默认（和以前一样）；在某个群里 `/model` 只改这个群（存 `profiles.<name>.preferences.chatModels[chat_id]`，热更新）；没单独设的群跟默认（默认改了它也跟着变）。每轮的 `--model`、provider 环境变量、effort、上下文窗口和 60% 自动压缩都按该聊天实际用的模型算。`/status`、`/new` 显示当前模型和来源（本群设置 / 跟随默认）。群里 `/model` 卡片多一个「↩️ 恢复跟随默认」，也可发 `/model reset`。`/remove group` 一起清掉该群的模型设置。`/model` 仍是管理员命令。
-- **群里别人 @ 的轮次能正常干活了**（Wei 11-02 11:52）：非 owner 轮次仍开 `CLAUDE_CODE_SUBPROCESS_ENV_SCRUB=1`（Claude Code 因此强制 permission mode = default），现在通过 `--settings` 显式放行 Bash（只在 bubblewrap 沙箱里跑、关掉绕过沙箱的口子）和工作目录内的读写；同时拒读 settings.json（含项目级 `.claude/settings*.json`，以前项目级的漏了）、`~/.ssh`、`~/.aiducat`、`~/.config/aiduCAT`、`~/.lark-cli` 等凭据目录、`.env`、`/proc`，工作目录的 `CLAUDE.md` / `.claude/` / `.mcp.json` 只读。装了 containerd 的机器（`/run/containerd` 0711）上沙箱 Bash 原来每条都报 `Can't mkdir parents for /run/containerd/containerd.sock`（bubblewrap 0.12 + claude-code#93144）：现在这类轮次在私有挂载命名空间里起 Claude Code（`unshare --user --map-current-user --mount`，只映射自己的 uid，起 Claude 前 `setpriv` 清掉能力），把 `/run/containerd` 盖成空目录再交给沙箱——**不改 `/run/containerd` 权限**，这类轮次反而更碰不到 containerd。主机禁止非特权用户命名空间时（如 Ubuntu 24.04 的 AppArmor 默认）自动不套这一层（启动后第一次用到时探测一次，日志 warn `runtime-dir-mask-unavailable`），照旧直接起 Claude Code。owner 轮次不变。沙箱里的 Bash 不能联网（Claude Code 沙箱默认），WebFetch/WebSearch 可用。
-- **群里别人 @ 的轮次，沙箱里的 Bash 也能上外网了**（Wei 11-02 12:43「让小猴在群里跟正常的 agent 一样就行，只是不能让非管理员用 slash 命令，不要太复杂」）：非 owner 的 `--settings` 多放行一条 `WebFetch(domain:*)`，Claude Code 会把它当成沙箱网络白名单（≥ 2.1.186），`curl`/`pip`/`npm` 直接通。文件隔离不变：settings、`~/.ssh`、`~/.aiducat`、`~/.config/aiduCAT`、`~/.lark-cli`、`.env`、`/proc` 照样读不到；本机回环/内网地址仍被沙箱代理拒绝（摸不到 aiduMEI、网页控制台）；非管理员仍不能用斜杠命令。顺手删掉 `buildNonOwnerSettings` 不传 cwd 时的旧分支（只剩一种形状）。注意：`git` 会用机器自己 `~/.gitconfig` 里的 `http.proxy`，如果那是本机回环代理（summer 是 `127.0.0.1:18888`），沙箱里的 git 访问 GitHub 会失败。
-- **外人轮次可以额外封掉指定文件**（Wei 11-02 13:52）：profile 新增 `access.outsiderDenyRead`（路径列表，绝对路径或 `~/…`；最后一段可带 `*`，按运行时目录里现有文件展开，备份 `.bak_*` 一起盖住）。非 owner 轮次里这些路径 Read 工具读不到、沙箱 Bash 的 `cat`/`python` 等也读不到，也不能改写；owner 轮次不变；不配就没有额外限制（嘟嘟没配）。小猴² 配上了 `角色记忆.md`、`服务器信息.md`、`救火手册.md`（含备份）——这三份有服务器/拓扑信息，以前外人轮次照小猴守则第 1–3 条会去读；守则文件本身照常每轮带上。改配置要重启该服务。
 
 ## f0.3+ — 2026-10-31（`8d6b4d1`，package 0.3.2）
 

@@ -181,10 +181,10 @@ describe('f0.4-lockfix shared config.json lock', () => {
 });
 
 describe('f0.4-lockfix docs', () => {
-  it('CHANGELOG f0.4 section records the post-release fix without a new version', async () => {
+  it('CHANGELOG records the post-f0.4 fix (merged into the f0.4+ section)', async () => {
     const md = await readFile(join(repo, 'CHANGELOG.md'), 'utf8');
-    const section = md.slice(md.indexOf('## f0.4 '), md.indexOf('## f0.3+ '));
-    expect(section).toContain('### f0.4 之后的修复');
+    const section = md.slice(md.indexOf('\n## f0.4+ '), md.indexOf('\n## f0.4 '));
+    expect(section).toContain('### 并入 f0.4 之后的修复');
     expect(section).toContain('Lock file is already being held');
     expect(section).toContain('config.json');
   });

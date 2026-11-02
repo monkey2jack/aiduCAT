@@ -8,12 +8,12 @@
 >
 > **提问在上方，过程收进一只小面板，结果由面板颜色说话。**
 >
-> 给 Claude Code / Codex CLI 穿上泡波流的飞书卡片：宣白纸面上灌一道深蓝流光，一只猫，零噪音。
+> 给 Claude Code / Codex CLI / Hermes Agent 穿上泡波流的飞书卡片：宣白纸面上灌一道深蓝流光，一只猫，零噪音。
 
-[![Version](https://img.shields.io/badge/version-f0.4-blue.svg)](https://github.com/monkey2jack/aiduCAT)
+[![Version](https://img.shields.io/badge/version-f0.4%2B-blue.svg)](https://github.com/monkey2jack/aiduCAT)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Node 20+](https://img.shields.io/badge/node-20.12%2B-brightgreen.svg)](https://nodejs.org/)
-[![Claude Code](https://img.shields.io/badge/agent-Claude%20Code%20%7C%20Codex-orange.svg)](https://docs.anthropic.com/en/docs/claude-code/quickstart)
+[![Claude Code](https://img.shields.io/badge/agent-Claude%20Code%20%7C%20Codex%20%7C%20Hermes-orange.svg)](https://docs.anthropic.com/en/docs/claude-code/quickstart)
 [![aiduCAT](https://img.shields.io/badge/aiduCAT-Claude--code_Agent_Texting-1f4e79.svg)](https://github.com/monkey2jack/aiduCAT)
 
 **中文** | **[📖 English](./README.en.md)**
@@ -25,12 +25,13 @@
 
 ## aiduCAT 是什么？
 
-**aiduCAT☤爱嘟可爱糖**，全称 **Claude-code Agent Texting**（Claude 代码代理短信/消息化），是给 **Claude Code / Codex CLI** 装上的一只飞书猫 —— 把本地编程 agent 的思考、工具调用和最终答案，实时装进一张仿 [aiduPOP](https://github.com/monkey2jack/aiduPOP) 泡波样式的飞书流式卡片。
+**aiduCAT☤爱嘟可爱糖**，全称 **Claude-code Agent Texting**（Claude 代码代理短信/消息化），是给 **Claude Code / Codex CLI / Hermes Agent** 装上的一只飞书猫（按 profile 三选一，f0.4+ 起支持 Hermes） —— 把本地编程 agent 的思考、工具调用和最终答案，实时装进一张仿 [aiduPOP](https://github.com/monkey2jack/aiduPOP) 泡波样式的飞书流式卡片。
 
 aiduCAT 起源并致敬上游 [zarazhangrui/lark-coding-agent-bridge](https://github.com/zarazhangrui/lark-coding-agent-bridge)（npm 包 `lark-channel-bridge`），在 MIT 协议的代码基础之上，做了一套完整的**泡波化改造**：
 
 | 特性 | 说明 |
 |------|------|
+| 🤖 **三种 agent 三选一**（f0.4+） | 每个 profile 选 Claude Code、Codex CLI 或 Hermes Agent，同一套卡片、命令和白名单；见下方「Hermes Agent 接入」 |
 | 🫧 **单面板泡波样式** | 答案流式显示在上方；思考与全部工具调用收进一只折叠面板（aiduPOP 布局） |
 | ☤ **单行计数头** | 面板头一行：`模型 · 💭 思考段数 · 🛠️ 工具数 · ⏱️ 用时`；运行中的状态词（☤Thinking… / ☤Processing… / ☤aiduCATing…）在面板上方，结束即消失 |
 | 🏷 **模型 Logo** | 30 家厂商标识（OpenAI/Gemini/Claude/Grok/DeepSeek/Qwen/Kimi/豆包/智谱…）随 `/model` 切换自动跟随，显示在面板头 |
@@ -43,7 +44,7 @@ aiduCAT 起源并致敬上游 [zarazhangrui/lark-coding-agent-bridge](https://gi
 
 ## 快速开始（从零安装）
 
-前提：Node.js >= 20.12.0；本机已装好并能直接运行 [Claude Code](https://docs.anthropic.com/en/docs/claude-code/quickstart)（或 [Codex CLI](https://developers.openai.com/codex/cli)），模型网关已在其环境或 `~/.claude/settings.json` 里配好（如 `ANTHROPIC_BASE_URL` / `ANTHROPIC_API_KEY`）。
+前提：Node.js >= 20.12.0；本机已装好并能直接运行 [Claude Code](https://docs.anthropic.com/en/docs/claude-code/quickstart)（或 [Codex CLI](https://developers.openai.com/codex/cli)、[Hermes Agent](https://github.com/NousResearch/hermes-agent)，Hermes 的接法见下方「Hermes Agent 接入」），模型网关已在其环境或 `~/.claude/settings.json` 里配好（如 `ANTHROPIC_BASE_URL` / `ANTHROPIC_API_KEY`）。
 
 ```bash
 git clone https://github.com/monkey2jack/aiduCAT.git
@@ -66,6 +67,78 @@ node bin/lark-channel-bridge.mjs run
 |---|---|
 | `AIDU_10ROUTER_URL` / `AIDU_10ROUTER_TOKEN` | 10router 地址与管理 token：`/model` 卡拉 combo 清单、查模型窗口（自动压缩与 `/status` 分母） |
 | `AIDUCAT_COMPACT_PCT` | 自动压缩触发点占窗口的百分比，默认 `60` |
+
+## Hermes Agent 接入（f0.4+）
+
+aiduCAT 现在有三种 agent，**按 profile 三选一**：Claude Code、Codex CLI、[Hermes Agent](https://github.com/NousResearch/hermes-agent)。卡片、斜杠命令、白名单、群规则都一样，换的只是背后干活的那一个。一台机器可以同时跑几个 profile，各连各的飞书机器人。
+
+### 怎么接
+
+1. 装好 Hermes Agent，配好模型（`hermes setup` 或 `hermes model`），先在终端确认 `hermes chat -q "你好"` 能正常回答。
+2. 建一个 Hermes profile 并启动：
+
+```bash
+aiduCAT profile create hermes --agent hermes   # 会把 hermes 的绝对路径记进配置
+aiduCAT start --profile hermes                 # 后台服务；前台跑用 node bin/lark-channel-bridge.mjs run --profile hermes
+```
+
+3. 可选配置（`~/.aiducat/config.json` 里 `profiles.<名字>.hermes`）：
+
+```json
+{
+  "hermes": {
+    "binaryPath": "/home/me/.local/bin/hermes",
+    "profile": "aiducat",
+    "outsiderToolsets": ["todo", "web"]
+  }
+}
+```
+
+- `binaryPath`：`hermes` 命令的位置。Hermes 安装器把它放在 `~/.local/bin`，systemd 用户服务的 PATH 里常常没有，所以建 profile 时会记下绝对路径；也可以用环境变量 `LARK_CHANNEL_HERMES_BIN` 指定。
+- `profile`：让 aiduCAT 用 Hermes 的哪个 profile（`hermes --profile <名字>`），不写就用 Hermes 自己的默认 profile。想让 aiduCAT 的会话、记忆和配置跟你平时用的 Hermes 分开，建议单独建一个。
+- `outsiderToolsets`：其他人（非 owner）的轮次能用哪些工具集，只认 `todo` 和 `web`，写别的会被滤掉；不写 = 只有 `todo`。
+- 模型：`/model` 填的模型 id 原样交给 `hermes chat -m`，由 Hermes 里配好的模型服务去认；`/model default` = 跟随 Hermes 自己的默认模型。`/model` 里给 Claude Code 配的 provider 密钥不会传给 Hermes。
+- 功能开关 `features.hermes`（默认开）。
+
+### 用起来是什么样（Hermes 0.22 实测）
+
+- **每轮起一个 `hermes chat` 客户端**，消息从 stdin 送进去（不经过命令行参数和 shell），正文、工具调用、工具结果实时进卡片面板，这一轮结束客户端就退出。
+- **Hermes 自带一个按需启动的后台进程**：从 Hermes 0.22 起，`hermes chat` 会把活交给本机一个 Hermes 后台进程（`hermes gateway run --idle-exit`，不连任何聊天平台），没有就自动拉起，空闲 600 秒（`gateway.unmanaged_idle_exit_seconds`）自己退出；实测常驻约 270–290 MB。这是 Hermes 自己的机制，不用另外装服务。第一轮要拉起它会慢一些，之后每轮只是起一个客户端。
+- **/stop 只停卡片**：卡片立刻变黄结束，但 Hermes 后台会把已经接下的那一轮做完（比如正在跑的命令会跑完）。这是 Hermes 0.22 的设计（客户端断开后「accepted work continues」），aiduCAT 没法替它中途打断。
+- **卡片没有思考段**：Hermes 的输出协议里没有思考内容。token 是整轮累计，所以 `/status` 不显示上下文占比；上下文压缩由 Hermes 按它自己的配置做。
+- **owner 的轮次**：带 `--yolo`（飞书里没人能点 Hermes 的审批），能用 Hermes 的全部工具，工作目录就是这个聊天的工作目录（`/cd`、`/ws` 照常用）。
+- **其他人的轮次**（群里别人 @、白名单用户、文档评论）：只给 `todo`（可加 `web`），并带 `--ignore-rules`，不加载 AGENTS.md、SOUL.md、记忆和技能；没有 terminal、文件、代码执行。原因：Hermes 的这些工具跑在 owner 自己的 Hermes 进程里、用 owner 的权限，没法像 Claude Code 那样套 bubblewrap 沙箱，所以干脆不给。传给 Hermes 的环境变量里也没有任何 provider 密钥和 `HERMES_*` 开关。
+- **owner 和其他人各一份会话**：Hermes 建会话时会把模型、工具集、`--yolo` 这些参数定死，所以每个聊天存两份 Hermes 会话。外人看不到 owner 的对话；外人说完，owner 接着聊的还是自己那份。换模型会自动开新会话。
+- `/status` 显示两份会话的 id 和「owner 全部（--yolo）/ 其他人 todo」；`/resume` 不列 Hermes 的历史（由 Hermes 自己保管），同一个聊天自动接着聊，`/new` 开新会话。
+- 在 Hermes 那边用 `hermes sessions list --source tool` 能看到这些轮次；标题是 Hermes 按第一条消息自动起的，可能显示成「aiduCAT 运行约定…」，不影响使用。
+
+### 网关式还是 bridge 式？（aiduPOP 和 aiduCAT 怎么选）
+
+把 Hermes 接进飞书有两条路：
+
+- **网关式**：Hermes 自己常驻一个消息网关，连飞书、管会话、跑定时任务；[aiduPOP](https://github.com/monkey2jack/aiduPOP) 是这个网关里的飞书泡波卡插件。
+- **bridge 式**：aiduCAT 自己连飞书，每轮起一次 agent 命令行（`claude` / `codex` / `hermes chat`），agent 只管干活。
+
+| | 网关式（Hermes 网关 + aiduPOP） | bridge 式（aiduCAT + Hermes） |
+|---|---|---|
+| 闲着时占资源 | Hermes 网关一直在 | aiduCAT（Node）一直在；Hermes 后台进程用到才起，空闲 600 秒退 |
+| 每轮速度 | 网关常驻，没有起进程的开销 | 每轮多起一个 `hermes chat` 客户端；后台已在时开销小，冷启动那一轮会慢一些 |
+| 定时任务 / 主动推送 / 多平台 | Hermes 原生支持（定时任务、主动发消息、Telegram / Discord / Slack 等） | 只做飞书里「你问它答」，没有主动推送，也不接别的平台 |
+| 崩溃影响 | 所有渠道都在同一个网关进程里 | 一轮 agent 出问题只影响这一轮；飞书连接在 aiduCAT 里，和 agent 分开 |
+| 统一维护 | 跟着 Hermes 的插件体系走 | 一套卡片、命令、白名单同时服务 Claude Code、Codex、Hermes，换 agent 不用换飞书机器人 |
+| 外人隔离 | 按 Hermes 网关自己的用户白名单和权限 | 外人单独一份会话，只给 todo / web，不加载记忆和规则 |
+| 审批 | 能在飞书卡片里点（aiduPOP 有原生确认卡和 clarify 选项卡） | 没有审批交互：owner 轮次 `--yolo`，外人轮次不给危险工具 |
+| /stop | 由 Hermes 网关自己处理 | 只停卡片，Hermes 后台会把那一轮做完 |
+
+**怎么选**：
+
+- 主要用 Hermes，要定时任务、主动推送、多平台，或者想在卡片里点审批 → 用网关式（aiduPOP）。
+- 已经在飞书里用 Claude Code / Codex，想再加一个 Hermes 且体验一致；或者群里有外人、要把外人和自己隔开；或者想一套东西统一维护 → 用 bridge 式（aiduCAT）。
+- 两个可以一起用，各接一个飞书机器人。aiduPOP 继续维护，两者是互补关系，不是替代。
+
+### 「agent 网关」和「模型网关」不是一回事
+
+在 aiduCAT 里，Claude Code、Codex、Hermes 都**不经过任何 agent 网关**：aiduCAT 直接起它们的命令行（Hermes 0.22 的客户端再去连本机的 Hermes 后台进程，那是 Hermes 内部的事）。**模型网关**（比如 [10router](https://github.com/techysy/10router)）是另一层：它在 agent 后面，把模型请求转给各家模型服务。Claude Code 通过 `ANTHROPIC_BASE_URL` 连它，Hermes 通过自己 `config.yaml` 里的模型服务地址连它，用不用、用哪个都和 aiduCAT 无关。
 
 ## 常用命令
 
@@ -131,7 +204,12 @@ aiduCAT secrets set --app-id <id>
 - **空跑**（agent 什么都没产出就退出）：直接显示红色报错卡和原因，提示重发
 - **超长 / 被拒**：正文超 25KB 时，第 1 张卡显示到预算边界（在段落、代码块、表格边界切开，末尾「…（未完，见下一张卡）」），其余按顺序发「续 2/N」「续 3/N」卡片，markdown 正常渲染、每张 <30KB、内容不重复；超大代码块按行切开并重新开合代码围栏，超大表格按行切开并重复表头；只有续卡被飞书拒收时，该张起的剩余部分才改发一次纯文本。飞书拒收卡片时先用严格卡（无图片链接、正文 12KB）重试，再不行发纯文本，最后发一句「卡片发送失败」
 
-## 更新日志（f0.4）
+## 更新日志（f0.4+）
+
+- **Hermes Agent 成为第三种 agent**：`aiduCAT profile create <名字> --agent hermes`，按 profile 选 Claude Code / Codex / Hermes；owner 和其他人各一份 Hermes 会话，外人轮次只给 todo（可加 web）、不加载记忆和规则；/stop 只停卡片（Hermes 后台会把那一轮做完）。详见上方「Hermes Agent 接入」
+- 并入 f0.4 发布后的修复：群「全员可用」（`/invite alluser`）、群里只有管理员能用斜杠命令、`/model` 按聊天单独配置、外人轮次在沙箱里能正常干活和上外网、`access.outsiderDenyRead` 额外封文件、两个服务同时启动不撞锁、非 owner 轮次报错不外露
+
+### f0.4
 
 - 收到消息立刻出一张只有一行「☤aiduCATing…」的卡；agent 第一次思考、调工具或出字时，面板才出现在同一张卡里；排队的消息各自一张卡，没用上的占位卡自动撤回；卡片模式不再加飞书表情
 - 开跑更快：只拉 10router combo（不再拉 `/v1/models` 全量表），combo 列表后台刷新、启动预热
@@ -167,6 +245,7 @@ aiduCAT secrets set --app-id <id>
 ```bash
 aiduCAT profile create claude --agent claude
 aiduCAT profile create codex --agent codex
+aiduCAT profile create hermes --agent hermes
 aiduCAT profile list
 aiduCAT profile use <name>
 aiduCAT profile remove <name>            # 归档本地状态
@@ -316,7 +395,7 @@ export ANTHROPIC_API_KEY="sk-ant-..."
 ```
 
 - 群聊运行封顶 `groupMaxAccess`（默认 `workspace`）；评论、会议、team 模式一律封顶 `workspace`；私聊不封顶。值可选 `full` / `workspace` / `read-only`。旧版 `sandbox` 配置键已不再读取（legacy `sandbox` keys are ignored）。
-- agent 子进程的环境变量是白名单：PATH/HOME/LANG/LC_*/代理/证书，Claude 另给 `ANTHROPIC_*`/`CLAUDE_*`，Codex 另给 `OPENAI_*`/`CODEX_*`。服务环境里其他变量（如 `AIDU_10ROUTER_URL`、`SSH_AUTH_SOCK`）要在 `agentEnv.passthrough` 里显式放行。
+- agent 子进程的环境变量是白名单：PATH/HOME/LANG/LC_*/代理/证书，Claude 另给 `ANTHROPIC_*`/`CLAUDE_*`，Codex 另给 `OPENAI_*`/`CODEX_*`，Hermes 不额外给（它用自己 `~/.hermes/.env` 里的模型配置，只透传 `HERMES_HOME`）。服务环境里其他变量（如 `AIDU_10ROUTER_URL`、`SSH_AUTH_SOCK`）要在 `agentEnv.passthrough` 里显式放行。
 - 群里默认不显示工具调用，`preferences.showToolCallsInGroups: true` 可打开。
 - 超时：`preferences.runIdleTimeoutMinutes`（默认 15 分钟无输出即停）、`preferences.runToolTimeoutMinutes`（单个工具默认最长 30 分钟）。重启后 10 分钟内的排队消息会自动重放，更早的回一句「请重发」；在途卡片标「服务重启，请重发」。
 - 优雅重启：收到停止信号后不接新轮次，先等在途轮次跑完，最多 `preferences.shutdownDrainMinutes` 分钟（默认 10，`0` = 立即停）；期间新消息记下，重启后自动处理。被打断的轮次若 10 分钟内重启完成，会在同一会话里自动发一次「（服务重启，接着刚才的继续）」，只续一次。systemd 单元需要 `KillMode=mixed` 和 `TimeoutStopSec=660`（`aiduCAT start` 安装的单元已自带，手写的要自己加）。
@@ -335,12 +414,12 @@ export ANTHROPIC_API_KEY="sk-ant-..."
 
 ```json
 {
-  "features": { "meeting": false, "webConsole": false, "codex": false, "cot": false }
+  "features": { "meeting": false, "webConsole": false, "codex": false, "cot": false, "hermes": false }
 }
 ```
 
 - 关掉的模块不加载（省启动内存），相关命令在 `/help` 里隐藏，调用时回「此功能未开启」。
-- `"meeting"`：`/meeting`、会议推送与自动入会；`"webConsole"`：`run/start --web-ui`、`aiduCAT ui`、`/config` 里的控制台那一行；`"codex"`：Codex profile 与 Codex 会话历史；`"cot"`：CoT 过程消息与 `/config` 里的选项（偏好值保留）。
+- `"meeting"`：`/meeting`、会议推送与自动入会；`"webConsole"`：`run/start --web-ui`、`aiduCAT ui`、`/config` 里的控制台那一行；`"codex"`：Codex profile 与 Codex 会话历史；`"hermes"`：Hermes profile（关掉后 `agentKind: hermes` 的 profile 拒绝启动）；`"cot"`：CoT 过程消息与 `/config` 里的选项（偏好值保留）。
 - 改完重启服务生效。
 
 ### 开发

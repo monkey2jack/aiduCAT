@@ -8,12 +8,12 @@
 >
 > **Ask on top, process folded into one small panel, the result told by the panel's color.**
 >
-> Dress your Claude Code / Codex CLI in a Bubble-Wave Feishu card: deep-blue veins on paper white, one cat, zero noise.
+> Dress your Claude Code / Codex CLI / Hermes Agent in a Bubble-Wave Feishu card: deep-blue veins on paper white, one cat, zero noise.
 
-[![Version](https://img.shields.io/badge/version-f0.4-blue.svg)](https://github.com/monkey2jack/aiduCAT)
+[![Version](https://img.shields.io/badge/version-f0.4%2B-blue.svg)](https://github.com/monkey2jack/aiduCAT)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Node 20+](https://img.shields.io/badge/node-20.12%2B-brightgreen.svg)](https://nodejs.org/)
-[![Claude Code](https://img.shields.io/badge/agent-Claude%20Code%20%7C%20Codex-orange.svg)](https://docs.anthropic.com/en/docs/claude-code/quickstart)
+[![Claude Code](https://img.shields.io/badge/agent-Claude%20Code%20%7C%20Codex%20%7C%20Hermes-orange.svg)](https://docs.anthropic.com/en/docs/claude-code/quickstart)
 [![aiduCAT](https://img.shields.io/badge/aiduCAT-Claude--code_Agent_Texting-1f4e79.svg)](https://github.com/monkey2jack/aiduCAT)
 
 **[📖 中文](./README.md)** | **English**
@@ -25,12 +25,13 @@
 
 ## What is aiduCAT?
 
-**aiduCAT☤爱嘟可爱糖** — **Claude-code Agent Texting** — is a Feishu cat for **Claude Code / Codex CLI**: it streams your local coding agent's thinking, tool calls and final answer into a single Feishu card styled after [aiduPOP](https://github.com/monkey2jack/aiduPOP)'s Bubble Wave.
+**aiduCAT☤爱嘟可爱糖** — **Claude-code Agent Texting** — is a Feishu cat for **Claude Code / Codex CLI / Hermes Agent** (one per profile; Hermes since f0.4+): it streams your local coding agent's thinking, tool calls and final answer into a single Feishu card styled after [aiduPOP](https://github.com/monkey2jack/aiduPOP)'s Bubble Wave.
 
 aiduCAT originates from and credits the upstream [zarazhangrui/lark-coding-agent-bridge](https://github.com/zarazhangrui/lark-coding-agent-bridge) (npm package `lark-channel-bridge`), an MIT-licensed project. On top of that code, aiduCAT adds a complete **Bubble Wave transformation**:
 
 | Feature | What it does |
 |------|------|
+| 🤖 **Three agents, pick one** (f0.4+) | Each profile runs Claude Code, Codex CLI or Hermes Agent with the same cards, commands and allowlists; see "Hermes Agent" below |
 | 🫧 **Single Bubble-Wave panel** | The answer streams on top; thinking and every tool call fold into one collapsible panel (aiduPOP layout) |
 | ☤ **One-line counter header** | Panel header: `model · 💭 thinking segments · 🛠️ tools · ⏱️ elapsed`; the live status word (☤Thinking… / ☤Processing… / ☤aiduCATing…) sits above the panel and disappears on completion |
 | 🏷 **Model logos** | 30 vendor marks (OpenAI/Gemini/Claude/Grok/DeepSeek/Qwen/Kimi/Doubao/Zhipu…) follow `/model` and show in the panel header |
@@ -43,7 +44,7 @@ aiduCAT originates from and credits the upstream [zarazhangrui/lark-coding-agent
 
 ## Quick start (from scratch)
 
-Prerequisites: Node.js >= 20.12.0, and a working [Claude Code](https://docs.anthropic.com/en/docs/claude-code/quickstart) (or [Codex CLI](https://developers.openai.com/codex/cli)) whose model gateway is already configured in its env or `~/.claude/settings.json` (e.g. `ANTHROPIC_BASE_URL` / `ANTHROPIC_API_KEY`).
+Prerequisites: Node.js >= 20.12.0, and a working [Claude Code](https://docs.anthropic.com/en/docs/claude-code/quickstart) (or [Codex CLI](https://developers.openai.com/codex/cli), or [Hermes Agent](https://github.com/NousResearch/hermes-agent) — see "Hermes Agent" below) whose model gateway is already configured in its env or `~/.claude/settings.json` (e.g. `ANTHROPIC_BASE_URL` / `ANTHROPIC_API_KEY`).
 
 ```bash
 git clone https://github.com/monkey2jack/aiduCAT.git
@@ -66,6 +67,78 @@ Optional environment variables (in the bot's service environment):
 |---|---|
 | `AIDU_10ROUTER_URL` / `AIDU_10ROUTER_TOKEN` | 10router URL + management token: `/model` combo list and model-window lookup (auto-compact and the `/status` denominator) |
 | `AIDUCAT_COMPACT_PCT` | Auto-compact trigger as % of the window, default `60` |
+
+## Hermes Agent (f0.4+)
+
+aiduCAT now drives three agents, **one per profile**: Claude Code, Codex CLI or [Hermes Agent](https://github.com/NousResearch/hermes-agent). Cards, slash commands, allowlists and group rules are the same; only the agent doing the work changes. One machine can run several profiles, each on its own Feishu bot.
+
+### Setup
+
+1. Install Hermes Agent and configure a model (`hermes setup` or `hermes model`); check that `hermes chat -q "hello"` answers in a terminal.
+2. Create a Hermes profile and start it:
+
+```bash
+aiduCAT profile create hermes --agent hermes   # records the absolute path of hermes
+aiduCAT start --profile hermes                 # background service; foreground: node bin/lark-channel-bridge.mjs run --profile hermes
+```
+
+3. Optional settings (`profiles.<name>.hermes` in `~/.aiducat/config.json`):
+
+```json
+{
+  "hermes": {
+    "binaryPath": "/home/me/.local/bin/hermes",
+    "profile": "aiducat",
+    "outsiderToolsets": ["todo", "web"]
+  }
+}
+```
+
+- `binaryPath`: where `hermes` lives. The Hermes installer puts it in `~/.local/bin`, which a systemd user service's PATH often lacks, so profile creation records the absolute path; `LARK_CHANNEL_HERMES_BIN` overrides it.
+- `profile`: which Hermes profile aiduCAT uses (`hermes --profile <name>`); unset = Hermes's own default. A separate one keeps aiduCAT's sessions, memory and config apart from your everyday Hermes.
+- `outsiderToolsets`: toolsets for non-owner turns, `todo` and `web` only (anything else is dropped); unset = `todo` only.
+- Models: the id picked in `/model` goes to `hermes chat -m` as is and is resolved by the model service configured in Hermes; `/model default` = Hermes's own default. Provider keys configured in `/model` for Claude Code are never passed to Hermes.
+- Feature switch `features.hermes` (on by default).
+
+### How it behaves (tested with Hermes 0.22)
+
+- **One `hermes chat` client per turn**: the message goes in on stdin (never through argv or a shell); answer text, tool calls and tool results stream into the card panel; the client exits when the turn ends.
+- **Hermes brings its own on-demand background process**: since Hermes 0.22, `hermes chat` hands the turn to a local Hermes background process (`hermes gateway run --idle-exit`, connected to no chat platform), starting it if needed; it exits after 600 idle seconds (`gateway.unmanaged_idle_exit_seconds`) and measured about 270–290 MB resident. This is Hermes's own mechanism, nothing extra to install. The first turn is slower because it starts that process; later turns only start a client.
+- **/stop stops the card only**: the card ends yellow right away, but Hermes finishes the turn it already accepted in the background (a running command runs to the end). That is Hermes 0.22's design ("accepted work continues" after the client detaches); aiduCAT cannot interrupt it midway.
+- **No thinking section**: Hermes's output protocol carries no reasoning. Token counts are per whole turn, so `/status` shows no context ratio; Hermes compacts context by its own settings.
+- **Owner turns** run with `--yolo` (nobody can click a Hermes approval in Feishu), get every Hermes tool, and use the chat's working directory (`/cd`, `/ws` work as usual).
+- **Everyone else's turns** (group @mentions by others, allowlisted users, doc comments) get `todo` only (optionally `web`) plus `--ignore-rules`: no AGENTS.md, SOUL.md, memory or skills; no terminal, file or code-execution tools. Reason: those Hermes tools run inside the owner's Hermes process with the owner's rights and cannot be put in a bubblewrap sandbox the way Claude Code's can, so they are not offered. The environment handed to Hermes carries no provider keys and no `HERMES_*` switches.
+- **Separate sessions for the owner and everyone else**: Hermes fixes a session's model, toolsets and `--yolo` when it is created, so each chat keeps two Hermes sessions. Outsiders never see the owner's conversation, and after an outsider's turn the owner continues their own session. Changing the model starts a new session.
+- `/status` shows both session ids and "owner 全部（--yolo）/ 其他人 todo"; `/resume` does not list Hermes history (Hermes keeps it); the same chat continues automatically, `/new` starts fresh.
+- On the Hermes side `hermes sessions list --source tool` lists these turns; titles are generated by Hermes from the first message and may read "aiduCAT 运行约定…" — harmless.
+
+### Gateway style or bridge style? (aiduPOP vs aiduCAT)
+
+There are two ways to put Hermes in Feishu:
+
+- **Gateway style**: Hermes runs its own resident messaging gateway that connects to Feishu, keeps sessions and runs scheduled jobs; [aiduPOP](https://github.com/monkey2jack/aiduPOP) is the Bubble-Wave card plugin inside that gateway.
+- **Bridge style**: aiduCAT connects to Feishu itself and starts the agent CLI once per turn (`claude` / `codex` / `hermes chat`); the agent only does the work.
+
+| | Gateway style (Hermes gateway + aiduPOP) | Bridge style (aiduCAT + Hermes) |
+|---|---|---|
+| Idle footprint | The Hermes gateway is always up | aiduCAT (Node) is always up; the Hermes background process starts on demand and exits after 600 idle seconds |
+| Per-turn speed | Resident gateway, no process start per turn | One extra `hermes chat` client per turn; small overhead once the background process is up, the cold turn is slower |
+| Scheduled jobs / proactive push / multi-platform | Native in Hermes (cron, proactive messages, Telegram / Discord / Slack …) | Feishu ask-and-answer only; no proactive push, no other platforms |
+| Crash impact | Every channel lives in the one gateway process | A failing agent run affects that turn only; the Feishu connection lives in aiduCAT, apart from the agent |
+| Maintenance | Follows Hermes's plugin system | One set of cards, commands and allowlists for Claude Code, Codex and Hermes; switch agents without switching Feishu bots |
+| Outsider isolation | Per the Hermes gateway's own user allowlist and permissions | Outsiders get their own session, `todo` / `web` only, no memory or rules loaded |
+| Approvals | Clickable in Feishu cards (aiduPOP has native confirm and clarify cards) | No approval UI: owner turns use `--yolo`, outsider turns get no dangerous tools |
+| /stop | Handled by the Hermes gateway | Stops the card; Hermes finishes the turn in the background |
+
+**Which one**:
+
+- Mostly Hermes, and you want scheduled jobs, proactive push, multiple platforms or in-card approvals → gateway style (aiduPOP).
+- Already using Claude Code / Codex in Feishu and want Hermes with the same experience; outsiders in your groups who must be kept apart from you; or one thing to maintain → bridge style (aiduCAT).
+- Both can run side by side, each on its own Feishu bot. aiduPOP stays maintained; the two complement each other.
+
+### "Agent gateway" and "model gateway" are different things
+
+In aiduCAT, Claude Code, Codex and Hermes go through **no agent gateway**: aiduCAT starts their CLIs directly (Hermes 0.22's client then talks to its local background process, which is internal to Hermes). A **model gateway** such as [10router](https://github.com/techysy/10router) is another layer: it sits behind the agent and forwards model requests to model providers. Claude Code reaches it through `ANTHROPIC_BASE_URL`, Hermes through the model endpoint in its own `config.yaml`; whether and which one you use has nothing to do with aiduCAT.
 
 ## Commands
 
@@ -131,7 +204,12 @@ One card, top to bottom:
 - **Empty run** (the agent exits without output): a red error card with the reason, asking you to resend
 - **Too long / rejected**: an answer over 25KB fills card 1 up to the budget (cut at a paragraph, code-block or table boundary, ending in "…（未完，见下一张卡）"), then continues on ordered "续 2/N", "续 3/N" cards — rendered markdown, each <30KB, nothing repeated; an oversized code block is split between lines with the fence reopened, an oversized table between rows with the header repeated; only if Feishu rejects a continuation card does the rest from that card on go out once as plain text. if Feishu rejects the card, a strict card (no image links, 12KB answer) is retried, then plain text, then a one-line "card failed" notice
 
-## Changelog (f0.4)
+## Changelog (f0.4+)
+
+- **Hermes Agent is the third agent**: `aiduCAT profile create <name> --agent hermes`; pick Claude Code / Codex / Hermes per profile; separate Hermes sessions for the owner and everyone else, outsider turns get `todo` only (optionally `web`) with no memory or rules; /stop stops the card (Hermes finishes the turn in the background). See "Hermes Agent" above
+- Includes the fixes shipped after f0.4: group "everyone may use" switch (`/invite alluser`), slash commands admin-only in groups, per-chat `/model`, outsider turns work (and reach the internet) inside the sandbox, extra `access.outsiderDenyRead` paths, two services starting together without lock errors, non-owner errors kept out of chats
+
+### f0.4
 
 - A message gets a one-line 「☤aiduCATing…」 card right away; the panel joins the same card when the agent first thinks, calls a tool or writes; queued messages get their own card each, unused placeholder cards are recalled; no Feishu reaction in card mode
 - Faster start: only 10router combos are loaded (no full `/v1/models` pull), the combo list refreshes in the background and is prewarmed at start
@@ -167,6 +245,7 @@ The daemon installs one **per-profile service** per PersonalAgent app: macOS lau
 ```bash
 aiduCAT profile create claude --agent claude
 aiduCAT profile create codex --agent codex
+aiduCAT profile create hermes --agent hermes
 aiduCAT profile list
 aiduCAT profile use <name>
 aiduCAT profile remove <name>            # archive local state
@@ -313,7 +392,7 @@ Access is controlled by the canonical `"permissions"` block. **Omitted = `worksp
 ```
 
 - Group runs are capped at `groupMaxAccess` (default `workspace`); comment, meeting and team-mode runs are always capped at `workspace`; DMs are not capped. Values: `full` / `workspace` / `read-only`. The legacy `sandbox` config keys are no longer read.
-- The agent subprocess env is an allowlist: PATH/HOME/LANG/LC_*/proxy/certs, plus `ANTHROPIC_*`/`CLAUDE_*` for Claude or `OPENAI_*`/`CODEX_*` for Codex. Any other service variable (e.g. `AIDU_10ROUTER_URL`, `SSH_AUTH_SOCK`) must be listed in `agentEnv.passthrough`.
+- The agent subprocess env is an allowlist: PATH/HOME/LANG/LC_*/proxy/certs, plus `ANTHROPIC_*`/`CLAUDE_*` for Claude or `OPENAI_*`/`CODEX_*` for Codex; Hermes gets nothing extra (it uses the model settings in its own `~/.hermes/.env`; only `HERMES_HOME` is passed). Any other service variable (e.g. `AIDU_10ROUTER_URL`, `SSH_AUTH_SOCK`) must be listed in `agentEnv.passthrough`.
 - Tool calls are hidden in groups by default; set `preferences.showToolCallsInGroups: true` to show them.
 - Timeouts: `preferences.runIdleTimeoutMinutes` (default 15 min without output), `preferences.runToolTimeoutMinutes` (one tool call, default 30 min). After a restart, queued messages younger than 10 minutes are replayed, older ones get a "please resend"; in-flight cards are marked "service restarted, please resend".
 - Graceful restart: on a stop signal the bridge takes no new rounds and waits for the ones in flight, at most `preferences.shutdownDrainMinutes` minutes (default 10, `0` = stop at once); messages arriving meanwhile are kept and handled after the restart. A round that was cut off is continued once, in the same session, with "（服务重启，接着刚才的继续）" if the restart took ≤ 10 minutes. systemd units need `KillMode=mixed` and `TimeoutStopSec=660` (units installed by `aiduCAT start` have them; add them to hand-written units).
@@ -332,12 +411,12 @@ Modules you don't use can be switched off per profile. No `features` block = eve
 
 ```json
 {
-  "features": { "meeting": false, "webConsole": false, "codex": false, "cot": false }
+  "features": { "meeting": false, "webConsole": false, "codex": false, "cot": false, "hermes": false }
 }
 ```
 
 - A module that is off is not loaded (less startup memory); its commands are hidden from `/help` and answer 「此功能未开启」 (feature not enabled).
-- `"meeting"`: `/meeting`, meeting pushes and auto-join; `"webConsole"`: `run/start --web-ui`, `aiduCAT ui`, the console line in `/config`; `"codex"`: Codex profiles and Codex session history; `"cot"`: CoT process messages and their `/config` option (the preference is kept).
+- `"meeting"`: `/meeting`, meeting pushes and auto-join; `"webConsole"`: `run/start --web-ui`, `aiduCAT ui`, the console line in `/config`; `"codex"`: Codex profiles and Codex session history; `"hermes"`: Hermes profiles (a profile with `agentKind: hermes` refuses to start when off); `"cot"`: CoT process messages and their `/config` option (the preference is kept).
 - Restart the service after changing it.
 
 ### Development

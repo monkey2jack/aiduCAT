@@ -5,9 +5,9 @@ import pkg from '../../../package.json';
 const read = (f: string) => readFile(new URL(`../../../${f}`, import.meta.url), 'utf8');
 const READMES = ['README.md', 'README.zh.md', 'README.en.md'];
 
-describe('f036 version f0.3.6 (merged into f0.4, package 0.4.0) docs', () => {
-  it('f036 package moved past 0.3.6 (now 0.4.0) and no README still carries the f0.3.6 badge', async () => {
-    expect(pkg.version).toBe('0.4.0');
+describe('f036 version f0.3.6 (merged into f0.4, now package 0.4.1) docs', () => {
+  it('f036 package moved past 0.3.6 (now 0.4.1) and no README still carries the f0.3.6 badge', async () => {
+    expect(pkg.version).toBe('0.4.1');
     for (const f of READMES) expect(await read(f), f).not.toContain('badge/version-f0.3.6-blue');
   });
 
