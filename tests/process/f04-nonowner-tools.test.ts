@@ -63,6 +63,8 @@ describe('f04 C non-owner tools', () => {
       expect.arrayContaining([`Read(/${cwd}/.claude/settings.json)`, `Edit(/${cwd}/CLAUDE.md)`, 'Read(//proc/**)']),
     );
     expect(settings.sandbox).toEqual({ enabled: true, autoAllowBashIfSandboxed: true, allowUnsandboxedCommands: false });
+    // Wei 12:43: sandboxed Bash reaches the internet like a normal agent.
+    expect(settings.permissions.allow).toContain('WebFetch(domain:*)');
   });
 
   it('owner: no --settings at all (unchanged)', async () => {

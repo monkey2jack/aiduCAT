@@ -111,10 +111,14 @@ describe('f04 C: non-owner settings let the agent work, secrets stay denied', ()
     ]) expect(d).toContain(r);
   });
 
-  it('without cwd it keeps the f03p shape (no allow rules, no sandbox block)', () => {
-    const old = buildNonOwnerSettings({ configDir: '/h/.claude', settingsEnvNames: [], home: '/h' });
-    expect(old.permissions.allow).toBeUndefined();
-    expect(old.sandbox).toBeUndefined();
+  it('sandboxed Bash may reach the internet (Wei 12:43: like a normal agent); files stay fenced', () => {
+    expect(s.permissions.allow).toContain('WebFetch(domain:*)');
+  });
+
+  it('without cwd it uses the process cwd (one shape, no f03p-only branch)', () => {
+    const noCwd = buildNonOwnerSettings({ configDir: '/h/.claude', settingsEnvNames: [], home: '/h' });
+    expect(noCwd.permissions.allow).toContain(`Edit(/${process.cwd()}/**)`);
+    expect(noCwd.sandbox).toEqual(s.sandbox);
   });
 });
 

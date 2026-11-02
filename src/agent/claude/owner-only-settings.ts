@@ -50,8 +50,8 @@ export function readUserSettingsEnvNames(configDir: string): string[] {
 
 export interface NonOwnerSettings {
   env: Record<string, string>;
-  permissions: { allow?: string[]; deny: string[] };
-  sandbox?: {
+  permissions: { allow: string[]; deny: string[] };
+  sandbox: {
     enabled: true;
     autoAllowBashIfSandboxed: true;
     allowUnsandboxedCommands: false;
@@ -86,10 +86,9 @@ export function buildNonOwnerSettings(input: {
   settingsEnvNames: readonly string[];
   home?: string;
   /**
-   * f04-group-cmd-model (C, Wei 11:52): the run's working directory. When set
-   * the run may use Bash (sandboxed) and read/write files in it, like a normal
-   * agent — credentials stay out of reach. Unset = the f03p-infra-#2 shape
-   * (no allow rules), kept for callers that only want the scrub.
+   * f04-group-cmd-model (C, Wei 11:52): the run's working directory (default:
+   * process cwd). The run may use Bash (sandboxed, internet allowed) and
+   * read/write files in it, like a normal agent — credentials stay out of reach.
    */
   cwd?: string;
 }): NonOwnerSettings {
@@ -112,9 +111,7 @@ export function buildNonOwnerSettings(input: {
     ...files.map((f) => `Edit(${abs(f)})`),
     `Read(${abs(join(home, '.config', 'gh'))}/**)`,
   ];
-  if (!input.cwd) return { env, permissions: { deny } };
-
-  const cwd = resolve(input.cwd);
+  const cwd = resolve(input.cwd ?? process.cwd());
   const cwdRule = `${abs(cwd)}/**`;
   // Project settings in the working directory carry hooks and often their own
   // `env` block (keys!) — never readable, never writable by a non-owner run.
@@ -145,7 +142,11 @@ export function buildNonOwnerSettings(input: {
   // explicitly"), and `-p` has nobody to approve — so declare them. Deny rules
   // above still win over these. Bash runs inside Claude Code's bubblewrap
   // sandbox (auto-allowed only because it is sandboxed; the
-  // dangerouslyDisableSandbox escape is off).
+  // dangerouslyDisableSandbox escape is off). The sandbox only fences files:
+  // `WebFetch(domain:*)` also pre-allows every host for sandboxed commands
+  // (Claude Code ≥ 2.1.186), so curl/pip/npm reach the internet like a normal
+  // agent (Wei 12:43). Loopback / private addresses stay refused by the proxy
+  // (git obeys the user's ~/.gitconfig http.proxy; a loopback one won't work).
   const allow = [
     'Bash',
     'Read',
@@ -155,6 +156,7 @@ export function buildNonOwnerSettings(input: {
     'TodoWrite',
     'WebSearch',
     'WebFetch',
+    'WebFetch(domain:*)',
     `Edit(${cwdRule})`,
     `Write(${cwdRule})`,
     `MultiEdit(${cwdRule})`,
