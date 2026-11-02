@@ -1,0 +1,2 @@
+{"type": "system", "subtype": "init", "model": "", "session_id": "", "timestamp": 1793601566258}
+{"type": "result", "session_id": "local-071adc3a56f9c2766313ec6fe8faa62307cffd2594c11e5209bb5db142fdd3cf", "exit_code": 1, "text": "custom rejected your API key, so the model can't be reached.", "tokens": {"input": 0, "output": 0, "total": 0, "cache_read": 0, "cache_write": 0}, "duration_ms": 13613, "error": "HTTP 401: {\"error\":\"API key required for remote API access\"}", "timestamp": 1793601579872}

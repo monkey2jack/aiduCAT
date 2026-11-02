@@ -29,12 +29,15 @@ export async function createBootstrapProfileConfig(
     input.agentKind === 'codex'
       ? await createBootstrapCodexConfig(input.codexBinaryPath)
       : undefined;
+  const hermes =
+    input.agentKind === 'hermes' ? await createBootstrapHermesConfig(undefined) : undefined;
   const profile = createDefaultProfileConfig({
     agentKind: input.agentKind,
     accounts: input.accounts,
     preferences: input.preferences,
     secrets: input.secrets,
     ...(codex ? { codex } : {}),
+    ...(hermes ? { hermes } : {}),
   });
   if (workspace) {
     profile.workspaces = {
@@ -70,6 +73,30 @@ export async function createBootstrapCodexConfig(binaryPath: string | undefined)
       code: codexBootstrapBinaryErrorCode(errno),
       agentId: 'codex',
       agentName: 'Codex CLI',
+      command,
+      binaryPath: command,
+      errno,
+    });
+  }
+  return { binaryPath: resolvedBinary };
+}
+
+/**
+ * f0.4+: pin the absolute path of `hermes` at profile creation — the Hermes
+ * installer puts it in ~/.local/bin, which a systemd user service's PATH
+ * usually does not contain.
+ */
+export async function createBootstrapHermesConfig(binaryPath: string | undefined) {
+  const command = binaryPath ?? process.env.LARK_CHANNEL_HERMES_BIN ?? 'hermes';
+  let resolvedBinary: string;
+  try {
+    resolvedBinary = await resolveExecutablePath(command);
+  } catch (err) {
+    const errno = (err as NodeJS.ErrnoException).code;
+    throw new AgentPreflightError({
+      code: codexBootstrapBinaryErrorCode(errno),
+      agentId: 'hermes',
+      agentName: 'Hermes Agent',
       command,
       binaryPath: command,
       errno,

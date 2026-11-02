@@ -6,7 +6,7 @@ import type {
 import { createLarkChannel } from '@larksuite/channel';
 import { dirname, join } from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { claudeCapability, codexCapability } from '../agent/capability';
+import { capabilityFor } from '../agent/capability';
 import { modelLabel, normalizeModelSelection, resolveModelArg } from '../agent/models';
 import {
   buildAgentPrompt,
@@ -1429,9 +1429,7 @@ async function runAgentBatch(deps: RunBatchDeps): Promise<void> {
     ...(threadId ? { threadId } : {}),
   };
   const capability =
-    controls.profileConfig.agentKind === 'codex'
-      ? codexCapability(controls.profileConfig)
-      : claudeCapability(controls.profileConfig);
+    capabilityFor(controls.profileConfig);
   const flow = await preRun('run-setup', async () => startRunFlow({
     scopeId: scope,
     // f0.2+: the selected model's declared window drives the 60% compact env.
@@ -2346,7 +2344,7 @@ async function processAgentStream(
       // f0.3.1 #4: must run AFTER reduce — reduce('done') unconditionally sets
       // terminal='done' and used to wipe the guard's error (f0.3 bug).
       if (
-        agentId === 'claude' &&
+        (agentId === 'claude' || agentId === 'hermes') &&
         (state.terminal === 'done' || state.terminal === 'error') &&
         (evt.type === 'done' || evt.type === 'error') &&
         substantiveEvents === 0 &&

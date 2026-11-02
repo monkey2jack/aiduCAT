@@ -12,7 +12,7 @@ const app = { id: 'cli_test', secret: '${APP_SECRET}', tenant: 'feishu' as const
 describe('f03p-slim-#1 profile features switch', () => {
   it('f03p-slim-#1 no features block = everything on (current behavior)', () => {
     const p = createDefaultProfileConfig({ agentKind: 'claude', accounts: { app } });
-    expect(p.features).toEqual({ meeting: true, webConsole: true, codex: true, cot: true });
+    expect(p.features).toEqual({ meeting: true, webConsole: true, codex: true, cot: true, hermes: true });
     for (const f of ['meeting', 'webConsole', 'codex', 'cot'] as const) {
       expect(featureEnabled(p, f)).toBe(true);
     }
@@ -26,7 +26,7 @@ describe('f03p-slim-#1 profile features switch', () => {
       accounts: { app },
       features: { meeting: false, webConsole: 'no', codex: 0, cot: false, bogus: false },
     });
-    expect(p.features).toEqual({ meeting: false, webConsole: true, codex: true, cot: false });
+    expect(p.features).toEqual({ meeting: false, webConsole: true, codex: true, cot: false, hermes: true });
     expect(featureEnabled(p, 'meeting')).toBe(false);
     expect(featureEnabled(p, 'cot')).toBe(false);
   });
@@ -44,6 +44,7 @@ describe('f03p-slim-#1 profile features switch', () => {
       webConsole: true,
       codex: false,
       cot: true,
+      hermes: true,
     });
 
     const on = createDefaultProfileConfig({ agentKind: 'claude', accounts: { app } });

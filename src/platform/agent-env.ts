@@ -24,10 +24,14 @@ const BASE_PREFIXES = ['LC_'];
 const AGENT_PREFIXES: Record<string, string[]> = {
   claude: ['ANTHROPIC_', 'CLAUDE_'],
   codex: ['OPENAI_', 'CODEX_'],
+  // f0.4+: Hermes reads its provider keys from its own ~/.hermes/.env. No
+  // prefix passes: HERMES_YOLO_MODE / HERMES_IGNORE_RULES … in the daemon env
+  // would change a turn's launch policy. The adapter forwards HERMES_HOME only.
+  hermes: [],
 };
 
 export function buildAgentEnv(input: {
-  agent: 'claude' | 'codex';
+  agent: 'claude' | 'codex' | 'hermes';
   base?: NodeJS.ProcessEnv;
   overrides?: NodeJS.ProcessEnv;
   /** Extra daemon env names the owner explicitly passes through (profile agentEnv.passthrough). */

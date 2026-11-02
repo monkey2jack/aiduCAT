@@ -1,7 +1,7 @@
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { CardActionEvent, NormalizedMessage } from '@larksuite/channel';
-import { claudeCapability, codexCapability } from '../../../src/agent/capability.js';
+import { claudeCapability, codexCapability, hermesCapability } from '../../../src/agent/capability.js';
 import { ActiveRuns } from '../../../src/bot/active-runs.js';
 import type { ChatModeCache } from '../../../src/bot/chat-mode-cache.js';
 import { PendingQueue } from '../../../src/bot/pending-queue.js';
@@ -41,6 +41,22 @@ const cleanups: Array<() => Promise<void>> = [];
 describe('agent-aware resume commands', () => {
   afterEach(async () => {
     await Promise.all(cleanups.splice(0).map((cleanup) => cleanup()));
+  });
+
+  it('f0.4+ Hermes: /resume explains that Hermes keeps its own sessions; /new starts a new one', async () => {
+    const h = await createHarness('hermes');
+    expect(h.identity.agentId).toBe('hermes');
+    h.sessions.set('chat-1', 'hermes1|o=local-abc@', h.identity.cwdRealpath);
+    h.catalog.upsertActive({ ...h.identity, sessionId: 'hermes1|o=local-abc@', now: 1000 });
+
+    await expect(h.run('/resume')).resolves.toBe(true);
+    expect(lastMarkdown(h.channel)).toContain('Hermes Agent 的历史会话由 Hermes 自己保管');
+    await expect(h.run('/resume use local-abc')).resolves.toBe(true);
+    expect(lastMarkdown(h.channel)).toContain('/new');
+
+    await expect(h.run('/new')).resolves.toBe(true);
+    expect(h.catalog.activeFor(h.identity)).toBeUndefined();
+    expect(h.sessions.resumeFor('chat-1', h.identity.cwdRealpath)).toBeUndefined();
   });
 
   it('archives only the current catalog entry when starting a new conversation', async () => {
@@ -382,7 +398,12 @@ async function commandIdentity(
 ): Promise<SessionCatalogIdentity> {
   const workspace = await resolveWorkingDirectory(cwd);
   if (!workspace.ok) throw new Error(workspace.userVisible);
-  const capability = agentKind === 'codex' ? codexCapability(profileConfig) : claudeCapability(profileConfig);
+  const capability =
+    agentKind === 'codex'
+      ? codexCapability(profileConfig)
+      : agentKind === 'hermes'
+        ? hermesCapability(profileConfig)
+        : claudeCapability(profileConfig);
   const access = canUseDm(profileConfig, controls, 'ou-user');
   const policy = evaluateRunPolicy({
     scope: {

@@ -43,7 +43,7 @@ export interface ModelCardOpts {
   /** Currently stored effort, if any. */
   currentEffort?: string;
   /** Agent runtime kind (claude or codex), used for dynamic effort hints and options. */
-  agentKind?: 'claude' | 'codex';
+  agentKind?: 'claude' | 'codex' | 'hermes';
   /**
    * f04-group-cmd-model: set when /model was opened in a group — the card
    * then only changes this group. `own` = the group already has its own
@@ -266,7 +266,7 @@ export function modelSavedCard(
   effort: string,
   provider?: string,
   defaultProviderName?: string,
-  agentKind?: 'claude' | 'codex',
+  agentKind?: 'claude' | 'codex' | 'hermes',
   /** f04-group-cmd-model: 'chat' = saved for this group only. */
   scope?: 'chat' | 'default',
 ): object {

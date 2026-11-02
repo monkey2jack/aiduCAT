@@ -66,7 +66,7 @@ type StoredProfileConfig = Pick<
   | 'larkCli'
 > &
   // f0.2: optional extension block survives save cycles.
-  Partial<Pick<ProfileConfig, 'modelProviders' | 'defaultProviderName' | 'agentEnv'>> & {
+  Partial<Pick<ProfileConfig, 'modelProviders' | 'defaultProviderName' | 'agentEnv' | 'hermes'>> & {
     /** f03p-slim-#1: only the switched-off modules are written. */
     features?: Partial<ProfileFeatures>;
   };
@@ -104,6 +104,7 @@ function serializeProfileConfig(profile: ProfileConfig): StoredProfileConfig {
     workspaces: profile.workspaces,
     permissions: profile.permissions,
     ...(profile.codex ? { codex: profile.codex } : {}),
+    ...(profile.hermes ? { hermes: profile.hermes } : {}),
     attachments: profile.attachments,
     comments: {},
     meeting: profile.meeting,
@@ -309,7 +310,7 @@ async function pathExists(path: string): Promise<boolean> {
 }
 
 export function agentKindFromString(value: string | undefined): AgentKind | undefined {
-  if (value === 'claude' || value === 'codex') return value;
+  if (value === 'claude' || value === 'codex' || value === 'hermes') return value;
   if (value === undefined) return undefined;
   throw new Error(`unsupported agent: ${value}`);
 }

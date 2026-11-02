@@ -36,7 +36,7 @@ export function briefAgentError(raw: string): string {
   if (/bubblewrap is required/i.test(text)) {
     return '本机缺少 bubblewrap（非 owner 轮次的隔离要用它），Claude Code 没能启动';
   }
-  const exit = /^(claude|codex) exited with code (\d+)(?::\s*)?(.*)$/i.exec(text);
+  const exit = /^(claude|codex|hermes) exited with code (\d+)(?::\s*)?(.*)$/i.exec(text);
   if (exit) {
     const detail = (exit[3] ?? '').trim();
     text = `${exit[1]} 进程异常退出（code ${exit[2]}）${detail ? `：${detail}` : ''}`;

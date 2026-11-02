@@ -5,7 +5,9 @@ import { readFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { dirname, isAbsolute } from 'node:path';
 import type { LarkChannel, NormalizedMessage } from '@larksuite/channel';
-import { claudeCapability, codexCapability } from '../agent/capability';
+import { capabilityFor } from '../agent/capability';
+import { outsiderToolsets } from '../agent/hermes/argv';
+import { hermesSessionDisplay } from '../agent/hermes/session-key';
 import { DEFAULT_MODEL, normalizeModelSelection, resolveModelArg, supportedModels } from '../agent/models';
 import type { AgentAdapter } from '../agent/types';
 import type { ActiveRuns } from '../bot/active-runs';
@@ -177,7 +179,7 @@ type Handler = (args: string, ctx: CommandContext) => Promise<void>;
 
 interface ResumeCandidate {
   scopeId: string;
-  agentId: 'claude' | 'codex';
+  agentId: 'claude' | 'codex' | 'hermes';
   cwdRealpath: string;
   policyFingerprint: string;
   sessionId?: string;
@@ -661,7 +663,15 @@ function listScopedWorkspaces(ctx: CommandContext): Record<string, string> {
   return scoped;
 }
 
+/** f0.4+: Hermes keeps its own session store; aiduCAT resumes the scope's session automatically. */
+const HERMES_RESUME_REPLY =
+  'Hermes Agent 的历史会话由 Hermes 自己保管，aiduCAT 暂不提供列表和切换：同一个聊天会自动接着上次的会话聊，发 /new 开新会话。';
+
 async function handleResume(args: string, ctx: CommandContext): Promise<void> {
+  if (ctx.controls.profileConfig.agentKind === 'hermes') {
+    await reply(ctx, HERMES_RESUME_REPLY);
+    return;
+  }
   const parts = args.trim().split(/\s+/).filter(Boolean);
   const sub = parts[0] ?? '';
   const rest = parts.slice(1).join(' ').trim();
@@ -907,6 +917,14 @@ function selectedResumeCwd(ctx: CommandContext): string | undefined {
 function runtimeAccessStatus(
   profileConfig: ProfileConfig,
 ): { label: string; value: string } {
+  if (profileConfig.agentKind === 'hermes') {
+    // f0.4+: Hermes has no permission mode/sandbox of its own here: the owner's
+    // turns run unattended (--yolo), everyone else gets a chat-only toolset.
+    const tools = profileConfig.hermes?.outsiderToolsets?.length
+      ? outsiderToolsets(profileConfig.hermes.outsiderToolsets).join(',')
+      : 'todo';
+    return { label: 'tools', value: `owner 全部（--yolo）/ 其他人 ${tools}` };
+  }
   if (profileConfig.agentKind === 'claude') {
     return {
       label: 'permission',
@@ -959,6 +977,7 @@ async function handleStatus(_args: string, ctx: CommandContext): Promise<void> {
   const isAdmin = canRunAdminCommand(ctx.controls.profileConfig, ctx.controls, ctx.msg.senderId).ok;
   const sess = ctx.sessions.getRaw(ctx.scope);
   const isCodex = ctx.controls.profileConfig.agentKind === 'codex';
+  const isHermes = ctx.controls.profileConfig.agentKind === 'hermes';
   const catalogEntry =
     isCodex && ctx.sessionCatalog && ctx.sessionCatalogIdentity
       ? ctx.sessionCatalog.activeFor(ctx.sessionCatalogIdentity)
@@ -966,7 +985,11 @@ async function handleStatus(_args: string, ctx: CommandContext): Promise<void> {
   const card = statusCard({
     profileName: ctx.controls.profile,
     cwd,
-    sessionId: isCodex ? catalogEntry?.threadId : sess?.sessionId,
+    sessionId: isCodex
+      ? catalogEntry?.threadId
+      : isHermes
+        ? hermesSessionDisplay(sess?.sessionId)
+        : sess?.sessionId,
     emptySessionText: isCodex ? '(未建立)' : undefined,
     sessionStale: !isCodex && Boolean(cwd && sess && sess.cwd !== cwd),
     agentName: ctx.agent.displayName,
@@ -985,7 +1008,8 @@ async function handleStatus(_args: string, ctx: CommandContext): Promise<void> {
     sessionUpdatedAt: sess?.updatedAt,
     // f031-func-#2: 🚩 from the Claude transcript's first line; falls back
     // to the stored stats start when there is no transcript.
-    sessionStartedAt: isCodex ? undefined : await transcriptStartedAt(sess?.sessionId, sess?.cwd),
+    sessionStartedAt:
+      isCodex || isHermes ? undefined : await transcriptStartedAt(sess?.sessionId, sess?.cwd),
     modelLine: await (async () => {
       // f031-#8: context = latest main-line call's input + cache_read +
       // cache_creation (SessionStore.recordUsage). Window + 🗜️ come from the
@@ -1324,9 +1348,7 @@ async function handleDoctor(args: string, ctx: CommandContext): Promise<void> {
   doctorLastByOperator.set(rateKey, now);
 
   const capability =
-    ctx.controls.profileConfig.agentKind === 'codex'
-      ? codexCapability(ctx.controls.profileConfig)
-      : claudeCapability(ctx.controls.profileConfig);
+    capabilityFor(ctx.controls.profileConfig);
   const policy = evaluateRunPolicy({
     scope: {
       source: 'im',

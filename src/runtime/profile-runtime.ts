@@ -90,6 +90,9 @@ export function createRuntimeProfileConfig(
     ...(input.agentKind === 'codex'
       ? { codex: input.codex ?? { binaryPath: process.env.LARK_CHANNEL_CODEX_BIN ?? 'codex' } }
       : {}),
+    ...(input.agentKind === 'hermes'
+      ? { hermes: input.hermes ?? { binaryPath: process.env.LARK_CHANNEL_HERMES_BIN ?? 'hermes' } }
+      : {}),
   });
 }
 
@@ -609,7 +612,7 @@ class UserCancelledError extends Error {
 }
 
 function displayAgentKind(kind: AgentKind): string {
-  return kind === 'claude' ? 'Claude Code' : 'Codex CLI';
+  return kind === 'claude' ? 'Claude Code' : kind === 'hermes' ? 'Hermes Agent' : 'Codex CLI';
 }
 
 async function maybeMigrateRootPlaintextSecret(

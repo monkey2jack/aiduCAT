@@ -56,6 +56,20 @@ export async function createRuntimeAgent(
       envPassthrough: profileConfig.agentEnv?.passthrough ?? [],
     });
   }
+  if (profileConfig.agentKind === 'hermes') {
+    if (!featureEnabled(profileConfig, 'hermes')) {
+      throw new Error(`${FEATURE_OFF_REPLY}：hermes（profile features.hermes=false）`);
+    }
+    const { HermesAdapter } = await import('../agent/hermes/adapter');
+    const hermes = profileConfig.hermes;
+    return new HermesAdapter({
+      binary: hermes?.binaryPath ?? process.env.LARK_CHANNEL_HERMES_BIN ?? 'hermes',
+      ...(hermes?.profile ? { hermesProfile: hermes.profile } : {}),
+      ...(hermes?.outsiderToolsets ? { outsiderToolsets: hermes.outsiderToolsets } : {}),
+      larkChannel,
+      envPassthrough: profileConfig.agentEnv?.passthrough ?? [],
+    });
+  }
   return new ClaudeAdapter({
     larkChannel,
     envPassthrough: profileConfig.agentEnv?.passthrough ?? [],
@@ -70,9 +84,10 @@ export async function checkRuntimeAgentAvailability(agent: AgentAdapter): Promis
   if (ok) return { ok: true };
   const diagnostic = {
     code: 'agent-binary-not-found' as const,
-    agentId: agent.id === 'codex' ? ('codex' as const) : ('claude' as const),
+    agentId:
+      agent.id === 'codex' ? ('codex' as const) : agent.id === 'hermes' ? ('hermes' as const) : ('claude' as const),
     agentName: agent.displayName,
-    command: agent.id === 'codex' ? 'codex' : 'claude',
+    command: agent.id === 'codex' ? 'codex' : agent.id === 'hermes' ? 'hermes' : 'claude',
   };
   return { ok: false, diagnostic, error: new AgentPreflightError(diagnostic) };
 }

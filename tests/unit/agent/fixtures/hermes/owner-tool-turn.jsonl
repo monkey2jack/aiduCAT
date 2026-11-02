@@ -1,0 +1,6 @@
+{"type": "system", "subtype": "init", "model": "", "session_id": "", "timestamp": 1793601591545}
+{"type": "tool_use", "name": "terminal", "tool_call_id": "call_16558_0", "input": {"command": "echo $((1+1))"}, "timestamp": 1793601638453}
+{"type": "tool_result", "name": "terminal", "tool_call_id": "call_16558_0", "output": "{\"output\": \"2\", \"exit_code\": 0, \"error\": null}", "duration_ms": 102, "is_error": false, "timestamp": 1793601638556}
+{"type": "text", "text": "\n\n1+1等于", "timestamp": 1793601641217}
+{"type": "text", "text": "2。", "timestamp": 1793601641239}
+{"type": "result", "session_id": "local-3733bc276b20d1feb987fd1f57b19d34af4ff0c85bcfc9436658723a787adb9b", "exit_code": 0, "text": "1+1等于2。", "tokens": {"input": 25036, "output": 169, "total": 25205, "cache_read": 12288, "cache_write": 0}, "duration_ms": 54785, "timestamp": 1793601646330}

@@ -16,7 +16,7 @@ import {
   type PermissionSource,
 } from './permissions';
 
-export type AgentKind = 'claude' | 'codex';
+export type AgentKind = 'claude' | 'codex' | 'hermes';
 export type SandboxMode = CodexSandboxMode;
 export type { AccessMode, PermissionConfig, PermissionSource };
 
@@ -59,6 +59,20 @@ export interface SandboxConfig {
   max?: SandboxMode;
   defaultMode: SandboxMode;
   maxMode: SandboxMode;
+}
+
+/**
+ * f0.4+: Hermes Agent profile settings (`agentKind: 'hermes'`).
+ *  - binaryPath:       the `hermes` command (default `hermes`, or LARK_CHANNEL_HERMES_BIN)
+ *  - profile:          Hermes profile to run under (`hermes --profile <name>`);
+ *                      unset = Hermes's own default profile
+ *  - outsiderToolsets: toolsets for non-owner turns, limited to `todo`/`web`
+ *                      (default `todo` = chat only)
+ */
+export interface HermesConfig {
+  binaryPath: string;
+  profile?: string;
+  outsiderToolsets?: string[];
 }
 
 export interface CodexConfig {
@@ -140,6 +154,7 @@ export interface MeetingConfig {
  *  - meeting:    in-meeting agent (/meeting, vc.bot.* pushes)
  *  - webConsole: local web console (`run/start --web-ui`, `aiduCAT ui`, /config console line)
  *  - codex:      Codex CLI agent (agentKind codex, codex /resume history)
+ *  - hermes:     Hermes Agent (agentKind hermes)
  *  - cot:        Feishu CoT process messages (/config「COT 过程消息」)
  */
 export interface ProfileFeatures {
@@ -147,9 +162,10 @@ export interface ProfileFeatures {
   webConsole: boolean;
   codex: boolean;
   cot: boolean;
+  hermes: boolean;
 }
 export type FeatureName = keyof ProfileFeatures;
-export const FEATURE_NAMES: readonly FeatureName[] = ['meeting', 'webConsole', 'codex', 'cot'];
+export const FEATURE_NAMES: readonly FeatureName[] = ['meeting', 'webConsole', 'codex', 'cot', 'hermes'];
 /** What a switched-off module answers. */
 export const FEATURE_OFF_REPLY = '此功能未开启';
 
@@ -168,6 +184,7 @@ function normalizeFeatures(input: unknown): ProfileFeatures {
     webConsole: raw.webConsole !== false,
     codex: raw.codex !== false,
     cot: raw.cot !== false,
+    hermes: raw.hermes !== false,
   };
 }
 
@@ -244,6 +261,8 @@ export interface ProfileConfig {
   permissions: PermissionConfig;
   permissionSource?: PermissionSource;
   codex?: CodexConfig;
+  /** f0.4+: Hermes Agent settings, required when agentKind is 'hermes'. */
+  hermes?: HermesConfig;
   attachments: AttachmentConfig;
   comments: CommentConfig;
   /** In-meeting agent settings. See {@link MeetingConfig}. */
@@ -318,6 +337,7 @@ export interface CreateDefaultProfileConfigInput {
   sandbox?: Partial<SandboxConfig>;
   permissions?: Partial<PermissionConfig>;
   codex?: CodexConfig;
+  hermes?: HermesConfig;
   secrets?: SecretsConfig;
   features?: Partial<ProfileFeatures>;
 }
@@ -357,6 +377,7 @@ export function normalizeProfileConfig(input: unknown): ProfileConfig {
     sandbox?: Partial<SandboxConfig>;
     permissions?: Partial<PermissionConfig>;
     codex?: CodexConfig & { flags?: unknown };
+    hermes?: unknown;
     attachments?: Partial<AttachmentConfig>;
     comments?: unknown;
     meeting?: unknown;
@@ -368,8 +389,8 @@ export function normalizeProfileConfig(input: unknown): ProfileConfig {
   if (raw.schemaVersion !== 2) {
     throw new Error('profile schemaVersion must be 2');
   }
-  if (raw.agentKind !== 'claude' && raw.agentKind !== 'codex') {
-    throw new Error('agentKind must be claude or codex');
+  if (raw.agentKind !== 'claude' && raw.agentKind !== 'codex' && raw.agentKind !== 'hermes') {
+    throw new Error('agentKind must be claude, codex or hermes');
   }
   const accounts = normalizeAccounts(raw.accounts);
   if (raw.agentKind === 'codex' && !raw.codex) {
@@ -412,6 +433,7 @@ export function normalizeProfileConfig(input: unknown): ProfileConfig {
       ? { defaultProviderName: raw.defaultProviderName.trim() }
       : {}),
     ...(raw.codex ? { codex: normalizeCodex(raw.codex) } : {}),
+    ...(raw.hermes || raw.agentKind === 'hermes' ? { hermes: normalizeHermes(raw.hermes) } : {}),
     ...normalizeAgentEnv(raw.agentEnv),
     attachments: {
       maxCount: numberOr(raw.attachments?.maxCount, 10),
@@ -547,6 +569,25 @@ function normalizeCodex(input: CodexConfig & { flags?: unknown }): CodexConfig {
     ignoreRules: input.ignoreRules !== false,
   };
   return codex;
+}
+
+/** f0.4+: a hermes profile without a `hermes` block runs the `hermes` on PATH. */
+function normalizeHermes(input: unknown): HermesConfig {
+  const raw = (input && typeof input === 'object' ? input : {}) as Record<string, unknown>;
+  const binaryPath =
+    typeof raw.binaryPath === 'string' && raw.binaryPath.trim() ? raw.binaryPath.trim() : 'hermes';
+  const profile =
+    typeof raw.profile === 'string' && /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(raw.profile.trim())
+      ? raw.profile.trim()
+      : undefined;
+  const toolsets = Array.isArray(raw.outsiderToolsets)
+    ? raw.outsiderToolsets.filter((t): t is string => typeof t === 'string' && /^[a-z_]{1,32}$/.test(t))
+    : undefined;
+  return {
+    binaryPath,
+    ...(profile ? { profile } : {}),
+    ...(toolsets && toolsets.length > 0 ? { outsiderToolsets: toolsets } : {}),
+  };
 }
 
 function normalizeComments(_input: unknown): CommentConfig {
