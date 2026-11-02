@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { AGENT_FAILED_PUBLIC_NOTICE } from './user-facing-error';
 import { mkdir } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import type { CommentEvent, LarkChannel } from '@larksuite/channel';
@@ -417,7 +418,12 @@ export async function handleCommentMention(deps: CommentDeps): Promise<void> {
       }
 
       let reply = stripMarkdown(answer.trim());
-      if (errorMsg) reply = `⚠️ Claude 报错：${errorMsg}`;
+      // f0.4 之后的修复 (bwrap): a doc comment is never a private chat — the
+      // raw agent error stays in the log (run-executor logs it), never in the doc.
+      if (errorMsg) {
+        log.info('run', 'error-shown', { audience: 'public', masked: true, source: 'comment' });
+        reply = `⚠️ ${AGENT_FAILED_PUBLIC_NOTICE}`;
+      }
       if (!reply) reply = '（无回复内容）';
       if (reply.length > REPLY_MAX_CHARS) reply = `${reply.slice(0, REPLY_MAX_CHARS - 1)}…`;
 

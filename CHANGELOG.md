@@ -48,6 +48,8 @@ aiduCAT 的版本号用 `f` 前缀（f0.1、f0.2+ …），`package.json` 里是
 - 共用的 `config.json` 锁原来只等约 1 秒，同样改成上面的重试。
 - 注册表里进程已死的旧记录直接清掉，不会因为对方刚拿锁还没写完锁信息而让本进程启动失败。
 - **群里可以开「全员可用」**：以前群在白名单还不够，发言人本人也得在 allowedUsers / admins / owner 里，否则静默不回（小猴² 11-02 09:53 群里被别人 @ 不回，日志 `skip-not-allowed-user reason=denied-user`）。现在 profile `access.chatAllowAllUsers` 列出的群（且在 `allowedChats` 里）所有真人成员都能用；在群里发 `/invite alluser` 开/关（只有 owner/管理员能发，热更新不用重启）；`/remove group` 会一起清掉这个开关。其它机器人仍按 `allowedBots` 拒绝，owner/管理员、@ 规则不变；不开的群行为不变。非 owner 的轮次照旧不带 settings.json 里的凭据。
+- **非 owner 轮次启动失败不再把原始英文报错发到群里**（小猴² 11-02 11:14 群里被别人 @，回了「⚠️ claude exited with code 1: … bubblewrap is required …」）。原因：非 owner 的轮次设了 `CLAUDE_CODE_SUBPROCESS_ENV_SCRUB=1`，Claude Code 2.1.3xx 在 Linux 上因此必须有 bubblewrap，没装就直接起不来；与私聊并发无关。现在 agent 进程启动失败/异常退出时：群聊、非 owner 私聊、文档评论一律只显示「暂时没法处理这条消息，请稍后再试。原因已记到日志，管理员会去看。」；owner 私聊显示一行简短原因；完整报错只进日志（`run failed`）。消息预处理失败（附件、引用等）同样按这个规则。隔离不变（非 owner 仍设 SCRUB=1）。Linux 上启动时如果 PATH 里没有 `bwrap`，日志里 warn `bwrap-missing`（装 `bubblewrap socat`）。
+- 非 owner 轮次结束后清掉 Claude Code 沙箱在工作目录里留下的空占位文件（`.env*`、`package.json`、各种 lock、`.npmrc`、`node_modules/.bin`、`.claude/{agents,commands}` 等）：只删这一轮新建、并且仍是空文件/只有空目录的；原来就有的、有内容的一律不动。owner 轮次不受影响。
 
 ## f0.3+ — 2026-10-31（`8d6b4d1`，package 0.3.2）
 

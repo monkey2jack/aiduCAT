@@ -192,6 +192,8 @@ DMs do not require an @ mention; groups and topics require `@bot` by default. Ma
 
 An allowlisted group is not enough: the sender must also be in allowedUsers / admins / owner — unless `/invite alluser` was sent in that group to let every member use the bot (stored in `access.chatAllowAllUsers`, only for allowlisted groups; send it again to turn it off). Other bots are rejected unless listed in `access.allowedBots` (and the group is allowlisted). Team mode only serves the owner's own tenant. Card button clicks are re-checked with the same rules. `@all` in replies becomes the plain text "@所有人". Groups get the same streaming card (with its panel) as DMs; tool lines in the panel are hidden in groups unless `preferences.showToolCallsInGroups` is `true`.
 
+Runs started by anyone but the owner (group members, allowlisted users) need bubblewrap on Linux: `sudo apt-get install -y bubblewrap socat` (without it the startup log warns `bwrap-missing` and Claude Code cannot start for those runs). They run isolated — chat and read files only, no Bash, no edits. If the agent fails, groups only see a short "can't handle this right now" notice; the full error goes to the log, and only the owner's private chat shows a one-line reason.
+
 ### Cloud-doc comments
 
 Cloud-doc comments use the DM allowlist: only owner / allowedUsers / admins can trigger a run by mentioning the bot in a comment. Comment runs are capped at `workspace`, and the document body and other people's replies reach the agent as untrusted content.

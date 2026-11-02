@@ -192,6 +192,8 @@ aiduCAT profile export <name> --include-secrets --yes
 
 群在白名单还不够：群里发言的人本人也要在 allowedUsers / admins / owner 里——除非在该群发 `/invite alluser` 开了「全员可用」（写进 `access.chatAllowAllUsers`，只对已在白名单的群生效，再发一次关闭）；别的机器人默认被拒（bot-at-bot 要在 `access.allowedBots` 里显式写，且群在白名单）；team 模式只对 owner 同租户的人开放。卡片按钮点击按同一规则复核。回复里的 @所有人 会变成文字「@所有人」，不会真的 @全员。群里的回复和私聊一样是带折叠面板的流式卡片；面板里的工具行在群里默认隐藏，`preferences.showToolCallsInGroups: true` 才显示。
 
+非 owner 的轮次（群里别人 @、白名单用户）在 Linux 上需要 bubblewrap：`sudo apt-get install -y bubblewrap socat`（没装时启动日志会 warn `bwrap-missing`，这类轮次的 Claude Code 起不来）。这类轮次带隔离，只能对话和读文件，不能跑 Bash、不能改文件；agent 出错时群里只显示「暂时没法处理」，完整报错只进日志，只有 owner 私聊会看到一行简短原因。
+
 ### 云文档评论
 
 Cloud-doc comments use the DM allowlist: 云文档评论与私聊同一白名单——只有 owner / allowedUsers / admins 在评论里 @ 机器人才会运行；评论运行权限封顶 `workspace`，文档正文和别人的回复按不可信内容交给 agent。

@@ -11,6 +11,7 @@ import {
   claudeUserConfigDir,
   readUserSettingsEnvNames,
 } from './owner-only-settings';
+import { cleanupSandboxPlaceholders, snapshotPlaceholders } from './sandbox-placeholders';
 import { spawnProcess, type SpawnedProcessByStdio } from '../../platform/spawn';
 import { buildBridgeSystemPrompt } from '../bridge-system-prompt';
 import { buildLarkChannelEnv, type LarkChannelEnvContext } from '../lark-channel-env';
@@ -100,6 +101,10 @@ export class ClaudeAdapter implements AgentAdapter {
           );
         })();
     const systemPromptFile = writeSystemPromptFile(buildBridgeSystemPrompt(this.botIdentity), nonOwnerSettings);
+    // f0.4 之后的修复 (bwrap): the sandbox a non-owner run starts leaves empty
+    // placeholder files in cwd; note what was there so exit can tidy up.
+    const placeholdersBefore = ownerRun ? undefined : snapshotPlaceholders(opts.cwd);
+    const cwdForCleanup = opts.cwd;
 
     const args = [
       '-p',
@@ -200,6 +205,10 @@ export class ClaudeAdapter implements AgentAdapter {
     child.on('exit', (code, signal) => {
       log.info('agent', 'exit', { pid: child.pid ?? null, code, signal });
       systemPromptFile.cleanup();
+      if (placeholdersBefore) {
+        const removed = cleanupSandboxPlaceholders(cwdForCleanup, placeholdersBefore);
+        if (removed.length > 0) log.info('agent', 'sandbox-placeholders-cleaned', { count: removed.length });
+      }
     });
     child.stdin.on('error', (err) => {
       log.warn('agent', 'stdin-error', { message: err.message });

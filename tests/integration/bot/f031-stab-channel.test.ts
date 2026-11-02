@@ -214,7 +214,8 @@ import { MediaCache } from '../../../src/media/cache.js';
 describe('f031-stab-#16 pre-run failures reach the user', () => {
   it('f031-stab-#16 attachment step throws → explicit error reply, no agent run', async () => {
     vi.spyOn(MediaCache.prototype, 'resolve').mockRejectedValue(new Error('ENOSPC: no space left on device'));
-    const h = await start({ events: doneOnly });
+    // f0.4 之后的修复 (bwrap): the owner's private chat keeps the reason …
+    const h = await start({ events: doneOnly, botOwnerId: 'ou_user' });
     await h.handlers.message?.(dmMessage('om_pre1', '看看这个'));
     await waitFor(() => h.sent.length >= 1);
     const text = String(h.sent[0]!.content.text ?? h.sent[0]!.content.markdown ?? '');
@@ -222,6 +223,17 @@ describe('f031-stab-#16 pre-run failures reach the user', () => {
     expect(text).toContain('ENOSPC');
     expect(text).toContain('重发');
     expect(h.sent[0]!.options).toMatchObject({ replyTo: 'om_pre1' });
+    expect(h.agent.runOptions).toHaveLength(0);
+  });
+
+  it('f04-bwrap pre-run failure for a non-owner: friendly notice, no raw error', async () => {
+    vi.spyOn(MediaCache.prototype, 'resolve').mockRejectedValue(new Error('ENOSPC: no space left on device'));
+    const h = await start({ events: doneOnly, botOwnerId: 'ou_someone_else' });
+    await h.handlers.message?.(dmMessage('om_pre1b', '看看这个'));
+    await waitFor(() => h.sent.length >= 1);
+    const text = String(h.sent[0]!.content.text ?? h.sent[0]!.content.markdown ?? '');
+    expect(text).toContain('暂时没能处理');
+    expect(text).not.toContain('ENOSPC');
     expect(h.agent.runOptions).toHaveLength(0);
   });
 

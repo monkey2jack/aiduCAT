@@ -6,6 +6,7 @@ import { getShutdownDrainMs, isComplete, type AppConfig } from '../config/schema
 import type { AgentKind, ProfileConfig } from '../config/profile-schema';
 import type { AgentAdapter } from '../agent/types';
 import { log } from '../core/logger';
+import { bwrapMissingHint } from '../agent/claude/bwrap-check';
 import { refreshOwnerControls } from '../policy/owner';
 import { SessionStore } from '../session/store';
 import { SessionCatalog } from '../session/catalog';
@@ -380,6 +381,11 @@ export class Supervisor {
     if (this.opts.runPreflight !== false) {
       const availability = await checkRuntimeAgentAvailability(agent);
       if (!availability.ok) throw availability.error;
+    }
+    // f0.4 之后的修复 (bwrap): non-owner runs need bubblewrap on Linux.
+    if (agent.id === 'claude') {
+      const hint = bwrapMissingHint();
+      if (hint) log.warn('agent', 'bwrap-missing', { profile: appPaths.profile, hint });
     }
 
     const sessions = new SessionStore(appPaths.sessionsFile);

@@ -61,6 +61,12 @@ import {
   requireMentionForChat,
   senderFactsOf,
 } from '../policy/access';
+import {
+  errorAudienceOf,
+  presentAgentErrors,
+  PRE_RUN_FAILED_PUBLIC_NOTICE,
+  type ErrorAudience,
+} from './user-facing-error';
 // f03p-slim-#3/#7: meeting modules are imported only when the feature is on
 // and meeting.enabled is set.
 import type { MeetingManager } from '../meeting/manager';
@@ -457,7 +463,7 @@ export async function startChannel(deps: StartChannelDeps): Promise<BridgeChanne
         // f031-stab-#16: a pre-run step failed before anything reached the
         // user — say so instead of staying silent.
         if (err instanceof PreRunError) {
-          await sendPreRunFailure(channel, lastMsg, err).catch((sendErr) =>
+          await sendPreRunFailure(channel, lastMsg, err, controls.botOwnerId).catch((sendErr) =>
             log.warn('flush', 'pre-run-notice-failed', { err: String(sendErr) }),
           );
         }
@@ -1187,7 +1193,8 @@ async function preRun<T>(step: PreRunStep, fn: () => Promise<T>): Promise<T> {
   }
 }
 
-export function preRunFailureText(err: PreRunError): string {
+export function preRunFailureText(err: PreRunError, audience: ErrorAudience = 'owner-dm'): string {
+  if (audience === 'public') return PRE_RUN_FAILED_PUBLIC_NOTICE;
   const raw = err.original instanceof Error ? err.original.message : String(err.original);
   const reason = raw.replace(/\s+/g, ' ').trim().slice(0, 200) || '未知错误';
   return `⚠️ 这条消息没能交给 agent：${PRE_RUN_STEP_LABEL[err.step]}时出错（${reason}）。请重发一次；反复出现请查看 aiduCAT 日志。`;
@@ -1197,8 +1204,12 @@ async function sendPreRunFailure(
   channel: LarkChannel,
   msg: NormalizedMessage,
   err: PreRunError,
+  botOwnerId: string | undefined,
 ): Promise<void> {
-  const text = preRunFailureText(err);
+  // f0.4 之后的修复 (bwrap): only the owner's private chat sees the reason.
+  const audience: ErrorAudience =
+    msg.chatType === 'p2p' && Boolean(botOwnerId) && msg.senderId === botOwnerId ? 'owner-dm' : 'public';
+  const text = preRunFailureText(err, audience);
   const opts = msg.threadId
     ? { replyTo: msg.messageId, replyInThread: true }
     : { replyTo: msg.messageId };
@@ -1411,7 +1422,12 @@ async function runAgentBatch(deps: RunBatchDeps): Promise<void> {
   const { execution, cwdRealpath: cwd } = flow;
   activePolicyFingerprints.set(scope, flow.policy.policyFingerprint);
   const handle = execution.handle;
-  const eventStream = execution.subscribe();
+  // f0.4 之后的修复 (bwrap): an agent failure shows a friendly notice to
+  // anyone but the owner in a private chat; the raw error stays in the log.
+  const eventStream = presentAgentErrors(
+    execution.subscribe(),
+    errorAudienceOf(accessDecision, firstMsg.chatType),
+  );
   if (flow.resumeFrom) {
     log.info('session', 'resume', { sessionId: flow.resumeFrom, cwd });
   } else {
