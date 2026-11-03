@@ -29,14 +29,17 @@ let cachedKeys: Partial<Record<VendorLogo, string>> | undefined;
 function loadKeys(): Partial<Record<VendorLogo, string>> {
   if (cachedKeys) return cachedKeys;
   try {
-    // assets/ ships next to the compiled dist/ — walk up from CWD first
-    // (service runs with WorkingDirectory=repo root), then from this module.
+    // f0.4+ fix (2026-11-04): the module's own repo first. summer runs with
+    // WorkingDirectory=/data/home, where a stale assets/lark-logo-keys.json
+    // (Oct 27, no agent keys) shadowed the shipped one, so the new agent
+    // icons never loaded. CWD is only the last resort now.
+    const here = dirname(fileURLToPath(import.meta.url));
     const candidates = [
-      join(process.cwd(), 'assets', 'lark-logo-keys.json'),
       // f03p-slim: built bundle lives in <repo>/dist/ → ../assets
-      join(dirname(fileURLToPath(import.meta.url)), '../assets/lark-logo-keys.json'),
+      join(here, '../assets/lark-logo-keys.json'),
       // source tree (src/card/) → ../../assets
-      join(dirname(fileURLToPath(import.meta.url)), '../../assets/lark-logo-keys.json'),
+      join(here, '../../assets/lark-logo-keys.json'),
+      join(process.cwd(), 'assets', 'lark-logo-keys.json'),
     ];
     for (const p of candidates) {
       try {

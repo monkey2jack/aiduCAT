@@ -59,3 +59,13 @@ describe('panel header agent icon', () => {
     expect(h.icon_expanded_angle).toBe(-180);
   });
 });
+
+describe('logo keys file lookup (f0.4+ fix 2026-11-04)', () => {
+  it('prefers the repo assets over a stale assets/ under the working directory', async () => {
+    const { readFileSync } = await import('node:fs');
+    const src = readFileSync(new URL('../../../src/card/model-logo.ts', import.meta.url), 'utf8');
+    const block = src.slice(src.indexOf('const candidates = ['), src.indexOf('];', src.indexOf('const candidates = [')));
+    expect(block.indexOf("'../assets/lark-logo-keys.json'")).toBeGreaterThan(-1);
+    expect(block.indexOf('process.cwd()')).toBeGreaterThan(block.indexOf("'../../assets/lark-logo-keys.json'"));
+  });
+});
