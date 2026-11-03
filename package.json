@@ -1,6 +1,6 @@
 {
   "name": "aiduCAT",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "description": "aiduCAT☤爱嘟妙咪飞 — Coding Agent Texting: Feishu/Lark streaming card for Claude Code / Codex / Hermes Agent (lark-coding-agent-bridge based)",
   "type": "module",
   "packageManager": "pnpm@10.33.0",

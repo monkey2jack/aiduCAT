@@ -4,6 +4,15 @@ aiduCAT 的版本号用 `f` 前缀（f0.1、f0.2+ …），`package.json` 里是
 
 > **tag 说明**：`f0.2++` 原先误指 `6fa62f8`（package 0.2.1），**已于 2026-10-31 修正**为真实发布提交 `c7ff90d`（0.2.2）。`f0.2+`、`v0.2.1` 核实后保持 `6fa62f8`：f0.2+ 的 GitHub Release 于 2026-10-20 01:17 从 main 发布，当时 main 的头部就是 `6fa62f8`（package 0.2.1）；版本号提交 `f01fcd2` 与它只差文档和一个测试，没有代码差别。
 
+## f0.4++ — 2026-11-04（package 0.4.2）
+
+基于 f0.4+（`26dca50`）。主题：**卡片更简约**——面板图标按编程工具（Claude Code / Codex / Hermes Agent）显示，☤ 去掉，状态词顶格。
+
+- **旧的模型厂商 logo 全部去掉**（Wei 11-04「把原来那些模型的 logo 去掉，不要过多空间了」）：`assets/lark-logo-keys.json` 只留 `claudecode`、`codex`、`hermes` 三个键，按模型名猜厂商的代码（`vendorLogoForModel` / `logoImgKeyForModel`）删除。
+- **面板图标改成编程工具图标，☤ 去掉**（Wei 11-04「根据用户使用的工具来决定 logo」「美观、简约」）：面板头左侧不再按模型名猜厂商 logo，改按 profile 的 `agentKind` 显示 Claude Code / Codex / Hermes Agent 图标（lobehub `claudecode-color`、`codex-color`、`hermesagent`）；Codex 跑 Claude 模型也显示 Codex。收到消息即出一个一行面板「[工具图标] aiduCATing…」（原来是不带面板的一行「☤aiduCATing…」）；agent 开始工作后面板头一行「[工具图标] 模型 · 💭 · 🛠️ · ⏱️」，Thinking… / Processing… 在面板正上方顶格（11-04 00:44 Wei 定：飞书面板头给图标留整列，状态词放头里没法顶格）；结束状态词消失。修：summer 服务工作目录 /data/home 下有份 10 月旧 `assets/lark-logo-keys.json` 先被读到，工具图标全丢，改为先读仓库内的清单。☤ 从状态词和会话列表摘要里都去掉。版本号不变（0.4.1）。
+- 中文名改为「爱嘟妙咪飞」（妙=喵、咪=猫、飞=飞书；绝妙设计的迷人简洁飞书卡片），全称 aiduCAT☤爱嘟妙咪飞；英文全称 Coding Agent Texting（去掉 Claude，三种 agent 通用）。
+- （已被工具图标取代）**模型 logo 回到面板头左侧、紧挨模型名，展开时不再翻转**（Wei 11-02 19:33「我就要这个模型logo在model的左侧，这样才自然才对，能不翻滚最好」）：以前有 logo 时没写 `icon_position`，代码注释以为默认靠左，其实飞书卡片 JSON 2.0 折叠面板默认 `right`，所以 logo 跑到面板最右边、占了箭头的位置，展开时还跟着箭头转 180 度。现在有 logo 时显式 `icon_position: left`、`icon_expanded_angle: 0`；没有 logo 的模型照旧右侧折叠箭头、展开翻转。版本号不变（0.4.1）。
+
 ## f0.4+ — 2026-11-02（package 0.4.1）
 
 基于 f0.4（`8b210ba`）。主题：**Hermes Agent 成为第三种 agent**——同一套飞书泡波卡片，背后可以按 profile 选 Claude Code、Codex 或 Hermes Agent。f0.4 发布后在 main 上陆续上线的修复（群全员可用、外人轮次能干活、群命令只给管理员、按聊天配模型等）也一起收进这个版本。
@@ -30,11 +39,6 @@ aiduCAT 的版本号用 `f` 前缀（f0.1、f0.2+ …），`package.json` 里是
 - **群里别人 @ 的轮次能正常干活了**（Wei 11-02 11:52）：非 owner 轮次仍开 `CLAUDE_CODE_SUBPROCESS_ENV_SCRUB=1`（Claude Code 因此强制 permission mode = default），现在通过 `--settings` 显式放行 Bash（只在 bubblewrap 沙箱里跑、关掉绕过沙箱的口子）和工作目录内的读写；同时拒读 settings.json（含项目级 `.claude/settings*.json`，以前项目级的漏了）、`~/.ssh`、`~/.aiducat`、`~/.config/aiduCAT`、`~/.lark-cli` 等凭据目录、`.env`、`/proc`，工作目录的 `CLAUDE.md` / `.claude/` / `.mcp.json` 只读。装了 containerd 的机器（`/run/containerd` 0711）上沙箱 Bash 原来每条都报 `Can't mkdir parents for /run/containerd/containerd.sock`（bubblewrap 0.12 + claude-code#93144）：现在这类轮次在私有挂载命名空间里起 Claude Code（`unshare --user --map-current-user --mount`，只映射自己的 uid，起 Claude 前 `setpriv` 清掉能力），把 `/run/containerd` 盖成空目录再交给沙箱——**不改 `/run/containerd` 权限**，这类轮次反而更碰不到 containerd。主机禁止非特权用户命名空间时（如 Ubuntu 24.04 的 AppArmor 默认）自动不套这一层（启动后第一次用到时探测一次，日志 warn `runtime-dir-mask-unavailable`），照旧直接起 Claude Code。owner 轮次不变。沙箱里的 Bash 不能联网（Claude Code 沙箱默认），WebFetch/WebSearch 可用。
 - **群里别人 @ 的轮次，沙箱里的 Bash 也能上外网了**（Wei 11-02 12:43「让小猴在群里跟正常的 agent 一样就行，只是不能让非管理员用 slash 命令，不要太复杂」）：非 owner 的 `--settings` 多放行一条 `WebFetch(domain:*)`，Claude Code 会把它当成沙箱网络白名单（≥ 2.1.186），`curl`/`pip`/`npm` 直接通。文件隔离不变：settings、`~/.ssh`、`~/.aiducat`、`~/.config/aiduCAT`、`~/.lark-cli`、`.env`、`/proc` 照样读不到；本机回环/内网地址仍被沙箱代理拒绝（摸不到 aiduMEI、网页控制台）；非管理员仍不能用斜杠命令。顺手删掉 `buildNonOwnerSettings` 不传 cwd 时的旧分支（只剩一种形状）。注意：`git` 会用机器自己 `~/.gitconfig` 里的 `http.proxy`，如果那是本机回环代理（summer 是 `127.0.0.1:18888`），沙箱里的 git 访问 GitHub 会失败。
 - **外人轮次可以额外封掉指定文件**（Wei 11-02 13:52）：profile 新增 `access.outsiderDenyRead`（路径列表，绝对路径或 `~/…`；最后一段可带 `*`，按运行时目录里现有文件展开，备份 `.bak_*` 一起盖住）。非 owner 轮次里这些路径 Read 工具读不到、沙箱 Bash 的 `cat`/`python` 等也读不到，也不能改写；owner 轮次不变；不配就没有额外限制（嘟嘟没配）。小猴² 配上了 `角色记忆.md`、`服务器信息.md`、`救火手册.md`（含备份）——这三份有服务器/拓扑信息，以前外人轮次照小猴守则第 1–3 条会去读；守则文件本身照常每轮带上。改配置要重启该服务。
-
-### f0.4+ 之后的修复
-- **面板图标改成编程工具图标，☤ 去掉**（Wei 11-04「根据用户使用的工具来决定 logo」「美观、简约」）：面板头左侧不再按模型名猜厂商 logo，改按 profile 的 `agentKind` 显示 Claude Code / Codex / Hermes Agent 图标（lobehub `claudecode-color`、`codex-color`、`hermesagent`）；Codex 跑 Claude 模型也显示 Codex。收到消息即出一个一行面板「[工具图标] aiduCATing…」（原来是不带面板的一行「☤aiduCATing…」）；agent 开始工作后面板头一行「[工具图标] 模型 · 💭 · 🛠️ · ⏱️」，Thinking… / Processing… 在面板正上方顶格（11-04 00:44 Wei 定：飞书面板头给图标留整列，状态词放头里没法顶格）；结束状态词消失。修：summer 服务工作目录 /data/home 下有份 10 月旧 `assets/lark-logo-keys.json` 先被读到，工具图标全丢，改为先读仓库内的清单。☤ 从状态词和会话列表摘要里都去掉。版本号不变（0.4.1）。
-- 中文名改为「爱嘟妙咪飞」（妙=喵、咪=猫、飞=飞书；绝妙设计的迷人简洁飞书卡片），全称 aiduCAT☤爱嘟妙咪飞；英文全称 Coding Agent Texting（去掉 Claude，三种 agent 通用）。
-- **模型 logo 回到面板头左侧、紧挨模型名，展开时不再翻转**（Wei 11-02 19:33「我就要这个模型logo在model的左侧，这样才自然才对，能不翻滚最好」）：以前有 logo 时没写 `icon_position`，代码注释以为默认靠左，其实飞书卡片 JSON 2.0 折叠面板默认 `right`，所以 logo 跑到面板最右边、占了箭头的位置，展开时还跟着箭头转 180 度。现在有 logo 时显式 `icon_position: left`、`icon_expanded_angle: 0`；没有 logo 的模型照旧右侧折叠箭头、展开翻转。版本号不变（0.4.1）。
 
 ## f0.4 — 2026-11-02（package 0.4.0）
 

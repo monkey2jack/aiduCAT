@@ -12,7 +12,7 @@
 >
 > 给 Claude Code / Codex CLI / Hermes Agent 穿上泡波流的飞书卡片：宣白纸面上灌一道深蓝流光，一只猫，零噪音。
 
-[![Version](https://img.shields.io/badge/version-f0.4%2B-blue.svg)](https://github.com/monkey2jack/aiduCAT)
+[![Version](https://img.shields.io/badge/version-f0.4%2B%2B-blue.svg)](https://github.com/monkey2jack/aiduCAT)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Node 20+](https://img.shields.io/badge/node-20.12%2B-brightgreen.svg)](https://nodejs.org/)
 [![Claude Code](https://img.shields.io/badge/agent-Claude%20Code%20%7C%20Codex%20%7C%20Hermes-orange.svg)](https://docs.anthropic.com/en/docs/claude-code/quickstart)
@@ -207,7 +207,12 @@ Thinking…                                            ← 运行中面板正上
 - **空跑**（agent 什么都没产出就退出）：直接显示红色报错卡和原因，提示重发
 - **超长 / 被拒**：正文超 25KB 时，第 1 张卡显示到预算边界（在段落、代码块、表格边界切开，末尾「…（未完，见下一张卡）」），其余按顺序发「续 2/N」「续 3/N」卡片，markdown 正常渲染、每张 <30KB、内容不重复；超大代码块按行切开并重新开合代码围栏，超大表格按行切开并重复表头；只有续卡被飞书拒收时，该张起的剩余部分才改发一次纯文本。飞书拒收卡片时先用严格卡（无图片链接、正文 12KB）重试，再不行发纯文本，最后发一句「卡片发送失败」
 
-## 更新日志（f0.4+）
+## 更新日志（f0.4++）
+
+- **卡片更简约**：面板图标按编程工具（Claude Code / Codex / Hermes Agent）显示，不再按模型猜厂商 logo（旧厂商 logo 全部删除）；☤ 去掉；Thinking… / Processing… 在面板正上方顶格
+- 中文名「爱嘟妙咪飞」，英文全称 Coding Agent Texting
+
+### f0.4+
 
 - **Hermes Agent 成为第三种 agent**：`aiduCAT profile create <名字> --agent hermes`，按 profile 选 Claude Code / Codex / Hermes；owner 和其他人各一份 Hermes 会话，外人轮次只给 todo（可加 web）、不加载记忆和规则；/stop 只停卡片（Hermes 后台会把那一轮做完）。详见上方「Hermes Agent 接入」
 - 并入 f0.4 发布后的修复：群「全员可用」（`/invite alluser`）、群里只有管理员能用斜杠命令、`/model` 按聊天单独配置、外人轮次在沙箱里能正常干活和上外网、`access.outsiderDenyRead` 额外封文件、两个服务同时启动不撞锁、非 owner 轮次报错不外露
@@ -369,7 +374,7 @@ export ANTHROPIC_API_KEY="sk-ant-..."
 
 1. 准备 3 张 128px PNG（图标源：[lobehub icons-static-png](https://github.com/lobehub/lobe-icons) 的 `claudecode-color`、`codex-color`、`hermesagent`）。
 2. 用你的飞书应用凭证逐张调 `POST /open-apis/im/v1/images`（`image_type=message`）拿到 `img_key`。可用任意脚本/Postman 循环上传。
-3. 把 key 写进 `assets/lark-logo-keys.json` 的 `claudecode`、`codex`、`hermes` 三个键，重新 `pnpm build`。（文件里旧的厂商 logo 键已不再使用。）
+3. 把 key 写进 `assets/lark-logo-keys.json` 的 `claudecode`、`codex`、`hermes` 三个键，重新 `pnpm build`。
 4. 没有上传时功能自动降级：面板头不显示图标，不影响任何主功能。
 
 ### 工作目录与工作区

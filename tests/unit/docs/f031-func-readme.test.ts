@@ -7,11 +7,11 @@ const read = (f: string) => readFile(new URL(`../../../${f}`, import.meta.url), 
 const READMES = ['README.md', 'README.zh.md', 'README.en.md'];
 
 describe('f031-func-#5 READMEs + CHANGELOG match the code', () => {
-  it('f031-func-#5 all three READMEs carry the current badge (f0.4+, package 0.4.1)', async () => {
-    expect(pkg.version).toBe('0.4.1');
+  it('f031-func-#5 all three READMEs carry the current badge (f0.4+, package 0.4.2)', async () => {
+    expect(pkg.version).toBe('0.4.2');
     for (const f of READMES) {
       const md = await read(f);
-      expect(md, f).toContain('badge/version-f0.4%2B-blue');
+      expect(md, f).toContain('badge/version-f0.4%2B%2B-blue');
       expect(md, f).not.toMatch(/badge\/version-f0\.(1|2)/);
     }
   });

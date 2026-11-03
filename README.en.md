@@ -12,7 +12,7 @@
 >
 > Dress your Claude Code / Codex CLI / Hermes Agent in a Bubble-Wave Feishu card: deep-blue veins on paper white, one cat, zero noise.
 
-[![Version](https://img.shields.io/badge/version-f0.4%2B-blue.svg)](https://github.com/monkey2jack/aiduCAT)
+[![Version](https://img.shields.io/badge/version-f0.4%2B%2B-blue.svg)](https://github.com/monkey2jack/aiduCAT)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Node 20+](https://img.shields.io/badge/node-20.12%2B-brightgreen.svg)](https://nodejs.org/)
 [![Claude Code](https://img.shields.io/badge/agent-Claude%20Code%20%7C%20Codex%20%7C%20Hermes-orange.svg)](https://docs.anthropic.com/en/docs/claude-code/quickstart)
@@ -207,7 +207,12 @@ Thinking…                                            ← flush-left above the 
 - **Empty run** (the agent exits without output): a red error card with the reason, asking you to resend
 - **Too long / rejected**: an answer over 25KB fills card 1 up to the budget (cut at a paragraph, code-block or table boundary, ending in "…（未完，见下一张卡）"), then continues on ordered "续 2/N", "续 3/N" cards — rendered markdown, each <30KB, nothing repeated; an oversized code block is split between lines with the fence reopened, an oversized table between rows with the header repeated; only if Feishu rejects a continuation card does the rest from that card on go out once as plain text. if Feishu rejects the card, a strict card (no image links, 12KB answer) is retried, then plain text, then a one-line "card failed" notice
 
-## Changelog (f0.4+)
+## Changelog (f0.4++)
+
+- **Leaner card**: the panel icon is the coding agent (Claude Code / Codex / Hermes Agent) instead of a vendor logo guessed from the model (all vendor logos removed); ☤ dropped; Thinking… / Processing… sit flush-left right above the panel
+- Chinese name 爱嘟妙咪飞, full English name Coding Agent Texting
+
+### f0.4+
 
 - **Hermes Agent is the third agent**: `aiduCAT profile create <name> --agent hermes`; pick Claude Code / Codex / Hermes per profile; separate Hermes sessions for the owner and everyone else, outsider turns get `todo` only (optionally `web`) with no memory or rules; /stop stops the card (Hermes finishes the turn in the background). See "Hermes Agent" above
 - Includes the fixes shipped after f0.4: group "everyone may use" switch (`/invite alluser`), slash commands admin-only in groups, per-chat `/model`, outsider turns work (and reach the internet) inside the sandbox, extra `access.outsiderDenyRead` paths, two services starting together without lock errors, non-owner errors kept out of chats
@@ -366,7 +371,7 @@ The panel header shows the profile's coding agent icon (`agentKind`: claude → 
 
 1. Prepare 3 PNGs at 128px (from [lobehub icons-static-png](https://github.com/lobehub/lobe-icons): `claudecode-color`, `codex-color`, `hermesagent`).
 2. Upload each via the im/v1/images API with your app credentials and collect the returned `img_key`s.
-3. Put them under the `claudecode`, `codex` and `hermes` keys of `assets/lark-logo-keys.json` and rebuild (`pnpm build`). (The old vendor keys in that file are no longer used.)
+3. Put them under the `claudecode`, `codex` and `hermes` keys of `assets/lark-logo-keys.json` and rebuild (`pnpm build`).
 4. Without an upload the feature degrades gracefully: the header simply renders without an icon; no core functionality is affected.
 
 ### Working directories
