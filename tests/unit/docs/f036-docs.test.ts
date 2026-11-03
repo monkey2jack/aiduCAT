@@ -25,7 +25,9 @@ describe('f036 version f0.3.6 (merged into f0.4, now package 0.4.1) docs', () =>
     for (const f of READMES) {
       const md = await read(f);
       expect(md, f).toContain('/status');
-      expect(md, f).toMatch(/没有面板|no panel/);
+      // f0.4+ (Wei 2026-11-04): the placeholder is a one-line panel with the agent icon
+      expect(md, f).toMatch(/一行面板|one-line panel/);
+      expect(md, f).not.toContain('☤aiduCATing…');
     }
   });
 });

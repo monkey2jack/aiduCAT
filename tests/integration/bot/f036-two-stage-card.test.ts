@@ -276,7 +276,10 @@ const answer = (text: string): AgentEvent[] =>
 // f0.3.6 (Wei 2026-11-02): the placeholder card is one line「☤aiduCATing…」;
 // the panel joins the SAME card (next full-card update) at the agent's first
 // thinking / tool call / answer text. TPS only in /status.
-const hasPanel = (card: unknown) => JSON.stringify(card).includes('collapsible_panel');
+// f0.4+ (Wei 2026-11-04): the placeholder is already a one-line panel
+// 「[agent icon] aiduCATing…」; "the panel" here means the working panel with
+// the meta line (💭 / 🛠️ counters).
+const hasPanel = (card: unknown) => JSON.stringify(card).includes('💭');
 
 describe('f0.3.6 two-stage card (line first, panel on first agent output)', () => {
   it('f036 thinking turn: line only through intake + adoption; panel appears with the first thinking; one card', async () => {
@@ -295,7 +298,7 @@ describe('f0.3.6 two-stage card (line first, panel on first agent output)', () =
     });
     await h.handlers.message?.(message('om_s1', 'hi'));
     expect(hasPanel(h.updates[0])).toBe(false);
-    expect(JSON.stringify(h.updates[0])).toContain('☤aiduCATing…');
+    expect(JSON.stringify(h.updates[0])).toContain('"content":"aiduCATing…"');
     await waitFor(() => h.order.includes('agent-run'));
     await settle();
     // adopted, agent still silent → still just the line
@@ -306,7 +309,7 @@ describe('f0.3.6 two-stage card (line first, panel on first agent output)', () =
     const firstWithPanel = h.updates.findIndex(hasPanel);
     expect(firstWithPanel).toBeGreaterThan(0);
     // the first frame with a panel is the thinking frame
-    expect(JSON.stringify(h.updates[firstWithPanel])).toContain('☤Thinking…');
+    expect(JSON.stringify(h.updates[firstWithPanel])).toContain('Thinking…\\n');
     // once the panel is there it stays
     expect(h.updates.slice(firstWithPanel).every(hasPanel)).toBe(true);
     const last = JSON.stringify(h.updates.at(-1));
@@ -343,7 +346,7 @@ describe('f0.3.6 two-stage card (line first, panel on first agent output)', () =
     await h.handlers.message?.(message('om_s3', '@Bridge hi', 'group'));
     await waitFor(() => summaryOf(h.updates.at(-1)) === '✅Done');
     const firstWithPanel = h.updates.findIndex(hasPanel);
-    expect(JSON.stringify(h.updates[firstWithPanel])).toContain('☤Processing…');
+    expect(JSON.stringify(h.updates[firstWithPanel])).toContain('Processing…\\n');
     expect(JSON.stringify(h.updates.at(-1))).not.toContain('Bash');
   });
 

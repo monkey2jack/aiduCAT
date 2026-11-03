@@ -294,7 +294,7 @@ describe('f0.3.5 group chats get the same panel card as DMs', () => {
     const info = vi.spyOn(log, 'info');
     await h.handlers.message?.(message('om_g1', '@Bridge hi', 'group'));
     await waitFor(() => h.order.includes('card-open'));
-    expect(summaryOf(h.updates[0])).toBe('☤aiduCATing…');
+    expect(summaryOf(h.updates[0])).toBe('aiduCATing…');
     g.open();
     await waitFor(() => summaryOf(h.updates.at(-1)) === '✅Done');
     await settle();

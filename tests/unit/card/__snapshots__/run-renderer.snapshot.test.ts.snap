@@ -5,11 +5,6 @@ exports[`run card renderer snapshots > collapses consecutive tools while preserv
   "body": {
     "elements": [
       {
-        "content": "☤Processing…",
-        "tag": "markdown",
-        "text_size": "notation",
-      },
-      {
         "border": {
           "color": "grey",
           "corner_radius": "5px",
@@ -33,11 +28,12 @@ exports[`run card renderer snapshots > collapses consecutive tools while preserv
           "icon_expanded_angle": -180,
           "icon_position": "right",
           "title": {
-            "content": "💭 0 · 🛠️ 3",
+            "content": "Processing…
+💭 0 · 🛠️ 3",
             "tag": "markdown",
             "text_size": "notation",
           },
-          "vertical_align": "center",
+          "vertical_align": "bottom",
         },
         "padding": "6px 8px 6px 8px",
         "tag": "collapsible_panel",
@@ -48,7 +44,7 @@ exports[`run card renderer snapshots > collapses consecutive tools while preserv
   "config": {
     "streaming_mode": true,
     "summary": {
-      "content": "☤Processing…",
+      "content": "Processing…",
     },
   },
   "schema": "2.0",
@@ -110,11 +106,6 @@ exports[`run card renderer snapshots > renders active and completed thinking 1`]
   "body": {
     "elements": [
       {
-        "content": "☤Thinking…",
-        "tag": "markdown",
-        "text_size": "notation",
-      },
-      {
         "border": {
           "color": "grey",
           "corner_radius": "5px",
@@ -136,11 +127,12 @@ exports[`run card renderer snapshots > renders active and completed thinking 1`]
           "icon_expanded_angle": -180,
           "icon_position": "right",
           "title": {
-            "content": "💭 1 · 🛠️ 0",
+            "content": "Thinking…
+💭 1 · 🛠️ 0",
             "tag": "markdown",
             "text_size": "notation",
           },
-          "vertical_align": "center",
+          "vertical_align": "bottom",
         },
         "padding": "6px 8px 6px 8px",
         "tag": "collapsible_panel",
@@ -151,7 +143,7 @@ exports[`run card renderer snapshots > renders active and completed thinking 1`]
   "config": {
     "streaming_mode": true,
     "summary": {
-      "content": "☤Thinking…",
+      "content": "Thinking…",
     },
   },
   "schema": "2.0",
@@ -425,16 +417,43 @@ exports[`run card renderer snapshots > renders initial running state 1`] = `
   "body": {
     "elements": [
       {
-        "content": "☤aiduCATing…",
-        "tag": "markdown",
-        "text_size": "notation",
+        "border": {
+          "color": "grey",
+          "corner_radius": "5px",
+        },
+        "elements": [
+          {
+            "content": "_等待响应…_",
+            "tag": "markdown",
+            "text_size": "notation",
+          },
+        ],
+        "expanded": false,
+        "header": {
+          "icon": {
+            "size": "16px 16px",
+            "tag": "standard_icon",
+            "token": "down-small-ccm_outlined",
+          },
+          "icon_expanded_angle": -180,
+          "icon_position": "right",
+          "title": {
+            "content": "aiduCATing…",
+            "tag": "markdown",
+            "text_size": "notation",
+          },
+          "vertical_align": "center",
+        },
+        "padding": "6px 8px 6px 8px",
+        "tag": "collapsible_panel",
+        "vertical_spacing": "4px",
       },
     ],
   },
   "config": {
     "streaming_mode": true,
     "summary": {
-      "content": "☤aiduCATing…",
+      "content": "aiduCATing…",
     },
   },
   "schema": "2.0",
@@ -478,11 +497,6 @@ exports[`run card renderer snapshots > renders tool running, done, and error sta
   "body": {
     "elements": [
       {
-        "content": "☤Processing…",
-        "tag": "markdown",
-        "text_size": "notation",
-      },
-      {
         "border": {
           "color": "grey",
           "corner_radius": "5px",
@@ -504,11 +518,12 @@ exports[`run card renderer snapshots > renders tool running, done, and error sta
           "icon_expanded_angle": -180,
           "icon_position": "right",
           "title": {
-            "content": "💭 0 · 🛠️ 1",
+            "content": "Processing…
+💭 0 · 🛠️ 1",
             "tag": "markdown",
             "text_size": "notation",
           },
-          "vertical_align": "center",
+          "vertical_align": "bottom",
         },
         "padding": "6px 8px 6px 8px",
         "tag": "collapsible_panel",
@@ -519,7 +534,7 @@ exports[`run card renderer snapshots > renders tool running, done, and error sta
   "config": {
     "streaming_mode": true,
     "summary": {
-      "content": "☤Processing…",
+      "content": "Processing…",
     },
   },
   "schema": "2.0",

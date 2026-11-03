@@ -35,13 +35,13 @@ aiduCAT originates from and credits the upstream [zarazhangrui/lark-coding-agent
 |------|------|
 | 🤖 **Three agents, pick one** (f0.4+) | Each profile runs Claude Code, Codex CLI or Hermes Agent with the same cards, commands and allowlists; see "Hermes Agent" below |
 | 🫧 **Single Bubble-Wave panel** | The answer streams on top; thinking and every tool call fold into one collapsible panel (aiduPOP layout) |
-| ☤ **One-line counter header** | Panel header: `model · 💭 thinking segments · 🛠️ tools · ⏱️ elapsed`; the live status word (☤Thinking… / ☤Processing… / ☤aiduCATing…) sits above the panel and disappears on completion |
-| 🏷 **Model logos** | 30 vendor marks (OpenAI/Gemini/Claude/Grok/DeepSeek/Qwen/Kimi/Doubao/Zhipu…) follow `/model` and show in the panel header |
+| 💭 **Counter header** | Panel header: `model · 💭 thinking segments · 🛠️ tools · ⏱️ elapsed`; while running the header gains a status line on top (Thinking… / Processing… / aiduCATing…), gone on completion |
+| 🏷 **Agent icon** | The panel header shows the profile's coding agent (Claude Code / Codex / Hermes Agent), not the model vendor; the model id follows the icon |
 | 🔌 **Multi-provider** | `/model` card with Provider → Model → Effort dropdowns; provider keys resolve from env/secret refs, never plaintext; takes effect next turn without restart; 10router gateways only offer curated combos |
 | 🗜️ **Window-based auto-compact** | Compacts at 60% of the model window (`AIDUCAT_COMPACT_PCT`); the window comes from the 10router combo (when `/api/combos` carries a window field) or the provider's `contextWindow`; when neither has one aiduCAT sets nothing and Claude Code keeps `CLAUDE_CODE_MAX_CONTEXT_TOKENS` / `CLAUDE_CODE_AUTO_COMPACT_WINDOW` from its own `settings.json` (since f0.3.4 the full 10router `/v1/models` list is never pulled) |
 | 🚦 **Border = status** | done green / stopped yellow / error red / running grey — no trailing notes |
 | 🛟 **Rejected cards never hang** | Image markdown becomes links, HTML is stripped, answers over 25KB are split into ordered "续 i/N" continuation cards (cut at paragraph/code/table boundaries); if Feishu rejects the card it degrades (strict card → plain text → failure notice) instead of sticking on "Thinking" |
-| ☤ **aiduCATing… placeholder card** | The moment a message lands (even while queued behind a running round) a card appears with just one line「☤aiduCATing…」(no panel); the panel joins the same card at the agent's first thinking, tool call or answer text and then streams as usual; card mode no longer adds a Feishu reaction (markdown/text modes and Codex keep it). ⚡ TPS is shown only in `/status` (session average) |
+| ⏳ **aiduCATing… placeholder card** | The moment a message lands (even while queued behind a running round) a card appears as a one-line panel「[agent icon] aiduCATing…」; at the agent's first thinking, tool call or answer text the header grows to two lines (status / model counters, icon on the model line) and streams as usual; card mode no longer adds a Feishu reaction (markdown/text modes and Codex keep it). ⚡ TPS is shown only in `/status` (session average) |
 | 🗣 **Free-form `/model`** | Passes any gateway combo id through (e.g. `Gemini-3.8-Flash`), no allow-list |
 
 ## Quick start (from scratch)
@@ -193,8 +193,8 @@ One card, top to bottom:
 ```
 [the model's answer, streaming]
 
-☤Thinking…                                       ← live status word (aiduCATing / Thinking / Processing), gone on completion
-┌─ [logo] Claude-Opus-4.6 · 💭 2 · 🛠️ 4 · ⏱️ 38s ─┐  ← collapsed panel header: model · thinking segments · tools · elapsed
+┌─        Thinking…                              ─┐  ← header line 1 while running: status word (aiduCATing / Thinking / Processing), gone on completion
+│ [agent icon] Claude-Opus-4.6 · 💭 2 · 🛠️ 4 · ⏱️ 38s │  ← collapsed panel header: agent icon · model · thinking segments · tools · elapsed
 │ 💭 thinking text (up to 1500 chars)               │  ← when expanded
 │ - 🖥️ **Bash** — pnpm test                         │
 │ - 📖 **Read** — src/bot/channel.ts                │
@@ -213,7 +213,7 @@ One card, top to bottom:
 
 ### f0.4
 
-- A message gets a one-line 「☤aiduCATing…」 card right away; the panel joins the same card when the agent first thinks, calls a tool or writes; queued messages get their own card each, unused placeholder cards are recalled; no Feishu reaction in card mode
+- A message gets a one-line panel 「[agent icon] aiduCATing…」 right away; the header grows to two lines with counters when the agent first thinks, calls a tool or writes; queued messages get their own card each, unused placeholder cards are recalled; no Feishu reaction in card mode
 - Faster start: only 10router combos are loaded (no full `/v1/models` pull), the combo list refreshes in the background and is prewarmed at start
 - With no window field on the combo, the context window follows Claude Code's `settings.json` (e.g. 1M)
 - TPS is recomputed from each turn's real generation time (tool time removed) and shown only in `/status`; no ⚡ on cards
@@ -355,17 +355,17 @@ Same as B: point `baseUrl` at `http://127.0.0.1:11434` (Ollama: enable its OpenA
 | Capability | 10router users | Your gateway |
 |------|--------------|----------|
 | `/model` dropdown | pulls 10router's **curated combos** (`/api/combos`, management token) | pulls `<baseUrl>/v1/models` or uses the static `models` list |
-| Model logos | shipped (30 vendor icons) | upload your own tenant img_keys once (next section); without them the panel simply shows no icon |
+| Agent icons | shipped (Claude Code / Codex / Hermes) | upload your own tenant img_keys once (next section); without them the panel simply shows no icon |
 
 **Compliance note**: before pointing aiduCAT at any third-party gateway or free pool, make sure its terms of service allow programmatic access. aiduCAT does not and will not bypass upstream anti-abuse controls.
 
-### Model logos (panel header icon)
+### Agent icons (panel header icon)
 
-The panel header shows a vendor icon (OpenAI/Claude/Gemini, 30 vendors) at its far left, right before the model id; it does not rotate when the panel expands. Models without an icon show the collapse chevron on the right instead. Feishu cards reject external image URLs for `custom_icon` — they only render `img_key` values from images uploaded **to your own tenant** via `POST /open-apis/im/v1/images`. The shipped `assets/lark-logo-keys.json` is only valid for the tenant that uploaded them. For your own deployment:
+The panel header shows the profile's coding agent icon (`agentKind`: claude → Claude Code, codex → Codex, hermes → Hermes Agent) at its far left, regardless of the model; it does not rotate when the panel expands. Without an icon the collapse chevron shows on the right. With the two-line running header the icon is bottom-aligned to the model line. Feishu cards reject external image URLs for `custom_icon` — they only render `img_key` values from images uploaded **to your own tenant** via `POST /open-apis/im/v1/images`. The shipped `assets/lark-logo-keys.json` is only valid for the tenant that uploaded them. For your own deployment:
 
-1. Prepare 30 vendor PNGs at 128px (icons: [lobehub icons-static-png](https://github.com/lobehub/lobe-icons), ~1.97.x), named after the `VendorLogo` union in `src/card/model-logo.ts` (`openai.png`, `claude.png`, ...).
+1. Prepare 3 PNGs at 128px (from [lobehub icons-static-png](https://github.com/lobehub/lobe-icons): `claudecode-color`, `codex-color`, `hermesagent`).
 2. Upload each via the im/v1/images API with your app credentials and collect the returned `img_key`s.
-3. Overwrite `assets/lark-logo-keys.json` with your key map and rebuild (`pnpm build`).
+3. Put them under the `claudecode`, `codex` and `hermes` keys of `assets/lark-logo-keys.json` and rebuild (`pnpm build`). (The old vendor keys in that file are no longer used.)
 4. Without an upload the feature degrades gracefully: the header simply renders without an icon; no core functionality is affected.
 
 ### Working directories

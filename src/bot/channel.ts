@@ -373,6 +373,7 @@ export async function startChannel(deps: StartChannelDeps): Promise<BridgeChanne
       channel as unknown as ConstructorParameters<typeof EarlyCard>[0],
       msg.chatId,
       renderCard(initialState, {
+        agentKind: controls.profileConfig.agentKind,
         model: profileForChat(
           controls.profileConfig,
           msg.chatType === 'p2p' ? undefined : msg.chatId,
@@ -1544,6 +1545,8 @@ async function runAgentBatch(deps: RunBatchDeps): Promise<void> {
   const cardRenderOptions: import('../card/run-renderer').RunCardRenderOptions = {
     // aiduCAT: surface model + start time in the meta panel.
     model: modelSelection,
+    // f0.4+: panel icon = this profile's coding agent.
+    agentKind,
     startedAt: Date.now(),
     // aiduCAT: reasoning effort + this model's context window (f0.3.4: from
     // the cached 10router combo entry, never a network wait).

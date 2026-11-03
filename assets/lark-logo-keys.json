@@ -28,5 +28,8 @@
  "google": "img_v3_0216s_db12f67e-eadb-43f9-a98c-4586ee4f557g",
  "anthropic": "img_v3_0216s_7fc179e8-b7e4-4bba-8cb6-92690c7f482g",
  "stability": "img_v3_0216s_3a61562c-e919-46a1-9ad5-19d6d15922ag",
- "aidupark": "img_v3_0216t_366c2964-2f84-4c45-9fa3-7ee8ea088bdg"
+ "aidupark": "img_v3_0216t_366c2964-2f84-4c45-9fa3-7ee8ea088bdg",
+ "claudecode": "img_v3_02174_c5923217-0175-4c5e-bed0-d6d93601843g",
+ "codex": "img_v3_02174_a5a6736f-c51d-4c3d-a180-cb012856dc5g",
+ "hermes": "img_v3_02174_39240264-844a-4ac7-8968-e9acc8331c1g"
 }

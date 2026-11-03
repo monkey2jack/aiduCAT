@@ -280,16 +280,17 @@ describe('f0.3.5 ☤aiduCATing… card at intake (no reaction)', () => {
     await h.handlers.message?.(message('om_e1', 'hi'));
     // synchronously after intake: card already requested, agent not yet spawned
     expect(h.order).toEqual(['card-open']);
-    expect(summaryOf(h.updates[0])).toBe('☤aiduCATing…');
-    expect(JSON.stringify(h.updates[0])).toContain('☤aiduCATing…');
+    expect(summaryOf(h.updates[0])).toBe('aiduCATing…');
+    expect(JSON.stringify(h.updates[0])).toContain('"content":"aiduCATing…"');
     await waitFor(() => h.order.includes('agent-run'));
     // the run adopted the same card: still the placeholder word; f0.3.6: no
     // panel (and so no model logo) until the agent shows something
     expect(h.order.filter((o) => o === 'card-open')).toHaveLength(1);
-    expect(summaryOf(h.updates.at(-1))).toBe('☤aiduCATing…');
-    expect(JSON.stringify(h.updates.at(-1))).not.toContain('collapsible_panel');
+    // f0.4+: placeholder is a one-line panel — no counters until the agent shows work
+    expect(summaryOf(h.updates.at(-1))).toBe('aiduCATing…');
+    expect(JSON.stringify(h.updates.at(-1))).not.toContain('💭');
     g.open();
-    await waitFor(() => JSON.stringify(h.updates.at(-1)).includes('custom_icon'));
+    await waitFor(() => JSON.stringify(h.updates.at(-1)).includes('💭'));
     await waitFor(() => summaryOf(h.updates.at(-1)) === '✅Done');
     await settle();
     expect(JSON.stringify(h.updates.at(-1))).toContain('EARLY_ANSWER');

@@ -3,41 +3,48 @@ import { awaitingAgent, renderCard } from '../../../src/card/run-renderer.js';
 import { initialState, markInterrupted, markEmptyRun, reduce, type RunState } from '../../../src/card/run-state.js';
 import { statusCard, type StatusInfo } from '../../../src/card/templates.js';
 
-// f0.3.6 (Wei 2026-11-02): the placeholder card is ONE line「☤aiduCATing…」—
-// no panel — until the agent's first thinking / tool call / answer text;
+// f0.3.6 (Wei 2026-11-02): two-stage placeholder. f0.4+ (Wei 2026-11-04):
+// the placeholder is already a one-line panel「[icon] aiduCATing…」, ☤ gone — until the agent's first thinking / tool call / answer text;
 // then the panel joins the same card. TPS is no longer on the card.
 
 const json = (s: RunState, model = 'aiduPARK') => JSON.stringify(renderCard(s, { model, startedAt: Date.now() - 3_000 }));
 const elements = (s: RunState) =>
   (renderCard(s, { model: 'aiduPARK', startedAt: Date.now() }) as { body: { elements: Array<{ tag: string; content?: string }> } }).body.elements;
 
-describe('f0.3.6 two-stage placeholder card', () => {
-  it('received: exactly one element, the「☤aiduCATing…」line — no panel, no logo, no counters', () => {
+describe('f0.3.6 two-stage placeholder card (f0.4+: panel from the start, no ☤)', () => {
+  const panel = (s: RunState) => elements(s).find((e) => e.tag === 'collapsible_panel') as
+    | { header: { title: { content: string }; icon: { tag: string }; vertical_align: string } }
+    | undefined;
+
+  it('received: exactly one element, a one-line panel「aiduCATing…」— no counters, no ☤', () => {
     const els = elements(initialState);
     expect(els).toHaveLength(1);
-    expect(els[0]).toEqual({ tag: 'markdown', content: '☤aiduCATing…', text_size: 'notation' });
+    expect(els[0]!.tag).toBe('collapsible_panel');
+    expect(panel(initialState)!.header.title.content).toBe('aiduCATing…');
+    expect(panel(initialState)!.header.vertical_align).toBe('center');
     const j = json(initialState);
-    expect(j).not.toContain('collapsible_panel');
-    expect(j).not.toContain('custom_icon');
+    expect(j).not.toContain('☤');
     expect(j).not.toContain('💭');
     expect(j).toContain('"streaming_mode":true');
     expect(awaitingAgent(initialState)).toBe(true);
   });
 
-  it('first thinking → panel appears (☤Thinking…)', () => {
+  it('first thinking → two-line header (Thinking… / meta), icon bottom-aligned', () => {
     const s = reduce(initialState, { type: 'thinking', delta: '想一想' });
     expect(awaitingAgent(s)).toBe(false);
     const els = elements(s);
-    expect(els.map((e) => e.tag)).toEqual(['markdown', 'collapsible_panel']);
-    expect(els[0]!.content).toBe('☤Thinking…');
-    expect(json(s)).toContain('💭 1');
+    expect(els.map((e) => e.tag)).toEqual(['collapsible_panel']);
+    const h = panel(s)!.header;
+    expect(h.title.content.split('\n')[0]).toBe('Thinking…');
+    expect(h.title.content.split('\n')[1]).toContain('💭 1');
+    expect(h.vertical_align).toBe('bottom');
+    expect(json(s)).not.toContain('☤');
   });
 
-  it('first tool call → panel appears (☤Processing…)', () => {
+  it('first tool call → Processing… on header line 1', () => {
     const s = reduce(initialState, { type: 'tool_use', id: 't1', name: 'Bash', input: { command: 'ls' } });
-    const els = elements(s);
-    expect(els.map((e) => e.tag)).toEqual(['markdown', 'collapsible_panel']);
-    expect(els[0]!.content).toBe('☤Processing…');
+    expect(elements(s).map((e) => e.tag)).toEqual(['collapsible_panel']);
+    expect(panel(s)!.header.title.content.split('\n')[0]).toBe('Processing…');
   });
 
   it('tool call hidden by group prefs (tool blocks filtered) still brings the panel', () => {
@@ -50,14 +57,17 @@ describe('f0.3.6 two-stage placeholder card', () => {
   it('pure text turn: the panel appears together with the first answer text', () => {
     const s = reduce(initialState, { type: 'text', delta: '你好' });
     const els = elements(s);
-    expect(els.map((e) => e.tag)).toEqual(['markdown', 'markdown', 'collapsible_panel']);
+    expect(els.map((e) => e.tag)).toEqual(['markdown', 'collapsible_panel']);
     expect(els[0]!.content).toBe('你好');
-    expect(els[1]!.content).toBe('☤aiduCATing…');
+    expect(panel(s)!.header.title.content.split('\n')[0]).toBe('aiduCATing…');
     const done = reduce(s, { type: 'done', terminationReason: 'normal' });
     const j = json(done);
     expect(j).toContain('collapsible_panel');
     expect(j).toContain('💭 0 · 🛠️ 0');
     expect(j).not.toContain('tok/s');
+    // ended: back to one line, no status word
+    expect(panel(done)!.header.title.content).not.toContain('aiduCATing');
+    expect(panel(done)!.header.vertical_align).toBe('center');
   });
 
   it('final_text only (gateway) also ends the placeholder stage', () => {

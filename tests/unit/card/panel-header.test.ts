@@ -14,11 +14,11 @@ function panelTitle(card: object): string {
   return JSON.parse(`"${m[1]}"`);
 }
 
-/** The ☤ status line rendered between answer and panel (or null). */
+/** f0.4+: the status word is line 1 of a two-line panel header (or null). */
 function statusLine(card: object): string | null {
-  const json = JSON.stringify(card);
-  const m = json.match(/"content":"☤([^"]+)"/);
-  return m ? `☤${m[1]}` : null;
+  const lines = panelTitle(card).split('\n');
+  if (lines.length === 2) return lines[0]!;
+  return lines[0] === 'aiduCATing…' ? lines[0] : null;
 }
 
 describe('one-line minimal panel header (f0.2+ 猴哥点单 2026-10-20)', () => {
@@ -29,7 +29,7 @@ describe('one-line minimal panel header (f0.2+ 猴哥点单 2026-10-20)', () => 
       contextWindow: 1048576,
       startedAt: Date.now() - 5_000,
     });
-    expect(panelTitle(card)).toBe('Gemini-3.8-Flash · 💭 0 · 🛠️ 0 · ⏱️ 5s');
+    expect(panelTitle(card)).toBe('aiduCATing…\nGemini-3.8-Flash · 💭 0 · 🛠️ 0 · ⏱️ 5s');
     expect(panelTitle(card)).not.toContain('25k/1M');
     expect(panelTitle(card)).not.toContain('Max');
   });
@@ -51,22 +51,22 @@ describe('one-line minimal panel header (f0.2+ 猴哥点单 2026-10-20)', () => 
   });
 });
 
-describe('status line between answer and panel', () => {
+describe('status word on panel header line 1 (f0.4+, no ☤)', () => {
   it('f0.3.5: default running state (placeholder) renders aiduCATing…', () => {
     const card = renderCard(initialState, { model: 'M' });
-    expect(statusLine(card)).toBe('☤aiduCATing…');
+    expect(statusLine(card)).toBe('aiduCATing…');
   });
 
   it('thinking renders Thinking…', () => {
     const state = reduce(initialState, { type: 'thinking', delta: 'hmm' });
     const card = renderCard(state, { model: 'M' });
-    expect(statusLine(card)).toBe('☤Thinking…');
+    expect(statusLine(card)).toBe('Thinking…');
   });
 
   it('tool running renders Processing…', () => {
     const state = reduce(initialState, { type: 'tool_use', id: 't1', name: 'Bash', input: {} });
     const card = renderCard(state, { model: 'M' });
-    expect(statusLine(card)).toBe('☤Processing…');
+    expect(statusLine(card)).toBe('Processing…');
   });
 
   it('no status line once the run ends', () => {
@@ -80,5 +80,6 @@ describe('status line between answer and panel', () => {
     const json = JSON.stringify(renderCard(state, { model: 'M' }));
     expect(json).not.toContain('Tooling');
     expect(json).not.toContain('Reasoning...');
+    expect(json).not.toContain('☤');
   });
 });

@@ -20,7 +20,9 @@ export type VendorLogo =
   | 'kimi' | 'doubao' | 'hunyuan' | 'minimax' | 'stepfun' | 'zhipu'
   | 'chatglm' | 'baichuan' | 'yi' | 'spark' | 'wenxin' | 'sensenova'
   | 'internlm' | 'mistral' | 'cohere' | 'nvidia' | 'meta' | 'gemma'
-  | 'moonshot' | 'google' | 'anthropic' | 'stability' | 'inception' | 'aidupark';
+  | 'moonshot' | 'google' | 'anthropic' | 'stability' | 'inception' | 'aidupark'
+  // f0.4+ agent icons (Wei 2026-11-04): the panel shows the coding agent, not the model vendor.
+  | 'claudecode' | 'codex' | 'hermes';
 
 let cachedKeys: Partial<Record<VendorLogo, string>> | undefined;
 
@@ -107,4 +109,26 @@ export function logoImgKeyForModel(model: string | undefined): string | undefine
   const vendor = vendorLogoForModel(model);
   if (!vendor) return undefined;
   return loadKeys()[vendor];
+}
+
+/**
+ * f0.4+ (Wei 2026-11-04「根据用户使用的工具来决定 logo」): the card icon is the
+ * coding agent the profile runs (Claude Code / Codex / Hermes Agent), not the
+ * model vendor — a Codex profile on a Claude combo still shows Codex.
+ * Icons: lobehub icons-static-png claudecode-color / codex-color / hermesagent
+ * @128px, uploaded once with the 嘟嘟 bot (img_key works across our apps).
+ */
+export type AgentLogoKind = 'claude' | 'codex' | 'hermes';
+
+const AGENT_LOGO: Record<AgentLogoKind, VendorLogo> = {
+  claude: 'claudecode',
+  codex: 'codex',
+  hermes: 'hermes',
+};
+
+/** Feishu image_key for a coding agent, or undefined when un-mapped/unloaded. */
+export function logoImgKeyForAgent(agent: AgentLogoKind | undefined): string | undefined {
+  if (!agent) return undefined;
+  const vendor = AGENT_LOGO[agent];
+  return vendor ? loadKeys()[vendor] : undefined;
 }

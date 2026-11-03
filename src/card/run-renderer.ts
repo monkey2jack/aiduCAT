@@ -1,6 +1,6 @@
 import { deepMaskEmails } from './mask-email';
 import { timeoutNotice, type Block, type RunState, type ToolEntry } from './run-state';
-import { logoImgKeyForModel } from './model-logo';
+import { logoImgKeyForAgent, type AgentLogoKind } from './model-logo';
 import { maskEmails } from './mask-email';
 import { TRUNCATION_NOTE, sanitizeCardMarkdown, sanitizePlainText, truncateUtf8, utf8Bytes } from './sanitize';
 import { jsonBytes, paginateMarkdown } from './paginate';
@@ -36,6 +36,8 @@ export interface RunCardRenderOptions {
   signCallback?: (action: string) => string;
   /** aiduCAT: model name shown in the meta panel (e.g. Gemini-3.8-Flash). */
   model?: string;
+  /** f0.4+: the profile's coding agent — picks the panel header icon. */
+  agentKind?: AgentLogoKind;
   /** aiduCAT: epoch ms when the run started, for elapsed-time in meta panel. */
   startedAt?: number;
   /** aiduCAT: reasoning effort (low..max), shown on the panel header line 1. */
@@ -213,14 +215,18 @@ function buildCard(
       : '';
 
   // aiduCAT: one collapsed panel carrying reasoning + every tool call + the
-  // run meta header (aiduPOP layout). Hidden when there is nothing to show.
-  // f0.3.6: two-stage placeholder — until the agent shows anything (first
-  // thinking, tool call or answer text) the card is the single「☤aiduCATing…」
-  // line; the panel joins the same card on the next full-card update.
-  const popPanel = awaitingAgent(state) ? null : aiduPopPanel(state, options, budget);
-  // f0.2+ 猴哥点单: notation size so the status line reads as a caption,
-  // matching the panel body size instead of full answer text.
-  if (statusWord) elements.push(noteMd(`☤${statusWord}`));
+  // run meta header (aiduPOP layout).
+  // f0.4+ (Wei 2026-11-04「美观、简约」): the status word lives INSIDE the
+  // panel header and ☤ is gone.
+  //   received → one line   [agent icon] aiduCATing…
+  //   working  → two lines  Thinking… / Processing…
+  //                         [agent icon] model · 💭 n · 🛠️ n · ⏱️ t
+  //   ended    → one line   [agent icon] model · …   (border colour = result)
+  // The header has a single icon slot; bottom alignment keeps the icon on
+  // the model line, never beside Thinking/Processing.
+  const popPanel = awaitingAgent(state)
+    ? placeholderPanel(options)
+    : aiduPopPanel(state, options, budget, statusWord);
   if (popPanel) elements.push(popPanel);
 
   // aiduCAT clarify: when the run ended while waiting on a parsed
@@ -322,7 +328,12 @@ function errorText(msg: string): string {
  * collapsed header stays pure meta (counts + elapsed); on completion the
  * counts/values are final.
  */
-function aiduPopPanel(state: RunState, options: RunCardRenderOptions, budget: RenderBudget): object | null {
+function aiduPopPanel(
+  state: RunState,
+  options: RunCardRenderOptions,
+  budget: RenderBudget,
+  statusWord = '',
+): object | null {
   const tools = state.blocks.filter((b): b is Extract<Block, { kind: 'tool' }> => b.kind === 'tool');
   const hasReasoning = state.reasoning.content.trim().length > 0;
   const hasError = state.terminal === 'error' && !!state.errorMsg;
@@ -330,7 +341,8 @@ function aiduPopPanel(state: RunState, options: RunCardRenderOptions, budget: Re
   const meta = metaHeader(state, options);
   if (!hasReasoning && tools.length === 0 && !meta) return null;
 
-  const title = meta;
+  // f0.4+: while running, line 1 is the bare status word (no icon, no ☤).
+  const title = statusWord && meta ? `${statusWord}\n${meta}` : meta || statusWord;
 
   const bodyParts: string[] = [];
   if (hasError) bodyParts.push(`⚠️ ${errorText(state.errorMsg!)}`);
@@ -354,11 +366,30 @@ function aiduPopPanel(state: RunState, options: RunCardRenderOptions, budget: Re
     // running/none grey, done green, stopped/timeout yellow, error red.
     border: panelBorderColor(state),
     body: sanitizeCardMarkdown(bodyParts.join('\n\n'), { withLinks: !options.strict }) || '_（无过程记录）_',
-    // f0.2 猴哥点单: the panel header icon slot shows the current model's
-    // vendor logo; un-mapped models keep the default chevron.
-    ...(options.model && logoImgKeyForModel(options.model)
-      ? { logoImgKey: logoImgKeyForModel(options.model) }
-      : {}),
+    // f0.4+: the header icon is the coding agent (no more model logos);
+    // no agent icon → the default chevron.
+    ...agentLogoOpt(options),
+    twoLine: !!statusWord && !!meta,
+  });
+}
+
+function agentLogoOpt(options: RunCardRenderOptions): { logoImgKey?: string } {
+  const key = logoImgKeyForAgent(options.agentKind);
+  return key ? { logoImgKey: key } : {};
+}
+
+/**
+ * f0.4+ (Wei 2026-11-04): the instant reply is already a panel — one header
+ * line「[agent icon] aiduCATing…」. Feishu needs a panel body, so a short
+ * waiting note sits inside for anyone who expands it.
+ */
+function placeholderPanel(options: RunCardRenderOptions): object {
+  return collapsiblePanel({
+    title: 'aiduCATing…',
+    expanded: false,
+    border: 'grey',
+    body: '_等待响应…_',
+    ...agentLogoOpt(options),
   });
 }
 
@@ -432,15 +463,17 @@ interface PanelOpts {
   expanded: boolean;
   border: 'grey' | 'red' | 'blue' | 'green' | 'yellow';
   body: string;
-  /** f0.2: model logo img_key — replaces the chevron in the header icon slot. */
+  /** f0.2: logo img_key — replaces the chevron in the header icon slot (f0.4+: agent icon). */
   logoImgKey?: string;
+  /** f0.4+: status line + meta line — the icon aligns to the bottom (meta) line. */
+  twoLine?: boolean;
 }
 
 function collapsiblePanel(opts: PanelOpts): object {
   return {
     tag: 'collapsible_panel',
     expanded: opts.expanded,
-    header: panelHeader(opts.title, opts.logoImgKey),
+    header: panelHeader(opts.title, opts.logoImgKey, opts.twoLine),
     border: { color: opts.border, corner_radius: '5px' },
     vertical_spacing: '4px',
     padding: '6px 8px 6px 8px',
@@ -448,13 +481,15 @@ function collapsiblePanel(opts: PanelOpts): object {
   };
 }
 
-function panelHeader(titleMd: string, logoImgKey?: string): object {
+function panelHeader(titleMd: string, logoImgKey?: string, twoLine = false): object {
   return {
     // aiduCAT: text_size=notation shrinks the collapsed header title to match
     // aiduPOP's small panel type (verified live: <font> tags are ignored on
     // panel headers, text_size on the title markdown is not).
     title: { tag: 'markdown', content: titleMd, text_size: 'notation' },
-    vertical_align: 'center',
+    // f0.4+: with two lines the single icon slot follows the bottom (meta)
+    // line, so Thinking/Processing on line 1 carries no icon.
+    vertical_align: twoLine ? 'bottom' : 'center',
     // f0.2 猴哥点单: logo replaces the chevron in the header icon slot.
     // Feishu's icon_position defaults to `right` (open.feishu.cn card JSON 2.0
     // collapsible_panel: left = far left of the title area, right = far right,
@@ -490,10 +525,11 @@ function summaryText(state: RunState): string {
   if (state.terminal === 'idle_timeout') return '⚠️Timeout';
   if (state.terminal === 'error') return '❌Error';
   if (state.terminal === 'done') return '✅Done';
-  if (state.footer === 'tool_running') return '☤Processing…';
+  // f0.4+ (Wei 2026-11-04): ☤ dropped everywhere, chat-list preview included.
+  if (state.footer === 'tool_running') return 'Processing…';
   // f0.3.5: the placeholder card (received) reads the same as streaming.
-  if (state.footer === 'streaming' || state.footer === 'received') return '☤aiduCATing…';
-  return '☤Thinking…';
+  if (state.footer === 'streaming' || state.footer === 'received') return 'aiduCATing…';
+  return 'Thinking…';
 }
 
 function truncate(s: string, max: number): string {

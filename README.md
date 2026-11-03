@@ -35,13 +35,13 @@ aiduCAT 起源并致敬上游 [zarazhangrui/lark-coding-agent-bridge](https://gi
 |------|------|
 | 🤖 **三种 agent 三选一**（f0.4+） | 每个 profile 选 Claude Code、Codex CLI 或 Hermes Agent，同一套卡片、命令和白名单；见下方「Hermes Agent 接入」 |
 | 🫧 **单面板泡波样式** | 答案流式显示在上方；思考与全部工具调用收进一只折叠面板（aiduPOP 布局） |
-| ☤ **单行计数头** | 面板头一行：`模型 · 💭 思考段数 · 🛠️ 工具数 · ⏱️ 用时`；运行中的状态词（☤Thinking… / ☤Processing… / ☤aiduCATing…）在面板上方，结束即消失 |
-| 🏷 **模型 Logo** | 30 家厂商标识（OpenAI/Gemini/Claude/Grok/DeepSeek/Qwen/Kimi/豆包/智谱…）随 `/model` 切换自动跟随，显示在面板头 |
+| 💭 **计数头** | 面板头：`模型 · 💭 思考段数 · 🛠️ 工具数 · ⏱️ 用时`；运行中头部多一行状态词（Thinking… / Processing… / aiduCATing…）在上面，结束即消失、回到一行 |
+| 🏷 **工具图标** | 面板头左侧显示当前 profile 用的编程工具图标（Claude Code / Codex / Hermes Agent），不看模型；模型名照常写在图标后面 |
 | 🔌 **多 Provider** | /model 卡三级下拉（Provider→Model→Effort）；provider 密钥走环境变量链不入配置明文；切换下一轮即生效，无需重启；10router 系网关自动识别并只拉 curated combo |
 | 🗜️ **按窗口自动压缩** | 上下文到模型窗口的 60%（`AIDUCAT_COMPACT_PCT`）自动压缩；窗口来自 10router combo（`/api/combos` 带窗口字段时）或 provider 的 `contextWindow`，都没有时 aiduCAT 不覆盖，沿用 Claude Code 自己 `settings.json` 的 `CLAUDE_CODE_MAX_CONTEXT_TOKENS` / `CLAUDE_CODE_AUTO_COMPACT_WINDOW`（f0.3.4 起不再拉 10router 的 `/v1/models` 全量模型表） |
 | 🚦 **边框即状态** | 完成绿 / 停止黄 / 出错红 / 运行中灰 —— 一眼看清结果，无结尾注脚 |
 | 🛟 **卡片被拒不卡死** | 图片 markdown 转链接、去 HTML、正文超 25KB 自动分成多张「续 i/N」卡片（按段落/代码块/表格边界切开）；飞书拒卡时自动降级（严格卡 → 纯文本 → 失败提示），不再停在「Thinking」 |
-| ☤ **aiduCATing… 占位卡** | 消息一落（还没开跑、在排队也一样）就出卡片，先只有一行「☤aiduCATing…」（没有面板）；agent 第一次思考、调工具或出字时，面板出现在同一张卡里并继续流式；卡片模式不再加飞书表情（markdown/text 模式和 Codex 仍用表情）。⚡ TPS 只在 `/status` 显示（会话平均） |
+| ⏳ **aiduCATing… 占位卡** | 消息一落（还没开跑、在排队也一样）就出卡片，是一个只有一行「[工具图标] aiduCATing…」的面板；agent 第一次思考、调工具或出字时，面板头变成两行（状态词 / 模型计数行，图标贴在模型行）并继续流式；卡片模式不再加飞书表情（markdown/text 模式和 Codex 仍用表情）。⚡ TPS 只在 `/status` 显示（会话平均） |
 | 🗣 **`/model` 自由切模型** | pass-through 任意 gateway combo id（如 `Gemini-3.8-Flash`），不做白名单收口 |
 
 ## 快速开始（从零安装）
@@ -193,8 +193,8 @@ aiduCAT secrets set --app-id <id>
 ```
 [模型长答案，流式打字]
 
-☤Thinking…                                       ← 运行中的状态词（aiduCATing / Thinking / Processing），结束即消失
-┌─ [logo] Claude-Opus-4.6 · 💭 2 · 🛠️ 4 · ⏱️ 38s ─┐  ← 折叠面板头：模型 · 思考段数 · 工具数 · 用时
+┌─        Thinking…                              ─┐  ← 运行中头部第一行：状态词（aiduCATing / Thinking / Processing），结束即消失
+│ [工具图标] Claude-Opus-4.6 · 💭 2 · 🛠️ 4 · ⏱️ 38s │  ← 折叠面板头：工具图标 · 模型 · 思考段数 · 工具数 · 用时
 │ 💭 思考文本（最多 1500 字）                        │  ← 展开后
 │ - 🖥️ **Bash** — pnpm test                         │
 │ - 📖 **Read** — src/bot/channel.ts                │
@@ -213,7 +213,7 @@ aiduCAT secrets set --app-id <id>
 
 ### f0.4
 
-- 收到消息立刻出一张只有一行「☤aiduCATing…」的卡；agent 第一次思考、调工具或出字时，面板才出现在同一张卡里；排队的消息各自一张卡，没用上的占位卡自动撤回；卡片模式不再加飞书表情
+- 收到消息立刻出一张卡，是一行面板「[工具图标] aiduCATing…」；agent 第一次思考、调工具或出字时，面板头变成两行、出现计数；排队的消息各自一张卡，没用上的占位卡自动撤回；卡片模式不再加飞书表情
 - 开跑更快：只拉 10router combo（不再拉 `/v1/models` 全量表），combo 列表后台刷新、启动预热
 - 上下文窗口没有 combo 字段时跟 Claude Code 的 `settings.json` 走（如 1M）
 - TPS 按每轮有效生成时间（扣掉工具时间）重算，只在 `/status` 显示，卡片上不再有 ⚡
@@ -358,17 +358,17 @@ export ANTHROPIC_API_KEY="sk-ant-..."
 | 能力 | 10router 用户 | 你的网关 |
 |------|--------------|----------|
 | `/model` 的 Model 下拉 | 自动拉 10router **策展 combo**（`/api/combos`，需管理 token） | 拉 `<baseUrl>/v1/models` 或用 `models` 静态清单 |
-| 模型 logo | 有（30 家厂商图标） | 需自行上传一次 img_key（见下节），不传则面板头无图标，不影响对话
+| 工具图标 | 有（Claude Code / Codex / Hermes） | 需自行上传一次 img_key（见下节），不传则面板头无图标，不影响对话
 
 **合规提醒**：接任何第三方网关/免费池前，先确认其服务条款允许程序化调用；aiduCAT 不做也不支持绕过上游风控的接入。
 
-### 模型 logo（面板头图标）
+### 工具图标（面板头图标）
 
-面板头会显示模型厂商图标（OpenAI/Claude/Gemini 等 30 家），在面板头最左侧、紧挨模型名，展开面板时不翻转；没有图标的模型在右侧显示折叠箭头。飞书卡片 `custom_icon` 只认**本租户**上传图片的 `img_key`，外部 URL 会被飞书拒绝，因此仓库里的 `assets/lark-logo-keys.json` 只对上传过它们的那套飞书环境有效——**外部部署者需要自行上传一次并替换 key**：
+面板头最左侧显示当前 profile 的编程工具图标（`agentKind`：claude → Claude Code、codex → Codex、hermes → Hermes Agent），与模型无关，展开面板时不翻转；拿不到图标时右侧显示折叠箭头。运行中头部两行时，图标底部对齐、贴在模型行。飞书卡片 `custom_icon` 只认**本租户**上传图片的 `img_key`，外部 URL 会被飞书拒绝，因此仓库里的 `assets/lark-logo-keys.json` 只对上传过它们的那套飞书环境有效——**外部部署者需要自行上传一次并替换 key**：
 
-1. 准备 30 张 128px 厂商 PNG（图标源：[lobehub icons-static-png](https://github.com/lobehub/lobe-icons)，建议 1.97.x）。命名对齐 `src/card/model-logo.ts` 里的 `VendorLogo` 枚举（`openai.png`、`claude.png`…）。
+1. 准备 3 张 128px PNG（图标源：[lobehub icons-static-png](https://github.com/lobehub/lobe-icons) 的 `claudecode-color`、`codex-color`、`hermesagent`）。
 2. 用你的飞书应用凭证逐张调 `POST /open-apis/im/v1/images`（`image_type=message`）拿到 `img_key`。可用任意脚本/Postman 循环上传。
-3. 把得到的 30 个 key 写成 JSON 覆盖 `assets/lark-logo-keys.json`（键名=VendorLogo 枚举值），重新 `pnpm build`。
+3. 把 key 写进 `assets/lark-logo-keys.json` 的 `claudecode`、`codex`、`hermes` 三个键，重新 `pnpm build`。（文件里旧的厂商 logo 键已不再使用。）
 4. 没有上传时功能自动降级：面板头不显示图标，不影响任何主功能。
 
 ### 工作目录与工作区

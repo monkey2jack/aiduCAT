@@ -266,18 +266,21 @@ describe('f0.3.4 latency: early reaction + early card', () => {
     expect(h.order.indexOf('card-open')).toBe(0);
     expect(h.reactions.added).toEqual([]);
     const first = h.updates[0];
-    expect(summaryOf(first)).toBe('☤aiduCATing…');
+    expect(summaryOf(first)).toBe('aiduCATing…');
     const firstJson = JSON.stringify(first);
-    expect(firstJson).toContain('☤aiduCATing…');
-    expect(firstJson).not.toContain('collapsible_panel');
-    expect(firstJson).not.toContain('custom_icon');
+    // f0.4+: the placeholder is a one-line panel「[agent icon] aiduCATing…」
+    expect(firstJson).toContain('"content":"aiduCATing…"');
+    expect(firstJson).toContain('collapsible_panel');
+    expect(firstJson).toContain('custom_icon');
+    expect(firstJson).not.toContain('💭');
+    expect(firstJson).not.toContain('☤');
     expect(firstJson).not.toContain('FINAL_SENTINEL');
     expect(h.sent).toHaveLength(0);
 
     g.open();
     await waitFor(() => summaryOf(h.updates.at(-1)) === '✅Done');
     await settle();
-    // same single card carries the answer + the panel (model logo); nothing sent separately
+    // same single card carries the answer + the panel (agent icon); nothing sent separately
     expect(JSON.stringify(h.updates.at(-1))).toContain('FINAL_SENTINEL');
     expect(JSON.stringify(h.updates.at(-1))).toContain('Gemini-3.8-Flash');
     expect(JSON.stringify(h.updates.at(-1))).toContain('custom_icon');
@@ -312,7 +315,7 @@ describe('f0.3.4 latency: early reaction + early card', () => {
       events: [{ type: 'done', terminationReason: 'interrupted' }] as AgentEvent[],
     });
     await h.handlers.message?.(message('om_d', 'hi'));
-    await waitFor(() => summaryOf(h.updates.at(-1)) !== '☤Thinking…' && h.updates.length >= 2);
+    await waitFor(() => summaryOf(h.updates.at(-1)) !== 'Thinking…' && h.updates.length >= 2);
     await settle();
     expect(summaryOf(h.updates.at(-1))).toBe('⭕️Stop');
     expect(h.order.filter((o) => o === 'card-open')).toHaveLength(1);
