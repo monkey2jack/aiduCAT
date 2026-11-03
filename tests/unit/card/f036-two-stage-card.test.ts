@@ -29,22 +29,24 @@ describe('f0.3.6 two-stage placeholder card (f0.4+: panel from the start, no ☤
     expect(awaitingAgent(initialState)).toBe(true);
   });
 
-  it('first thinking → two-line header (Thinking… / meta), icon bottom-aligned', () => {
+  it('first thinking → Thinking… flush-left above a one-line panel', () => {
     const s = reduce(initialState, { type: 'thinking', delta: '想一想' });
     expect(awaitingAgent(s)).toBe(false);
     const els = elements(s);
-    expect(els.map((e) => e.tag)).toEqual(['collapsible_panel']);
+    expect(els.map((e) => e.tag)).toEqual(['markdown', 'collapsible_panel']);
+    expect(els[0]!.content).toBe('Thinking…');
     const h = panel(s)!.header;
-    expect(h.title.content.split('\n')[0]).toBe('Thinking…');
-    expect(h.title.content.split('\n')[1]).toContain('💭 1');
-    expect(h.vertical_align).toBe('bottom');
+    expect(h.title.content).not.toContain('\n');
+    expect(h.title.content).toContain('💭 1');
+    expect(h.vertical_align).toBe('center');
     expect(json(s)).not.toContain('☤');
   });
 
-  it('first tool call → Processing… on header line 1', () => {
+  it('first tool call → Processing… flush-left above the panel', () => {
     const s = reduce(initialState, { type: 'tool_use', id: 't1', name: 'Bash', input: { command: 'ls' } });
-    expect(elements(s).map((e) => e.tag)).toEqual(['collapsible_panel']);
-    expect(panel(s)!.header.title.content.split('\n')[0]).toBe('Processing…');
+    expect(elements(s).map((e) => e.tag)).toEqual(['markdown', 'collapsible_panel']);
+    expect(elements(s)[0]!.content).toBe('Processing…');
+    expect(panel(s)!.header.title.content).not.toContain('Processing');
   });
 
   it('tool call hidden by group prefs (tool blocks filtered) still brings the panel', () => {
@@ -57,9 +59,9 @@ describe('f0.3.6 two-stage placeholder card (f0.4+: panel from the start, no ☤
   it('pure text turn: the panel appears together with the first answer text', () => {
     const s = reduce(initialState, { type: 'text', delta: '你好' });
     const els = elements(s);
-    expect(els.map((e) => e.tag)).toEqual(['markdown', 'collapsible_panel']);
+    expect(els.map((e) => e.tag)).toEqual(['markdown', 'markdown', 'collapsible_panel']);
     expect(els[0]!.content).toBe('你好');
-    expect(panel(s)!.header.title.content.split('\n')[0]).toBe('aiduCATing…');
+    expect(els[1]!.content).toBe('aiduCATing…');
     const done = reduce(s, { type: 'done', terminationReason: 'normal' });
     const j = json(done);
     expect(j).toContain('collapsible_panel');

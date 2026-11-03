@@ -5,6 +5,11 @@ exports[`run card renderer snapshots > collapses consecutive tools while preserv
   "body": {
     "elements": [
       {
+        "content": "Processing…",
+        "tag": "markdown",
+        "text_size": "notation",
+      },
+      {
         "border": {
           "color": "grey",
           "corner_radius": "5px",
@@ -28,12 +33,11 @@ exports[`run card renderer snapshots > collapses consecutive tools while preserv
           "icon_expanded_angle": -180,
           "icon_position": "right",
           "title": {
-            "content": "Processing…
-💭 0 · 🛠️ 3",
+            "content": "💭 0 · 🛠️ 3",
             "tag": "markdown",
             "text_size": "notation",
           },
-          "vertical_align": "bottom",
+          "vertical_align": "center",
         },
         "padding": "6px 8px 6px 8px",
         "tag": "collapsible_panel",
@@ -106,6 +110,11 @@ exports[`run card renderer snapshots > renders active and completed thinking 1`]
   "body": {
     "elements": [
       {
+        "content": "Thinking…",
+        "tag": "markdown",
+        "text_size": "notation",
+      },
+      {
         "border": {
           "color": "grey",
           "corner_radius": "5px",
@@ -127,12 +136,11 @@ exports[`run card renderer snapshots > renders active and completed thinking 1`]
           "icon_expanded_angle": -180,
           "icon_position": "right",
           "title": {
-            "content": "Thinking…
-💭 1 · 🛠️ 0",
+            "content": "💭 1 · 🛠️ 0",
             "tag": "markdown",
             "text_size": "notation",
           },
-          "vertical_align": "bottom",
+          "vertical_align": "center",
         },
         "padding": "6px 8px 6px 8px",
         "tag": "collapsible_panel",
@@ -497,6 +505,11 @@ exports[`run card renderer snapshots > renders tool running, done, and error sta
   "body": {
     "elements": [
       {
+        "content": "Processing…",
+        "tag": "markdown",
+        "text_size": "notation",
+      },
+      {
         "border": {
           "color": "grey",
           "corner_radius": "5px",
@@ -518,12 +531,11 @@ exports[`run card renderer snapshots > renders tool running, done, and error sta
           "icon_expanded_angle": -180,
           "icon_position": "right",
           "title": {
-            "content": "Processing…
-💭 0 · 🛠️ 1",
+            "content": "💭 0 · 🛠️ 1",
             "tag": "markdown",
             "text_size": "notation",
           },
-          "vertical_align": "bottom",
+          "vertical_align": "center",
         },
         "padding": "6px 8px 6px 8px",
         "tag": "collapsible_panel",

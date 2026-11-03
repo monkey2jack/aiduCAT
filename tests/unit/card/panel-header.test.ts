@@ -14,11 +14,14 @@ function panelTitle(card: object): string {
   return JSON.parse(`"${m[1]}"`);
 }
 
-/** f0.4+: the status word is line 1 of a two-line panel header (or null). */
+/** f0.4+ (revised 11-04 00:44): the status word is a flush-left markdown
+ *  line right above the panel; the received placeholder is the panel title. */
 function statusLine(card: object): string | null {
-  const lines = panelTitle(card).split('\n');
-  if (lines.length === 2) return lines[0]!;
-  return lines[0] === 'aiduCATing…' ? lines[0] : null;
+  const els = (card as { body: { elements: Array<{ tag: string; content?: string }> } }).body.elements;
+  const i = els.findIndex((e) => e.tag === 'collapsible_panel');
+  const above = i > 0 ? els[i - 1] : undefined;
+  if (above?.tag === 'markdown' && /^(Thinking|Processing|aiduCATing)…$/.test(above.content ?? '')) return above.content!;
+  return panelTitle(card) === 'aiduCATing…' ? 'aiduCATing…' : null;
 }
 
 describe('one-line minimal panel header (f0.2+ 猴哥点单 2026-10-20)', () => {
@@ -29,7 +32,7 @@ describe('one-line minimal panel header (f0.2+ 猴哥点单 2026-10-20)', () => 
       contextWindow: 1048576,
       startedAt: Date.now() - 5_000,
     });
-    expect(panelTitle(card)).toBe('aiduCATing…\nGemini-3.8-Flash · 💭 0 · 🛠️ 0 · ⏱️ 5s');
+    expect(panelTitle(card)).toBe('Gemini-3.8-Flash · 💭 0 · 🛠️ 0 · ⏱️ 5s');
     expect(panelTitle(card)).not.toContain('25k/1M');
     expect(panelTitle(card)).not.toContain('Max');
   });
@@ -51,7 +54,7 @@ describe('one-line minimal panel header (f0.2+ 猴哥点单 2026-10-20)', () => 
   });
 });
 
-describe('status word on panel header line 1 (f0.4+, no ☤)', () => {
+describe('status word flush-left above the panel (f0.4+, no ☤)', () => {
   it('f0.3.5: default running state (placeholder) renders aiduCATing…', () => {
     const card = renderCard(initialState, { model: 'M' });
     expect(statusLine(card)).toBe('aiduCATing…');

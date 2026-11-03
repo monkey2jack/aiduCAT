@@ -216,17 +216,17 @@ function buildCard(
 
   // aiduCAT: one collapsed panel carrying reasoning + every tool call + the
   // run meta header (aiduPOP layout).
-  // f0.4+ (Wei 2026-11-04「美观、简约」): the status word lives INSIDE the
-  // panel header and ☤ is gone.
-  //   received → one line   [agent icon] aiduCATing…
-  //   working  → two lines  Thinking… / Processing…
-  //                         [agent icon] model · 💭 n · 🛠️ n · ⏱️ t
-  //   ended    → one line   [agent icon] model · …   (border colour = result)
-  // The header has a single icon slot; bottom alignment keeps the icon on
-  // the model line, never beside Thinking/Processing.
-  const popPanel = awaitingAgent(state)
-    ? placeholderPanel(options)
-    : aiduPopPanel(state, options, budget, statusWord);
+  // f0.4+ (Wei 2026-11-04「美观、简约」, revised 00:44): ☤ is gone.
+  //   received → one-line panel   [agent icon] aiduCATing…
+  //   working  → status line flush-left ABOVE the panel (Thinking…/
+  //              Processing…/aiduCATing…), panel stays one line
+  //              [agent icon] model · 💭 n · 🛠️ n · ⏱️ t
+  //   ended    → status line gone, panel only (border colour = result)
+  // Feishu reserves an icon column for the whole panel header, so a status
+  // word inside the header could never sit flush-left.
+  const waiting = awaitingAgent(state);
+  if (statusWord && !waiting) elements.push(noteMd(statusWord));
+  const popPanel = waiting ? placeholderPanel(options) : aiduPopPanel(state, options, budget);
   if (popPanel) elements.push(popPanel);
 
   // aiduCAT clarify: when the run ended while waiting on a parsed
@@ -332,7 +332,6 @@ function aiduPopPanel(
   state: RunState,
   options: RunCardRenderOptions,
   budget: RenderBudget,
-  statusWord = '',
 ): object | null {
   const tools = state.blocks.filter((b): b is Extract<Block, { kind: 'tool' }> => b.kind === 'tool');
   const hasReasoning = state.reasoning.content.trim().length > 0;
@@ -341,8 +340,7 @@ function aiduPopPanel(
   const meta = metaHeader(state, options);
   if (!hasReasoning && tools.length === 0 && !meta) return null;
 
-  // f0.4+: while running, line 1 is the bare status word (no icon, no ☤).
-  const title = statusWord && meta ? `${statusWord}\n${meta}` : meta || statusWord;
+  const title = meta;
 
   const bodyParts: string[] = [];
   if (hasError) bodyParts.push(`⚠️ ${errorText(state.errorMsg!)}`);
@@ -369,7 +367,6 @@ function aiduPopPanel(
     // f0.4+: the header icon is the coding agent (no more model logos);
     // no agent icon → the default chevron.
     ...agentLogoOpt(options),
-    twoLine: !!statusWord && !!meta,
   });
 }
 
@@ -466,14 +463,13 @@ interface PanelOpts {
   /** f0.2: logo img_key — replaces the chevron in the header icon slot (f0.4+: agent icon). */
   logoImgKey?: string;
   /** f0.4+: status line + meta line — the icon aligns to the bottom (meta) line. */
-  twoLine?: boolean;
 }
 
 function collapsiblePanel(opts: PanelOpts): object {
   return {
     tag: 'collapsible_panel',
     expanded: opts.expanded,
-    header: panelHeader(opts.title, opts.logoImgKey, opts.twoLine),
+    header: panelHeader(opts.title, opts.logoImgKey),
     border: { color: opts.border, corner_radius: '5px' },
     vertical_spacing: '4px',
     padding: '6px 8px 6px 8px',
@@ -481,15 +477,13 @@ function collapsiblePanel(opts: PanelOpts): object {
   };
 }
 
-function panelHeader(titleMd: string, logoImgKey?: string, twoLine = false): object {
+function panelHeader(titleMd: string, logoImgKey?: string): object {
   return {
     // aiduCAT: text_size=notation shrinks the collapsed header title to match
     // aiduPOP's small panel type (verified live: <font> tags are ignored on
     // panel headers, text_size on the title markdown is not).
     title: { tag: 'markdown', content: titleMd, text_size: 'notation' },
-    // f0.4+: with two lines the single icon slot follows the bottom (meta)
-    // line, so Thinking/Processing on line 1 carries no icon.
-    vertical_align: twoLine ? 'bottom' : 'center',
+    vertical_align: 'center',
     // f0.2 猴哥点单: logo replaces the chevron in the header icon slot.
     // Feishu's icon_position defaults to `right` (open.feishu.cn card JSON 2.0
     // collapsible_panel: left = far left of the title area, right = far right,

@@ -47,8 +47,8 @@ describe('panel header agent icon', () => {
     expect(h.icon.img_key).toBe(logoImgKeyForAgent('codex'));
   });
 
-  it('working (two lines) → icon bottom-aligned to the model line; placeholder → centered', () => {
-    expect(header(thinking, { agentKind: 'claude', model: 'M' }).vertical_align).toBe('bottom');
+  it('header is always one line → icon centered (placeholder and working)', () => {
+    expect(header(thinking, { agentKind: 'claude', model: 'M' }).vertical_align).toBe('center');
     expect(header(initialState, { agentKind: 'claude', model: 'M' }).vertical_align).toBe('center');
   });
 
