@@ -17,6 +17,7 @@ aiduCAT 的版本号用 `f` 前缀（f0.1、f0.2+ …），`package.json` 里是
 
 - **一张卡最多 5 个表格，多的进「续」卡**（11-04 12:02 嘟嘟一条 7 个表格的回答被飞书拒卡，报 230099 / ErrCode 11310 `card table number over limit`，退成纯文本）：分页时按表格数也切页，每张卡（含精简重试卡）最多 5 个表格，多出的放进「续 2/N」卡；折叠面板里的表格改成代码块，不占名额。`68e2dc3`
 - **不再显示「No response requested.」**（[#6](https://github.com/monkey2jack/aiduCAT/issues/6)，感谢 @iMissNan）：网关模型（Gemini 等）工具跑完不说话时，Claude Code 会自己补一句占位（`model: "<synthetic>"`），以前会显示成答案。现在只丢这一句占位；Claude Code 用 `<synthetic>` 发的 API 报错（401、模型不存在等）照常显示。`b020a94`
+- **Windows 后台服务不再挂黑窗**（[#4](https://github.com/monkey2jack/aiduCAT/issues/4) / [#7](https://github.com/monkey2jack/aiduCAT/pull/7)，感谢 @alone-lon）：计划任务改用 `wscript.exe` + 隐藏的 `launcher.vbs` 启动，桌面不再有 cmd 窗口，关窗口也不会杀掉 daemon；去掉 72 小时强杀、用电池时不停。顺带修：`stop`/`restart` 真的能结束 node（`/End` 之后连进程树一起杀，旧任务不重装也能停）；中文等非英文 Windows 上 `status` 不再永远报「没在运行」；`stop` 后马上 `start` 不再卡约 30 秒（确认进程已死才清 host 锁）；`launcher.cmd` 的 PATH 改从注册表读，不再烤进 git-bash 的路径。只改 Windows 分支，Linux/macOS 不变。另：按命令行匹配孤儿 node 时转义单引号。
 - CI：重启恢复测试改为轮询日志文件，不再固定等 200 毫秒（f0.4++ 那次 ubuntu CI 偶发失败）。`921c9b9`
 
 ## f0.4+ — 2026-11-02（package 0.4.1）

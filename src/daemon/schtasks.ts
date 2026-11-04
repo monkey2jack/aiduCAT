@@ -144,7 +144,7 @@ function daemonMatchClause(serviceId: string): string | null {
   if (!args.startsWith('run')) return null;
   return (
     `$_.Name -eq 'node.exe' -and ` +
-    `($_.CommandLine -like '*lark-channel-bridge.mjs*') -and ($_.CommandLine -like '*${likeLiteral(args)}*')`
+    `($_.CommandLine -like '*lark-channel-bridge.mjs*') -and ($_.CommandLine -like '*${likeLiteral(args).replace(/'/g, "''")}*')`
   );
 }
 
