@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { mkdir, rm, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import {
@@ -107,12 +107,43 @@ function launcherMatchClause(serviceId: string): string {
  * hidden launcher that is wscript.exe — and leaves the `cmd.exe` and `node.exe`
  * it spawned running as orphans, so `stop` would report success while the bot
  * kept answering. Killing the tree from the launcher down reaches all of them.
+ *
+ * Also matches the daemon `node.exe` by its own command line (entry + args read
+ * from the on-disk launcher.cmd): after the launcher hosts die first, the node
+ * orphan no longer has a live parent to match, yet it still holds the host lock
+ * — leaving `start` to time out behind it.
  */
 export function buildKillTreeScript(serviceId: string): string {
+  const parts = [`($_.Name -in 'wscript.exe','cmd.exe' -and (${launcherMatchClause(serviceId)}))`];
+  const daemon = daemonMatchClause(serviceId);
+  if (daemon) parts.push(daemon);
   return (
     'Get-CimInstance Win32_Process | ' +
-    `Where-Object { $_.Name -in 'wscript.exe','cmd.exe' -and (${launcherMatchClause(serviceId)}) } | ` +
+    `Where-Object { ${parts.join(' -or ')} } | ` +
     'ForEach-Object { taskkill /F /T /PID $_.ProcessId 2>&1 | Out-Null }'
+  );
+}
+
+/**
+ * Match the daemon node.exe by the launcher's own command line: the bridge
+ * entry plus its run flags (`run --web-ui` / `run --profile X`), taken from the
+ * generated launcher.cmd so the pattern always mirrors what was installed.
+ */
+function daemonMatchClause(serviceId: string): string | null {
+  let content: string;
+  try {
+    content = readFileSync(windowsLauncherCmdPath(serviceId), 'utf8');
+  } catch {
+    return null; // unregistered — nothing to match against
+  }
+  const nodeLine = content.split(/\r?\n/).find((l) => l.includes('lark-channel-bridge'));
+  if (!nodeLine) return null;
+  const invocation = nodeLine.split('>>')[0] ?? nodeLine;
+  const args = invocation.slice(invocation.indexOf('run ')).trim();
+  if (!args.startsWith('run')) return null;
+  return (
+    `$_.Name -eq 'node.exe' -and ` +
+    `($_.CommandLine -like '*lark-channel-bridge.mjs*') -and ($_.CommandLine -like '*${likeLiteral(args)}*')`
   );
 }
 
