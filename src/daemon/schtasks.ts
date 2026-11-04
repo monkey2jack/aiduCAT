@@ -88,24 +88,30 @@ function likeLiteral(path: string): string {
 }
 
 /**
+ * A PowerShell `Where-Object` clause matching the service's launcher processes
+ * by command line — the `wscript.exe` of the current hidden launcher, or the
+ * `cmd.exe` of a task installed before that change. Matching the process (not
+ * parsing `schtasks` output, which is localized and codepage-encoded) is what
+ * makes every query below work on non-English Windows.
+ */
+function launcherMatchClause(serviceId: string): string {
+  return [windowsLauncherVbsPath(serviceId), windowsLauncherCmdPath(serviceId)]
+    .map((p) => `$_.CommandLine -like '*${likeLiteral(p).replace(/'/g, "''")}*'`)
+    .join(' -or ');
+}
+
+/**
  * PowerShell that kills the launcher process tree for a service.
  *
  * `schtasks /End` ends only the process the task launched *directly* — with the
  * hidden launcher that is wscript.exe — and leaves the `cmd.exe` and `node.exe`
  * it spawned running as orphans, so `stop` would report success while the bot
- * kept answering. Find the launcher process by its command line (not by parsing
- * `schtasks` output, which is localized) and kill its whole tree.
- *
- * Matches both the current layout (wscript → launcher.vbs) and a task installed
- * before this change (cmd → launcher.cmd), so upgrading is seamless.
+ * kept answering. Killing the tree from the launcher down reaches all of them.
  */
 export function buildKillTreeScript(serviceId: string): string {
-  const matches = [windowsLauncherVbsPath(serviceId), windowsLauncherCmdPath(serviceId)]
-    .map((p) => `$_.CommandLine -like '*${likeLiteral(p).replace(/'/g, "''")}*'`)
-    .join(' -or ');
   return (
     'Get-CimInstance Win32_Process | ' +
-    `Where-Object { $_.Name -in 'wscript.exe','cmd.exe' -and (${matches}) } | ` +
+    `Where-Object { $_.Name -in 'wscript.exe','cmd.exe' -and (${launcherMatchClause(serviceId)}) } | ` +
     'ForEach-Object { taskkill /F /T /PID $_.ProcessId 2>&1 | Out-Null }'
   );
 }
@@ -115,6 +121,64 @@ function killLauncherTree(serviceId: string): void {
   spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', buildKillTreeScript(serviceId)], {
     encoding: 'utf8',
   });
+}
+
+interface TaskStatus {
+  /** Raw Get-ScheduledTask State: Running / Ready / Disabled / ... */
+  state: string;
+  /** pids of the launcher hosts (wscript.exe / cmd.exe) still alive. */
+  launcherPids: number[];
+  /** pid of the node daemon in this service's launcher tree, when found. */
+  nodePid?: number;
+  /** LastTaskResult (0 = ok); absent when the task never ran. */
+  lastResult?: number;
+}
+
+/**
+ * Read the task's state and its live launcher processes in one PowerShell call.
+ *
+ * Everything here is deliberately language-independent: `Get-ScheduledTask`
+ * returns enum state names and numeric results regardless of the OS UI
+ * language, and the launcher processes are matched by command line. Parsing
+ * `schtasks` text instead (see the git history) broke on non-English Windows,
+ * where the output is localized *and* encoded in the local codepage — that made
+ * `isRunning()` always false, so `stop` never killed the daemon.
+ */
+function queryStatus(serviceId: string): TaskStatus {
+  const clause = launcherMatchClause(serviceId);
+  const script =
+    `$task = Get-ScheduledTask -TaskName '${windowsTaskName(serviceId)}' -ErrorAction SilentlyContinue; ` +
+    "$state = if ($task) { $task.State.ToString() } else { 'Absent' }; " +
+    `$launchers = Get-CimInstance Win32_Process | Where-Object { $_.Name -in 'wscript.exe','cmd.exe' -and (${clause}) }; ` +
+    '$pids = ($launchers | ForEach-Object { $_.ProcessId }) -join ","; ' +
+    // The daemon is the node.exe whose parent is one of the launcher hosts.
+    '$lp = @($launchers | ForEach-Object { $_.ProcessId }); ' +
+    '$node = Get-CimInstance Win32_Process -Filter "Name=\'node.exe\'" | Where-Object { $lp -contains $_.ParentProcessId } | Select-Object -First 1; ' +
+    '$info = Get-ScheduledTaskInfo -TaskName ' +
+    `'${windowsTaskName(serviceId)}' -ErrorAction SilentlyContinue; ` +
+    '$result = if ($info -and $info.LastRunTime) { $info.LastTaskResult } else { "" }; ' +
+    '"$state|$pids|$($node.ProcessId)|$result"';
+  const r = spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script], {
+    encoding: 'utf8',
+  });
+  const [state = 'Absent', pids = '', nodePid = '', result = ''] = (r.stdout ?? '').trim().split('|');
+  return {
+    state,
+    launcherPids: pids
+      .split(',')
+      .map((s) => Number(s.trim()))
+      .filter((n) => Number.isInteger(n) && n > 0),
+    ...(nodePid && Number(nodePid) > 0 ? { nodePid: Number(nodePid) } : {}),
+    ...(result !== '' && !Number.isNaN(Number(result)) ? { lastResult: Number(result) } : {}),
+  };
+}
+
+/** Whether the daemon is up *right now*, with or without a registered task. */
+function isServiceRunning(serviceId: string): boolean {
+  const s = queryStatus(serviceId);
+  // A launcher tree means the daemon is up even if the task itself was
+  // disabled or ended (the node child survives `/End`).
+  return s.launcherPids.length > 0;
 }
 
 async function writeLauncherScripts(profile: string, runArgs: string[] = ['run']): Promise<void> {
@@ -268,19 +332,29 @@ export function isTaskRegistered(profile: string): boolean {
 }
 
 /**
- * Parse `/Query /V /FO LIST` output for the current run state. Looks for
- * `Status: Running` in the verbose listing. Other states include
- * "Ready" (registered, not currently running) and "Disabled".
+ * Whether the service is up — i.e. its launcher process tree is alive.
+ *
+ * Not simply "the task is Running": after `schtasks /End` (or a task that was
+ * disabled while the daemon kept going) the task may read Ready/Disabled while
+ * its node child is still online. Sharing one signal with `endTask` is what
+ * makes `stop` able to find and kill that leftover daemon.
  */
 export function isTaskRunning(profile: string): boolean {
-  const r = runSchtasks(['/Query', '/V', '/FO', 'LIST', '/TN', windowsTaskName(profile)]);
-  if (!r.ok) return false;
-  return /Status:\s+Running/i.test(r.stdout);
+  return isServiceRunning(profile);
 }
 
+/**
+ * Status text for `parseStatus`. Synthesized in English from language-independent
+ * queries rather than echoed from `schtasks` (which is localized and codepage-
+ * encoded on non-English Windows, so English regexes never matched).
+ */
 export function describeTask(profile: string): string {
-  const r = runSchtasks(['/Query', '/V', '/FO', 'LIST', '/TN', windowsTaskName(profile)]);
-  return r.stdout || r.stderr || '';
+  const s = queryStatus(profile);
+  const lines = [`Status: ${s.launcherPids.length > 0 ? 'Running' : 'Ready'}`, `Task State: ${s.state}`];
+  const pid = s.nodePid ?? s.launcherPids[0];
+  if (pid) lines.push(`Process ID: ${pid}`);
+  if (s.lastResult !== undefined) lines.push(`Last Result: ${s.lastResult}`);
+  return lines.join('\n');
 }
 
 export async function waitUntilStopped(profile: string, timeoutMs = 5000): Promise<boolean> {
