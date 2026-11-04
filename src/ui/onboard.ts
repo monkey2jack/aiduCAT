@@ -154,6 +154,11 @@ export async function writeNewProfile(
     }
     root.profiles[profile] = { ...profileConfig, secrets: undefined };
     if (!root.secrets && encrypted.secrets) root.secrets = encrypted.secrets;
+    // Keep config.json.activeProfile in step with the `active-profile` file
+    // written below. `activateProfile` (console switch) updates both, but this
+    // onboarding path used to write only the file, so the two sources of truth
+    // could disagree after registering a new bot.
+    root.activeProfile = profile;
     await saveRootConfig(root, appPaths.configFile);
   });
   await writeActiveProfile(appPaths.rootDir, profile);

@@ -9,6 +9,8 @@ export interface DiscoveredProfile {
   active: boolean;
   agentKind: AgentKind;
   profileDir: string;
+  /** False only when the user explicitly stopped this profile (#5). */
+  autoStart: boolean;
 }
 
 export async function listAllProfiles(rootDir?: string): Promise<DiscoveredProfile[]> {
@@ -49,6 +51,7 @@ export async function listAllProfiles(rootDir?: string): Promise<DiscoveredProfi
         active: name === activeProfile,
         agentKind: profile.agentKind,
         profileDir: resolveAppPaths({ rootDir: rootPaths.rootDir, profile: name }).profileDir,
+        autoStart: profile.autoStart !== false,
       };
     });
 }
