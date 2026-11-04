@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, rmSync } from 'node:fs';
 import { mkdir, rm, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import {
@@ -9,6 +9,7 @@ import {
   windowsTaskName,
   windowsLauncherCmdPath,
   windowsLauncherVbsPath,
+  SUPERVISOR_SERVICE_ID,
 } from './paths';
 import { paths } from '../config/paths';
 
@@ -154,6 +155,32 @@ function killLauncherTree(serviceId: string): void {
   });
 }
 
+/**
+ * Remove the supervisor's host-lock file so a `start` right after `stop` isn't
+ * blocked by a stale lock.
+ *
+ * The host lock (`runtime/host-lock.ts`) uses proper-lockfile with
+ * `stale: 30_000, retries: 0`. A process killed by `taskkill /F` never releases
+ * its lock, and the next supervisor would treat it as held and exit with
+ * "control plane already running" for up to 30s — so `stop` then `start` fails.
+ *
+ * Only called from `endTask` after the launcher tree is confirmed dead, so we
+ * never delete a lock a live supervisor is holding. Best-effort, Windows-only.
+ */
+function clearStaleHostLock(serviceId: string): void {
+  if (serviceId !== SUPERVISOR_SERVICE_ID) return; // only the supervisor holds a host lock
+  // proper-lockfile acquires a lock by CREATING A SIBLING DIRECTORY named
+  // `<target>.lock`, not by writing a file. So for target
+  // `.../registry/locks/supervisor.lock` the artifact to remove is
+  // `.../registry/locks/supervisor.lock.lock/` (verified on disk: it is a dir).
+  // A plain file rmSync would fail on it, hence recursive.
+  try {
+    rmSync(`${paths.hostLockFile}.lock`, { recursive: true, force: true });
+  } catch {
+    /* best-effort */
+  }
+}
+
 interface TaskStatus {
   /** Raw Get-ScheduledTask State: Running / Ready / Disabled / ... */
   state: string;
@@ -212,6 +239,34 @@ function isServiceRunning(serviceId: string): boolean {
   return s.launcherPids.length > 0;
 }
 
+/**
+ * The PATH to bake into launcher.cmd — the *registry* PATH, not the caller's.
+ *
+ * A Task Scheduler session inherits PATH from the registry (User + Machine),
+ * never from whichever shell ran `start`. Baking in `process.env.PATH` instead
+ * poisons the daemon when installation runs from a non-native shell (git-bash
+ * hands over POSIX-style `/e/...` entries with no codex/claude dirs, and the
+ * bot then fails `binary check` forever). Read the two registry scopes through
+ * PowerShell; fall back to the current env only if that somehow fails.
+ */
+function resolveLauncherEnvPath(): string {
+  const script =
+    "[Environment]::GetEnvironmentVariable('PATH','User') + ';' + " +
+    "[Environment]::GetEnvironmentVariable('PATH','Machine')";
+  try {
+    const r = spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script], {
+      encoding: 'utf8',
+    });
+    // Empty registry scopes yield stray semicolons; a real Windows PATH has
+    // backslashes. Anything else (POSIX-style, empty) must not be trusted.
+    const got = (r.stdout ?? '').split(';').map((p) => p.trim()).filter(Boolean).join(';');
+    if (r.status === 0 && got.includes('\\')) return got;
+  } catch {
+    /* fall through */
+  }
+  return process.env.PATH ?? '';
+}
+
 async function writeLauncherScripts(profile: string, runArgs: string[] = ['run']): Promise<void> {
   const bridgeEntryPath = process.argv[1];
   if (!bridgeEntryPath) {
@@ -220,7 +275,7 @@ async function writeLauncherScripts(profile: string, runArgs: string[] = ['run']
   const content = buildLauncherCmd({
     nodePath: process.execPath,
     bridgeEntryPath,
-    envPath: process.env.PATH ?? '',
+    envPath: resolveLauncherEnvPath(),
     profile,
     runArgs,
     channelHome: paths.rootDir,
@@ -320,6 +375,10 @@ export function runTask(profile: string): SchtasksResult {
 export function endTask(profile: string): SchtasksResult {
   const ended = runSchtasks(['/End', '/TN', windowsTaskName(profile)]);
   killLauncherTree(profile);
+  // Only once the tree is gone: drop the now-orphaned host lock so an
+  // immediate `start` can acquire it instead of waiting out the 30s stale
+  // window (proper-lockfile does not release locks of force-killed processes).
+  if (isServiceRunning(profile) === false) clearStaleHostLock(profile);
   return ended;
 }
 
