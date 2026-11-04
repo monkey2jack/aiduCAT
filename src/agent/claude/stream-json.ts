@@ -20,7 +20,11 @@ interface ClaudeRawEvent {
   model?: string;
   /** Set (non-null) when the event comes from a sub-agent (Task tool). */
   parent_tool_use_id?: string | null;
+  /** Claude Code marks framework-made messages with `isApiErrorMessage`. */
+  isApiErrorMessage?: boolean;
   message?: {
+    /** `<synthetic>` for messages Claude Code makes up itself (no model call). */
+    model?: string;
     content?: ContentBlock[];
     usage?: {
       input_tokens?: number;
@@ -62,6 +66,8 @@ function perCallUsage(u: RawUsage, evt: ClaudeRawEvent, callFinal = false): Agen
   };
 }
 
+const SYNTHETIC_PLACEHOLDER_RE = /^\s*No response requested\.?\s*$/i;
+
 export function* translateEvent(raw: unknown): Generator<AgentEvent> {
   if (!raw || typeof raw !== 'object') return;
   const evt = raw as ClaudeRawEvent;
@@ -77,8 +83,14 @@ export function* translateEvent(raw: unknown): Generator<AgentEvent> {
   }
 
   if (evt.type === 'assistant' && evt.message?.content) {
+    const synthetic = evt.message.model === '<synthetic>' && evt.isApiErrorMessage !== true;
     for (const block of evt.message.content) {
       if (block.type === 'text' && typeof block.text === 'string' && block.text) {
+        // issue #6: a turn that ends on a tool call with no text gets Claude
+        // Code's own placeholder「No response requested.」(model <synthetic>).
+        // Gateway models (Gemini…) hit it often; it is not an answer — drop it.
+        // Synthetic API-error messages (401, unknown model…) still show.
+        if (synthetic && SYNTHETIC_PLACEHOLDER_RE.test(block.text)) continue;
         yield { type: 'text', delta: block.text };
       } else if (block.type === 'thinking' && typeof block.thinking === 'string' && block.thinking) {
         yield { type: 'thinking', delta: block.thinking };
