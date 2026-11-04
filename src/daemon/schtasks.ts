@@ -8,6 +8,7 @@ import {
   daemonStdoutPath,
   windowsTaskName,
   windowsLauncherCmdPath,
+  windowsLauncherVbsPath,
 } from './paths';
 import { paths } from '../config/paths';
 
@@ -52,7 +53,33 @@ export function buildLauncherCmd(inputs: LauncherInputs): string {
   ].join('\r\n');
 }
 
-async function writeLauncherCmd(profile: string, runArgs: string[] = ['run']): Promise<void> {
+/**
+ * VBS wrapper that hides the console window Task Scheduler would otherwise
+ * allocate when it launches the .cmd launcher directly.
+ *
+ * wscript.exe is a GUI-subsystem host: it never allocates a console of its own.
+ * `WScript.Shell.Run(cmd, 0, True)` then launches the .cmd with window style
+ * `0` (hidden) and `bWaitOnReturn = True`, so:
+ *  - the daemon never parks a visible console window on the desktop, and
+ *  - wscript.exe stays alive as the task's tracked process until the .cmd (and
+ *    its node child) exits, so `schtasks /End` still terminates the whole chain.
+ *
+ * VBScript is still shipped on Windows 10/11 as an optional feature but remains
+ * available by default; if it ever goes missing this wrapper simply fails to run
+ * and the log will show the task failing (not silently broken).
+ */
+export function buildLauncherVbs(cmdPath: string): string {
+  return [
+    'Option Explicit',
+    'Dim shell',
+    'Set shell = CreateObject("WScript.Shell")',
+    `shell.Run """${cmdPath}""", 0, True`,
+    'Set shell = Nothing',
+    '',
+  ].join('\r\n');
+}
+
+async function writeLauncherScripts(profile: string, runArgs: string[] = ['run']): Promise<void> {
   const bridgeEntryPath = process.argv[1];
   if (!bridgeEntryPath) {
     throw new Error('cannot determine bridge entry path (process.argv[1] is empty)');
@@ -70,6 +97,7 @@ async function writeLauncherCmd(profile: string, runArgs: string[] = ['run']): P
   // f031-sec-M4: daemon stdout/stderr logs are owner-only.
   await mkdir(daemonLogDir(profile), { recursive: true, mode: 0o700 });
   await writeFile(cmdPath, content, 'utf8');
+  await writeFile(windowsLauncherVbsPath(profile), buildLauncherVbs(cmdPath), 'utf8');
 }
 
 interface SchtasksResult {
@@ -92,15 +120,18 @@ function runSchtasks(args: string[]): SchtasksResult {
  * `/RL LIMITED` runs as the current user without admin elevation.
  * `/F` overwrites if the task already exists.
  *
- * The /TR value is the .cmd wrapper path. Schtasks treats /TR as a command
- * line, so wrapping in quotes keeps spaces in the path intact.
+ * The /TR value is the VBS wrapper, which launches the .cmd launcher hidden
+ * (see buildLauncherVbs) — pointing /TR at the .cmd directly would park a
+ * visible console window on the desktop for as long as the daemon runs.
+ * Schtasks treats /TR as a command line, so the value is quoted to keep
+ * spaces in the path intact.
  */
 export async function installTask(
   profile: string,
   runArgs: string[] = ['run'],
 ): Promise<SchtasksResult> {
-  await writeLauncherCmd(profile, runArgs);
-  return runSchtasks([
+  await writeLauncherScripts(profile, runArgs);
+  const created = runSchtasks([
     '/Create',
     '/F',
     '/SC',
@@ -110,8 +141,34 @@ export async function installTask(
     '/TN',
     windowsTaskName(profile),
     '/TR',
-    `"${windowsLauncherCmdPath(profile)}"`,
+    `wscript.exe //B "${windowsLauncherVbsPath(profile)}"`,
   ]);
+  if (!created.ok) return created;
+  // schtasks has no switches for these settings; a follow-up PowerShell pass
+  // makes the task survive battery-only laptops and never get killed after
+  // 72h (the defaults are DisallowStartIfOnBatteries=true + PT72H limit).
+  const psScript =
+    `$t = Get-ScheduledTask -TaskName '${windowsTaskName(profile)}' -ErrorAction Stop; ` +
+    `$t.Settings.ExecutionTimeLimit = 'PT0S'; ` +
+    `$t.Settings.DisallowStartIfOnBatteries = $false; ` +
+    `$t.Settings.StopIfGoingOnBatteries = $false; ` +
+    `$t.Settings.AllowStartIfOnBatteries = $true; ` +
+    'Set-ScheduledTask -InputObject $t | Out-Null';
+  const ps = spawnSync(
+    'powershell.exe',
+    ['-NoProfile', '-NonInteractive', '-Command', psScript],
+    { encoding: 'utf8' },
+  );
+  if (ps.status !== 0) {
+    // Task is registered and usable; surface the settings failure but don't
+    // fail the whole install over cosmetic defaults.
+    return {
+      ok: true,
+      stdout: created.stdout,
+      stderr: `${created.stderr}\nwarning: task registered but settings tweak failed: ${ps.stderr ?? ''}`.trim(),
+    };
+  }
+  return created;
 }
 
 /** Start the task now (regardless of trigger). */
@@ -190,9 +247,12 @@ export async function waitUntilStopped(profile: string, timeoutMs = 5000): Promi
 
 export async function deleteTask(profile: string): Promise<SchtasksResult> {
   const r = runSchtasks(['/Delete', '/F', '/TN', windowsTaskName(profile)]);
-  // Remove the launcher script too; best-effort.
+  // Remove both launcher scripts too; best-effort.
   if (existsSync(windowsLauncherCmdPath(profile))) {
     await rm(windowsLauncherCmdPath(profile), { force: true });
+  }
+  if (existsSync(windowsLauncherVbsPath(profile))) {
+    await rm(windowsLauncherVbsPath(profile), { force: true });
   }
   return r;
 }
