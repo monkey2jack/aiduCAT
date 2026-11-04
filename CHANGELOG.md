@@ -13,6 +13,12 @@ aiduCAT 的版本号用 `f` 前缀（f0.1、f0.2+ …），`package.json` 里是
 - 中文名改为「爱嘟妙咪飞」（妙=喵、咪=猫、飞=飞书；绝妙设计的迷人简洁飞书卡片），全称 aiduCAT☤爱嘟妙咪飞；英文全称 Coding Agent Texting（去掉 Claude，三种 agent 通用）。
 - （已被工具图标取代）**模型 logo 回到面板头左侧、紧挨模型名，展开时不再翻转**（Wei 11-02 19:33「我就要这个模型logo在model的左侧，这样才自然才对，能不翻滚最好」）：以前有 logo 时没写 `icon_position`，代码注释以为默认靠左，其实飞书卡片 JSON 2.0 折叠面板默认 `right`，所以 logo 跑到面板最右边、占了箭头的位置，展开时还跟着箭头转 180 度。现在有 logo 时显式 `icon_position: left`、`icon_expanded_angle: 0`；没有 logo 的模型照旧右侧折叠箭头、展开翻转。版本号不变（0.4.1）。
 
+### f0.4++ 之后的修复
+
+- **一张卡最多 5 个表格，多的进「续」卡**（11-04 12:02 嘟嘟一条 7 个表格的回答被飞书拒卡，报 230099 / ErrCode 11310 `card table number over limit`，退成纯文本）：分页时按表格数也切页，每张卡（含精简重试卡）最多 5 个表格，多出的放进「续 2/N」卡；折叠面板里的表格改成代码块，不占名额。`68e2dc3`
+- **不再显示「No response requested.」**（[#6](https://github.com/monkey2jack/aiduCAT/issues/6)，感谢 @iMissNan）：网关模型（Gemini 等）工具跑完不说话时，Claude Code 会自己补一句占位（`model: "<synthetic>"`），以前会显示成答案。现在只丢这一句占位；Claude Code 用 `<synthetic>` 发的 API 报错（401、模型不存在等）照常显示。`b020a94`
+- CI：重启恢复测试改为轮询日志文件，不再固定等 200 毫秒（f0.4++ 那次 ubuntu CI 偶发失败）。`921c9b9`
+
 ## f0.4+ — 2026-11-02（package 0.4.1）
 
 基于 f0.4（`8b210ba`）。主题：**Hermes Agent 成为第三种 agent**——同一套飞书泡波卡片，背后可以按 profile 选 Claude Code、Codex 或 Hermes Agent。f0.4 发布后在 main 上陆续上线的修复（群全员可用、外人轮次能干活、群命令只给管理员、按聊天配模型等）也一起收进这个版本。
