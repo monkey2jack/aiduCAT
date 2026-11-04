@@ -87,12 +87,23 @@ export function windowsTaskName(profile: string = paths.profile): string {
 }
 
 /**
- * The wrapper .cmd script schtasks invokes. schtasks `/TR` accepts a
- * command line directly, but we want stdout/stderr redirection + a PATH
- * override, which means wrapping in a script.
+ * The wrapper .cmd script the daemon actually runs (PATH override + stdout/
+ * stderr redirection). No longer the `/TR` target directly — see
+ * `windowsLauncherVbsPath`.
  */
 export function windowsLauncherCmdPath(profile: string = paths.profile): string {
   return join(paths.appDir, 'daemon', serviceProfileId(profile), 'launcher.cmd');
+}
+
+/**
+ * The VBS wrapper that `/TR` points at. `wscript.exe` is a GUI-subsystem host,
+ * so it allocates no console window of its own, and it launches the `.cmd`
+ * with `Run(..., 0, ...)` (window style 0 = hidden). This is what keeps the
+ * daemon from parking a visible console window on the interactive desktop
+ * every time Task Scheduler fires the task.
+ */
+export function windowsLauncherVbsPath(profile: string = paths.profile): string {
+  return join(paths.appDir, 'daemon', serviceProfileId(profile), 'launcher.vbs');
 }
 
 // === Daemon log paths (platform-agnostic) ===

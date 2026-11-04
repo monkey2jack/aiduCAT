@@ -6,9 +6,11 @@ import {
   launchAgentLabel,
   serviceProfileId,
   systemdUnitName,
+  windowsLauncherCmdPath,
+  windowsLauncherVbsPath,
   windowsTaskName,
 } from '../../../src/daemon/paths';
-import { buildLauncherCmd } from '../../../src/daemon/schtasks';
+import { buildLauncherCmd, buildLauncherVbs } from '../../../src/daemon/schtasks';
 import { buildUnit } from '../../../src/daemon/systemd';
 
 describe('profile-scoped daemon paths and arguments', () => {
@@ -68,5 +70,31 @@ describe('profile-scoped daemon paths and arguments', () => {
     expect(buildUnit(inputs)).not.toContain('--profile');
     expect(buildLauncherCmd(inputs)).toContain('run --web-ui');
     expect(buildLauncherCmd(inputs)).not.toContain('--profile');
+  });
+});
+
+describe('windows launcher VBS wrapper (console-window fix)', () => {
+  it('runs the launcher .cmd hidden and waits for it to exit', () => {
+    const cmdPath = windowsLauncherCmdPath('supervisor');
+    const vbs = buildLauncherVbs(cmdPath);
+
+    // Hidden window (0) + wait-on-return (True). Without the wait, wscript.exe
+    // returns immediately and the task's tracked process exits, so
+    // `schtasks /End` would no longer reach the node daemon.
+    expect(vbs).toContain(`shell.Run """${cmdPath}""", 0, True`);
+    // Path is embedded verbatim; the VBS literal doubles the surrounding quotes.
+    expect(vbs).toContain(cmdPath);
+    expect(vbs).toContain('CreateObject("WScript.Shell")');
+  });
+
+  it('places the .vbs next to the .cmd and keeps per-profile paths distinct', () => {
+    expect(windowsLauncherVbsPath('claude')).toMatch(/launcher\.vbs$/);
+    expect(windowsLauncherVbsPath('claude')).not.toBe(windowsLauncherCmdPath('claude'));
+    expect(windowsLauncherVbsPath('claude')).not.toBe(windowsLauncherVbsPath('codex-dev'));
+  });
+
+  it('preserves spaces in the .cmd path inside the quoted Run call', () => {
+    const vbs = buildLauncherVbs('C:\\Users\\a b\\launcher.cmd');
+    expect(vbs).toContain('"C:\\Users\\a b\\launcher.cmd"');
   });
 });
