@@ -19,6 +19,7 @@ import { stopProcessEntry, type StopProcessEntryResult } from './ps';
 import { cleanupTmpFiles } from '../../runtime/registry';
 import { RuntimeLockConflictError, type RuntimeLockMeta } from '../../runtime/locks';
 import { resolveProfileRuntime } from '../../runtime/profile-runtime';
+import { listAllProfiles } from '../../runtime/profile-discovery';
 import { FEATURE_OFF_REPLY, featureEnabled } from '../../config/profile-schema';
 import { assertReconnectAgentKindUnchanged, createRuntimeAgent } from '../../runtime/agent-runtime';
 
@@ -187,18 +188,63 @@ async function runSupervisorConsole(opts: StartOptions): Promise<void> {
     log.warn('ui', 'server-start-failed', { err: String(err) });
   }
 
-  // Auto-start only the active profile; others start on demand from the console.
-  try {
-    await supervisor.startProfile(appPaths.profile);
-    console.log(`✓ profile「${appPaths.profile}」已上线`);
-  } catch (err) {
-    console.warn(
-      `⚠️ active profile「${appPaths.profile}」启动失败：${err instanceof Error ? err.message : String(err)}`,
-    );
-    log.warn('supervisor', 'active-start-failed', { profile: appPaths.profile, err: String(err) });
-  }
+  // Auto-start every configured profile the user hasn't explicitly stopped
+  // (#5): `autoStart === false` means the user stopped it on purpose (console
+  // stop / chat /exit), and it stays down until they start it again. Active
+  // profile first so its failure surfaces in the same order users expect; each
+  // profile is isolated — one broken config must not take the others down.
+  await autoStartProfiles(supervisor, appPaths.rootDir, appPaths.profile);
 
   await parkWithShutdown(supervisor, appPaths, uiServer, hostLock);
+}
+
+/**
+ * Bring every configured profile online, honoring per-profile `autoStart`
+ * (absent/true = auto-start, false = user-stopped). Ordered active-first;
+ * failures are logged and reported per profile without aborting the rest.
+ *
+ * `fallbackProfile` is the active profile the caller already resolved: if
+ * profile *discovery* fails outright (a corrupt/inconsistent state dir, which
+ * `listAllProfiles` treats as an error), still start the one profile we know
+ * resolves — the pre-#5 behavior — rather than booting with nothing online.
+ */
+async function autoStartProfiles(
+  supervisor: Supervisor,
+  rootDir: string,
+  fallbackProfile: string,
+): Promise<void> {
+  let profiles;
+  try {
+    profiles = await listAllProfiles(rootDir);
+  } catch (err) {
+    log.warn('supervisor', 'profile-discovery-failed', { err: String(err) });
+    profiles = [{ name: fallbackProfile, autoStart: true }];
+  }
+  if (profiles.length === 0) return;
+
+  const stopped: string[] = [];
+  for (const p of profiles) {
+    if (!p.autoStart) {
+      stopped.push(p.name);
+      continue;
+    }
+    if (supervisor.isOnline(p.name)) continue;
+    try {
+      await supervisor.startProfile(p.name);
+      console.log(`✓ profile「${p.name}」已上线`);
+    } catch (err) {
+      console.warn(
+        `⚠️ profile「${p.name}」启动失败：${err instanceof Error ? err.message : String(err)}`,
+      );
+      log.warn('supervisor', 'profile-start-failed', { profile: p.name, err: String(err) });
+    }
+  }
+
+  const online = profiles.filter((p) => p.autoStart && supervisor.isOnline(p.name));
+  console.log(`✓ 已上线 ${online.length}/${profiles.length} 个 profile`);
+  if (stopped.length > 0) {
+    console.log(`  未启动（你之前手动停止）：${stopped.join('、')}（控制台可再次启动）`);
+  }
 }
 
 /**

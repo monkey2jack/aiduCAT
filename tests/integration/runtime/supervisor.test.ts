@@ -9,6 +9,7 @@ import {
   saveRootConfig,
 } from '../../../src/config/profile-store';
 import { Supervisor } from '../../../src/runtime/supervisor';
+import { listAllProfiles } from '../../../src/runtime/profile-discovery';
 
 const roots: string[] = [];
 const started: string[] = [];
@@ -98,5 +99,54 @@ describe('Supervisor', () => {
     await sup.startProfile('claude');
     await sup.startProfile('claude');
     expect(started.filter((p) => p === 'claude')).toHaveLength(1);
+  });
+});
+
+describe('Supervisor auto-start flag (#5)', () => {
+  it('stopProfile sets autoStart=false; startProfile clears it', async () => {
+    await sup.startProfile('claude');
+    const loaded1 = (await loadRootConfig(join(root, 'config.json')))!;
+    expect(loaded1.profiles['claude']?.autoStart).not.toBe(false);
+
+    await sup.stopProfile('claude');
+    const loaded2 = (await loadRootConfig(join(root, 'config.json')))!;
+    expect(loaded2.profiles['claude']?.autoStart).toBe(false);
+
+    await sup.startProfile('claude');
+    const loaded3 = (await loadRootConfig(join(root, 'config.json')))!;
+    expect(loaded3.profiles['claude']?.autoStart).not.toBe(false);
+  });
+
+  it('stopProfile on a profile that was never started does not throw', async () => {
+    await expect(sup.stopProfile('work')).resolves.not.toThrow();
+  });
+
+  it('a fresh supervisor skips autoStart=false profiles but still boots the rest', async () => {
+    // User stops 'claude' on purpose; 'work' stays auto-start.
+    await sup.startProfile('claude');
+    await sup.stopProfile('claude');
+
+    const profiles = await listAllProfiles(root);
+    expect(profiles.find((p) => p.name === 'claude')?.autoStart).toBe(false);
+    expect(profiles.find((p) => p.name === 'work')?.autoStart).toBe(true);
+
+    // Same loop the daemon runs at boot: start every autoStart profile, each
+    // isolated. The fixture's `dup`/`work` share one app id, so one of them
+    // fails the app-id dedupe; the loop must carry on (mirrors start.ts).
+    const fresh = new Supervisor({
+      configPath: join(root, 'config.json'),
+      rootDir: root,
+      runPreflight: false,
+      startChannelFn: stubStartChannel,
+    });
+    for (const p of profiles.filter((p) => p.autoStart)) {
+      await fresh.startProfile(p.name).catch(() => undefined);
+    }
+
+    // `claude` was stopped on purpose -> stays offline.
+    expect(fresh.isOnline('claude')).toBe(false);
+    // Exactly one of the two explicit-autoStart profiles with this app id is up.
+    expect(fresh.isOnline('work') !== fresh.isOnline('dup')).toBe(true);
+    await fresh.shutdown();
   });
 });

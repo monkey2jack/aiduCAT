@@ -275,6 +275,14 @@ export interface ProfileConfig {
   agentEnv?: { passthrough: string[] };
   /** f03p-slim-#1: optional module switches (normalized: all four keys). */
   features?: ProfileFeatures;
+  /**
+   * Supervisor auto-start on boot. Absent or `true` = the supervisor brings
+   * this profile online at startup; `false` = the user explicitly stopped it
+   * (console stop button, or `/exit` in chat), so it stays down across restarts
+   * until they start it again. Written only on explicit user action — a daemon
+   * shutdown or a crash never sets it.
+   */
+  autoStart?: boolean;
 }
 
 /**
@@ -384,6 +392,7 @@ export function normalizeProfileConfig(input: unknown): ProfileConfig {
     larkCli?: unknown;
     agentEnv?: { passthrough?: unknown };
     features?: unknown;
+    autoStart?: unknown;
   };
 
   if (raw.schemaVersion !== 2) {
@@ -447,6 +456,9 @@ export function normalizeProfileConfig(input: unknown): ProfileConfig {
     meeting,
     larkCli,
     features: normalizeFeatures(raw.features),
+    // Only the explicit `false` is meaningful (user stopped it); absent/true
+    // both mean "auto-start", so we keep the config clean by omitting it.
+    ...(raw.autoStart === false ? { autoStart: false } : {}),
   };
 }
 

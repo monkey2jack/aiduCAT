@@ -69,6 +69,8 @@ type StoredProfileConfig = Pick<
   Partial<Pick<ProfileConfig, 'modelProviders' | 'defaultProviderName' | 'agentEnv' | 'hermes'>> & {
     /** f03p-slim-#1: only the switched-off modules are written. */
     features?: Partial<ProfileFeatures>;
+    /** Supervisor auto-start flag; only written when the user turned it off. */
+    autoStart?: boolean;
   };
 
 type StoredRootConfig = Omit<RootConfig, 'preferences' | 'profiles'> & {
@@ -115,6 +117,9 @@ function serializeProfileConfig(profile: ProfileConfig): StoredProfileConfig {
     ...(profile.defaultProviderName ? { defaultProviderName: profile.defaultProviderName } : {}),
     ...(profile.agentEnv ? { agentEnv: profile.agentEnv } : {}),
     ...(storedFeatures(profile.features) ? { features: storedFeatures(profile.features) } : {}),
+    // Must survive save cycles, or the first config write after a console stop
+    // would silently resurrect the bot on the next boot.
+    ...(profile.autoStart === false ? { autoStart: false } : {}),
   };
 }
 
@@ -157,6 +162,31 @@ export async function readActiveProfile(rootDir?: string): Promise<string | unde
 export async function writeActiveProfile(rootDir: string, profile: string): Promise<void> {
   const activeProfileFile = join(rootDir, 'active-profile');
   await writeFileAtomic(activeProfileFile, `${profile}\n`, { mode: 0o600 });
+}
+
+/**
+ * Flip a profile's supervisor auto-start flag (#5) under the config lock.
+ *
+ * `enabled === false` records "the user stopped this bot on purpose, keep it
+ * down across restarts"; `true` clears the flag back to the default. No-ops
+ * when the stored value already matches, so a routine profile start doesn't
+ * rewrite config.json. Unknown profile (removed while we waited for the lock)
+ * is ignored rather than resurrected.
+ */
+export async function setProfileAutoStart(
+  configPath: string,
+  profile: string,
+  enabled: boolean,
+): Promise<void> {
+  await withConfigFileLock(configPath, async () => {
+    const root = await loadRootConfig(configPath);
+    const cfg = root?.profiles[profile];
+    if (!root || !cfg) return;
+    if ((cfg.autoStart !== false) === enabled) return;
+    if (enabled) delete cfg.autoStart;
+    else cfg.autoStart = false;
+    await saveRootConfig(root, configPath);
+  });
 }
 
 export function runtimeProfileConfig(root: RootConfig, profile: string): AppConfig & ProfileConfig {

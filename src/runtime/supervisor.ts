@@ -24,6 +24,7 @@ import {
   type AcquiredRuntimeLock,
 } from './locks';
 import { resolveProfileRuntime } from './profile-runtime';
+import { setProfileAutoStart } from '../config/profile-store';
 import {
   register,
   unregister,
@@ -411,6 +412,10 @@ export class Supervisor {
     await managed.bringUp(new Date().toISOString());
     this.managed.set(appPaths.profile, managed);
     log.info('supervisor', 'profile-online', { profile: appPaths.profile, appId: cfg.accounts.app.id });
+    // Starting a profile by hand is the user changing their mind about an
+    // earlier stop: it must auto-start again after the next restart. Best-effort
+    // — a failed flag write must not make an online bot look offline.
+    await this.markAutoStart(appPaths.profile, true);
   }
 
   /** Take a profile offline (in-process). The supervisor keeps running. */
@@ -420,6 +425,24 @@ export class Supervisor {
     this.managed.delete(profile);
     await managed.stop();
     log.info('supervisor', 'profile-offline', { profile });
+    // stopProfile is the *user* stopping one bot (console button, or `/exit`
+    // from chat) — unlike shutdown(), which takes every bot down because the
+    // process is exiting. Record that intent so the next boot leaves it off
+    // (#5: everything auto-starts except what the user stopped on purpose).
+    await this.markAutoStart(profile, false);
+  }
+
+  /** Persist a profile's auto-start flag; failures are logged, never thrown. */
+  private async markAutoStart(profile: string, enabled: boolean): Promise<void> {
+    try {
+      await setProfileAutoStart(this.opts.configPath, profile, enabled);
+    } catch (err) {
+      log.warn('supervisor', 'auto-start-flag-write-failed', {
+        profile,
+        enabled,
+        err: err instanceof Error ? err.message : String(err),
+      });
+    }
   }
 
   async restartProfile(profile: string): Promise<void> {
