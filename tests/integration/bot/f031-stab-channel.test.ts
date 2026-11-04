@@ -151,8 +151,18 @@ describe('f031-stab-#5 restart recovery', () => {
     await h.handlers.message?.(dmMessage('om_a', 'first'));
     await waitFor(() => paused);
     await h.handlers.message?.(dmMessage('om_b', 'QUEUED_SENTINEL'));
-    await settle(200);
-    const during = JSON.parse(await readFile(journalPath(h), 'utf8'));
+    // CI flake (2026-11-04, ubuntu runner): a fixed 200ms was not always
+    // enough for the journal write — poll until both entries are on disk.
+    let during: { inflight: Record<string, unknown>; queued: unknown } = { inflight: {}, queued: {} };
+    for (let i = 0; i < 50; i++) {
+      try {
+        during = JSON.parse(await readFile(journalPath(h), 'utf8'));
+      } catch {
+        // not written yet
+      }
+      if (during.inflight?.oc_dm && JSON.stringify(during.queued).includes('QUEUED_SENTINEL')) break;
+      await settle(100);
+    }
     expect(during.inflight.oc_dm).toMatchObject({ chatId: 'oc_dm', cardMessageId: 'om_stream_1' });
     expect(JSON.stringify(during.queued)).toContain('QUEUED_SENTINEL');
     expect((await stat(journalPath(h))).mode & 0o777).toBe(0o600);
