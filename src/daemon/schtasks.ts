@@ -59,10 +59,13 @@ export function buildLauncherCmd(inputs: LauncherInputs): string {
  *
  * wscript.exe is a GUI-subsystem host: it never allocates a console of its own.
  * `WScript.Shell.Run(cmd, 0, True)` then launches the .cmd with window style
- * `0` (hidden) and `bWaitOnReturn = True`, so:
- *  - the daemon never parks a visible console window on the desktop, and
- *  - wscript.exe stays alive as the task's tracked process until the .cmd (and
- *    its node child) exits, so `schtasks /End` still terminates the whole chain.
+ * `0` (hidden) and `bWaitOnReturn = True`, so the daemon never parks a visible
+ * console window on the desktop, and wscript.exe stays alive as the task's
+ * tracked process for as long as the daemon runs.
+ *
+ * That tracking is what `endTask` depends on — it locates this wscript.exe and
+ * kills its tree, because `schtasks /End` on its own ends only the
+ * directly-launched process and leaves the cmd/node children as orphans.
  *
  * VBScript is still shipped on Windows 10/11 as an optional feature but remains
  * available by default; if it ever goes missing this wrapper simply fails to run
@@ -77,6 +80,41 @@ export function buildLauncherVbs(cmdPath: string): string {
     'Set shell = Nothing',
     '',
   ].join('\r\n');
+}
+
+/** `-like` treats `* ? [ ]` as wildcards, so wrap them to match a literal path. */
+function likeLiteral(path: string): string {
+  return path.replace(/([\[\]*?])/g, '[$1]');
+}
+
+/**
+ * PowerShell that kills the launcher process tree for a service.
+ *
+ * `schtasks /End` ends only the process the task launched *directly* — with the
+ * hidden launcher that is wscript.exe — and leaves the `cmd.exe` and `node.exe`
+ * it spawned running as orphans, so `stop` would report success while the bot
+ * kept answering. Find the launcher process by its command line (not by parsing
+ * `schtasks` output, which is localized) and kill its whole tree.
+ *
+ * Matches both the current layout (wscript → launcher.vbs) and a task installed
+ * before this change (cmd → launcher.cmd), so upgrading is seamless.
+ */
+export function buildKillTreeScript(serviceId: string): string {
+  const matches = [windowsLauncherVbsPath(serviceId), windowsLauncherCmdPath(serviceId)]
+    .map((p) => `$_.CommandLine -like '*${likeLiteral(p).replace(/'/g, "''")}*'`)
+    .join(' -or ');
+  return (
+    'Get-CimInstance Win32_Process | ' +
+    `Where-Object { $_.Name -in 'wscript.exe','cmd.exe' -and (${matches}) } | ` +
+    'ForEach-Object { taskkill /F /T /PID $_.ProcessId 2>&1 | Out-Null }'
+  );
+}
+
+/** Best-effort: kill the launcher tree. See buildKillTreeScript. */
+function killLauncherTree(serviceId: string): void {
+  spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', buildKillTreeScript(serviceId)], {
+    encoding: 'utf8',
+  });
 }
 
 async function writeLauncherScripts(profile: string, runArgs: string[] = ['run']): Promise<void> {
@@ -176,9 +214,18 @@ export function runTask(profile: string): SchtasksResult {
   return runSchtasks(['/Run', '/TN', windowsTaskName(profile)]);
 }
 
-/** End the running instance. Task stays registered for next logon. */
+/**
+ * End the running instance. Task stays registered for next logon.
+ *
+ * `schtasks /End` only ends the process the task launched directly. With the
+ * hidden launcher that is wscript.exe, and it leaves cmd.exe / node.exe running
+ * as orphans — so `stop` would report success while the bot keeps answering.
+ * Kill the launcher tree as well.
+ */
 export function endTask(profile: string): SchtasksResult {
-  return runSchtasks(['/End', '/TN', windowsTaskName(profile)]);
+  const ended = runSchtasks(['/End', '/TN', windowsTaskName(profile)]);
+  killLauncherTree(profile);
+  return ended;
 }
 
 /** Disable autostart (task stays registered but ONLOGON trigger won't fire). */

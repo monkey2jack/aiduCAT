@@ -10,7 +10,7 @@ import {
   windowsLauncherVbsPath,
   windowsTaskName,
 } from '../../../src/daemon/paths';
-import { buildLauncherCmd, buildLauncherVbs } from '../../../src/daemon/schtasks';
+import { buildLauncherCmd, buildLauncherVbs, buildKillTreeScript } from '../../../src/daemon/schtasks';
 import { buildUnit } from '../../../src/daemon/systemd';
 
 describe('profile-scoped daemon paths and arguments', () => {
@@ -78,9 +78,11 @@ describe('windows launcher VBS wrapper (console-window fix)', () => {
     const cmdPath = windowsLauncherCmdPath('supervisor');
     const vbs = buildLauncherVbs(cmdPath);
 
-    // Hidden window (0) + wait-on-return (True). Without the wait, wscript.exe
-    // returns immediately and the task's tracked process exits, so
-    // `schtasks /End` would no longer reach the node daemon.
+    // Hidden window (0) keeps the daemon off the desktop. Wait-on-return (True)
+    // keeps wscript.exe alive as the task's tracked process for the daemon's
+    // lifetime — which is what `endTask` kills (via its process tree) to bring
+    // the whole wscript → cmd → node chain down, since `schtasks /End` alone
+    // would end only wscript.exe and orphan the rest.
     expect(vbs).toContain(`shell.Run """${cmdPath}""", 0, True`);
     // Path is embedded verbatim; the VBS literal doubles the surrounding quotes.
     expect(vbs).toContain(cmdPath);
@@ -96,5 +98,19 @@ describe('windows launcher VBS wrapper (console-window fix)', () => {
   it('preserves spaces in the .cmd path inside the quoted Run call', () => {
     const vbs = buildLauncherVbs('C:\\Users\\a b\\launcher.cmd');
     expect(vbs).toContain('"C:\\Users\\a b\\launcher.cmd"');
+  });
+});
+
+describe('windows launcher tree kill (schtasks /End leaves orphans)', () => {
+  it('targets both the wscript launcher and a pre-fix cmd launcher', () => {
+    const script = buildKillTreeScript('supervisor');
+    // Kills the whole tree, not just the direct task process.
+    expect(script).toContain('taskkill /F /T');
+    // Finds the launcher by its command line (schtasks output is localized).
+    expect(script).toContain(windowsLauncherVbsPath('supervisor'));
+    expect(script).toContain(windowsLauncherCmdPath('supervisor'));
+    // Only the launcher hosts, never the node daemon itself (its cmdline is the
+    // bridge entry, not launcher.*), so a stray node is not matched.
+    expect(script).toContain("'wscript.exe','cmd.exe'");
   });
 });
