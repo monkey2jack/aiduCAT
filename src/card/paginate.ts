@@ -24,6 +24,23 @@ interface Unit {
 const FENCE_RE = /^\s*(`{3,}|~{3,})/;
 const TABLE_SEP_RE = /^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?\s*$/;
 
+/**
+ * f0.4++ fix (prod 2026-11-04 12:02): Feishu rejects a card holding more than
+ * five markdown tables (230099 / ErrCode 11310 "card table number over limit").
+ * A 9-table answer fell back to plain text. Pages now carry at most this many.
+ */
+export const CARD_TABLE_LIMIT = 5;
+
+/** A GFM table: a header row with a pipe, then a separator row. */
+function isTableStart(lines: string[], i: number): boolean {
+  const next = lines[i + 1];
+  return lines[i]!.includes('|') && next !== undefined && next.includes('-') && TABLE_SEP_RE.test(next);
+}
+
+function isTable(u: Unit): boolean {
+  return u.kind === 'table' && u.lines.length >= 2 && TABLE_SEP_RE.test(u.lines[1]!);
+}
+
 function parse(md: string): Unit[] {
   const lines = md.split('\n');
   const units: Unit[] = [];
@@ -48,14 +65,22 @@ function parse(md: string): Unit[] {
       units.push({ kind: 'fence', lines: block });
       continue;
     }
-    if (line.trimStart().startsWith('|')) {
-      const block: string[] = [];
-      while (i < lines.length && lines[i]!.trimStart().startsWith('|')) block.push(lines[i++]!);
+    if (line.trimStart().startsWith('|') || isTableStart(lines, i)) {
+      const block: string[] = [lines[i++]!];
+      while (i < lines.length && lines[i]!.trim() && lines[i]!.includes('|') && !FENCE_RE.test(lines[i]!)) {
+        block.push(lines[i++]!);
+      }
       units.push({ kind: 'table', lines: block });
       continue;
     }
     const block: string[] = [];
-    while (i < lines.length && lines[i]!.trim() && !FENCE_RE.test(lines[i]!) && !lines[i]!.trimStart().startsWith('|')) {
+    while (
+      i < lines.length &&
+      lines[i]!.trim() &&
+      !FENCE_RE.test(lines[i]!) &&
+      !lines[i]!.trimStart().startsWith('|') &&
+      !isTableStart(lines, i)
+    ) {
       block.push(lines[i++]!);
     }
     units.push({ kind: 'para', lines: block });
@@ -106,7 +131,7 @@ function splitUnit(u: Unit, firstRoom: number, room: number): string[] {
     head = [open];
     tail = [marker];
     body = u.lines.slice(1, closed ? -1 : undefined);
-  } else if (u.kind === 'table' && u.lines.length > 2 && TABLE_SEP_RE.test(u.lines[1]!)) {
+  } else if (isTable(u) && u.lines.length > 2) {
     head = u.lines.slice(0, 2);
     body = u.lines.slice(2);
   }
@@ -142,23 +167,37 @@ function splitUnit(u: Unit, firstRoom: number, room: number): string[] {
  * page separators included; callers reserve room for their own notes).
  * Concatenating the pages gives back every block once, in order.
  */
-export function paginateMarkdown(md: string, firstBudget: number, budget: number): string[] {
+export function paginateMarkdown(
+  md: string,
+  firstBudget: number,
+  budget: number,
+  maxTables: number = CARD_TABLE_LIMIT,
+  firstMaxTables: number = maxTables,
+): string[] {
   const pages: string[] = [];
   let cur: string[] = [];
   let used = 0;
   let room = firstBudget;
+  let tables = 0;
+  let tableRoom = firstMaxTables;
   const close = () => {
     pages.push(cur.join(SEP));
     cur = [];
     used = 0;
     room = budget;
+    tables = 0;
+    tableRoom = maxTables;
   };
   for (const u of parse(md)) {
     const t = text(u);
+    const isTbl = isTable(u);
+    // table budget first: a page never holds more tables than Feishu accepts
+    if (isTbl && tables >= tableRoom && cur.length) close();
     const b = jsonBytes(t) + (cur.length ? 4 : 0);
     if (used + b <= room) {
       cur.push(t);
       used += b;
+      if (isTbl) tables++;
       continue;
     }
     if (jsonBytes(t) <= budget) {
@@ -166,6 +205,7 @@ export function paginateMarkdown(md: string, firstBudget: number, budget: number
       if (cur.length) close();
       cur.push(t);
       used = jsonBytes(t);
+      if (isTbl) tables++;
       continue;
     }
     // block bigger than a page: fill what is left here, continue on new pages
@@ -177,10 +217,27 @@ export function paginateMarkdown(md: string, firstBudget: number, budget: number
         if (cur.length) close();
       }
       if (!p) return;
+      if (isTbl && tables >= tableRoom && cur.length) close();
       cur.push(p);
       used += jsonBytes(p) + (cur.length > 1 ? 4 : 0);
+      if (isTbl) tables++;
     });
   }
   if (cur.length || !pages.length) close();
   return pages.filter((p, i) => p.trim() || i === 0);
+}
+
+/** Number of GFM tables in `md` (code fences excluded) — what Feishu counts. */
+export function countTables(md: string): number {
+  return parse(md).filter(isTable).length;
+}
+
+/**
+ * Turn every GFM table in `md` into a fenced code block, so it costs nothing
+ * against the per-card table limit (used for the collapsed process panel).
+ */
+export function defangTables(md: string): string {
+  const units = parse(md);
+  if (!units.some(isTable)) return md;
+  return units.map((u) => (isTable(u) ? ['```', ...u.lines, '```'].join('\n') : text(u))).join(SEP);
 }

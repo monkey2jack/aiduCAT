@@ -3,7 +3,7 @@ import { timeoutNotice, type Block, type RunState, type ToolEntry } from './run-
 import { logoImgKeyForAgent, type AgentLogoKind } from './model-logo';
 import { maskEmails } from './mask-email';
 import { TRUNCATION_NOTE, sanitizeCardMarkdown, sanitizePlainText, truncateUtf8, utf8Bytes } from './sanitize';
-import { jsonBytes, paginateMarkdown } from './paginate';
+import { CARD_TABLE_LIMIT, countTables, defangTables, jsonBytes, paginateMarkdown } from './paginate';
 import { toolHeaderText } from './tool-render';
 const REASONING_MAX = 1500;
 /** f0.3.1 #2: answer budget inside the card (UTF-8 bytes, before JSON escaping). */
@@ -169,7 +169,9 @@ function buildCard(
   let continuations: string[] = [];
   const clean = rawAnswerBlocks(state).map((raw) => sanitizeCardMarkdown(raw, { withLinks }));
   const total = clean.reduce((n, t) => n + jsonBytes(t), 0);
-  if (total <= budget.answerBytes) {
+  // f0.4++ fix: Feishu takes at most 5 tables per card — more goes to 「续」 cards.
+  const tableCount = clean.reduce((n, t) => n + countTables(t), 0);
+  if (total <= budget.answerBytes && tableCount <= CARD_TABLE_LIMIT) {
     for (const text of clean) if (text.trim()) elements.push(markdown(text));
   } else {
     const note = jsonBytes(TRUNCATION_NOTE);
@@ -177,6 +179,7 @@ function buildCard(
       clean.join('\n\n'),
       Math.max(500, budget.answerBytes - note),
       CONTINUATION_ANSWER_MAX_BYTES - note,
+      CARD_TABLE_LIMIT,
     );
     answerTruncated = pages.length > 1;
     continuations = pages.slice(1);
@@ -363,7 +366,9 @@ function aiduPopPanel(
     // aiduCAT: border color carries the terminal state (aiduPOP style) —
     // running/none grey, done green, stopped/timeout yellow, error red.
     border: panelBorderColor(state),
-    body: sanitizeCardMarkdown(bodyParts.join('\n\n'), { withLinks: !options.strict }) || '_（无过程记录）_',
+    // f0.4++ fix: tables in the panel would count against the card's 5-table
+    // limit (230099/11310); show them as code instead.
+    body: defangTables(sanitizeCardMarkdown(bodyParts.join('\n\n'), { withLinks: !options.strict })) || '_（无过程记录）_',
     // f0.4+: the header icon is the coding agent (no more model logos);
     // no agent icon → the default chevron.
     ...agentLogoOpt(options),
