@@ -1,9 +1,10 @@
-import { mkdir, readFile, rm, stat } from 'node:fs/promises';
+import { mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { spawn } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { resolveAppPaths } from '../../../src/config/app-paths';
-import { withProfileAndAppLocks } from '../../../src/runtime/locks';
+import { runtimeLockMetaFile, withProfileAndAppLocks } from '../../../src/runtime/locks';
 
 const roots: string[] = [];
 
@@ -98,6 +99,61 @@ describe('runtime locks', () => {
 
     await withProfileAndAppLocks(second, 'cli_new', 'codex', async () => {
       expect(true).toBe(true);
+    });
+  });
+
+  it('reaps a lock whose holder pid is dead instead of failing', async () => {
+    const root = await makeRoot();
+    const paths = resolveAppPaths({ rootDir: root, profile: 'claude' });
+    await mkdir(paths.userLockDir, { recursive: true });
+
+    // A child process killed with SIGKILL — its pid is provably dead, and it
+    // stays dead long enough for the reap check (a freshly-exited pid can be
+    // recycled by the OS, which would make the test flaky).
+    const child = spawn('node', ['-e', 'setInterval(() => {}, 1000)'], { detached: true });
+    const pid = child.pid;
+    if (pid === undefined) throw new Error('failed to spawn child');
+    await new Promise((r) => setTimeout(r, 300));
+    process.kill(pid, 'SIGKILL');
+
+    // proper-lockfile acquires by creating a sibling <target>.lock DIRECTORY.
+    await mkdir(`${paths.profileLockFile}.lock`, { recursive: true });
+    await writeFile(
+      runtimeLockMetaFile(paths.profileLockFile),
+      `${JSON.stringify({
+        kind: 'profile',
+        target: paths.profileLockFile,
+        profile: 'claude',
+        agentKind: 'claude',
+        pid,
+        startedAt: new Date().toISOString(),
+      }, null, 2)}\n`,
+      { mode: 0o600 },
+    );
+
+    // A live holder would block this; a dead one must be reaped automatically.
+    await expect(
+      withProfileAndAppLocks(paths, 'cli_reaped', 'claude', async () => {
+        expect(true).toBe(true);
+      }),
+    ).resolves.toBeUndefined();
+
+    // The stale lock directory and meta sidecar are gone, not merely
+    // superseded by the new holder (which would leave a leftover dir).
+    await expect(stat(`${paths.profileLockFile}.lock`)).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
+  it('does not reap a lock held by a live process', async () => {
+    const root = await makeRoot();
+    const paths = resolveAppPaths({ rootDir: root, profile: 'claude' });
+    await mkdir(paths.userLockDir, { recursive: true });
+
+    await withProfileAndAppLocks(paths, 'cli_live', 'claude', async () => {
+      // A second acquire for the same profile must still conflict — the live
+      // holder must not be stolen.
+      await expect(
+        withProfileAndAppLocks(paths, 'cli_other', 'claude', async () => {}),
+      ).rejects.toMatchObject({ kind: 'profile' });
     });
   });
 });
