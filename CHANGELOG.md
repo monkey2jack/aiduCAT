@@ -19,6 +19,7 @@ aiduCAT 的版本号用 `f` 前缀（f0.1、f0.2+ …），`package.json` 里是
 - **不再显示「No response requested.」**（[#6](https://github.com/monkey2jack/aiduCAT/issues/6)，感谢 @iMissNan）：网关模型（Gemini 等）工具跑完不说话时，Claude Code 会自己补一句占位（`model: "<synthetic>"`），以前会显示成答案。现在只丢这一句占位；Claude Code 用 `<synthetic>` 发的 API 报错（401、模型不存在等）照常显示。`b020a94`
 - **Windows 后台服务不再挂黑窗**（[#4](https://github.com/monkey2jack/aiduCAT/issues/4) / [#7](https://github.com/monkey2jack/aiduCAT/pull/7)，感谢 @alone-lon）：计划任务改用 `wscript.exe` + 隐藏的 `launcher.vbs` 启动，桌面不再有 cmd 窗口，关窗口也不会杀掉 daemon；去掉 72 小时强杀、用电池时不停。顺带修：`stop`/`restart` 真的能结束 node（`/End` 之后连进程树一起杀，旧任务不重装也能停）；中文等非英文 Windows 上 `status` 不再永远报「没在运行」；`stop` 后马上 `start` 不再卡约 30 秒（确认进程已死才清 host 锁）；`launcher.cmd` 的 PATH 改从注册表读，不再烤进 git-bash 的路径。只改 Windows 分支，Linux/macOS 不变。另：按命令行匹配孤儿 node 时转义单引号。
 - **交互卡片(card)不再被设置界面静默降级**：`f0.4` 起设置表单（飞书 /config 卡片与 Web 控制台）把「交互卡片」选项藏掉了，且表单回显时把已存的 `card` 显示成 `markdown`——用户在表单里点一次保存，reply 模式就被无声改成 `markdown`，完整交互卡片消失。现在 `card` 恢复为第三个可选项，回显按真实值。老配置行为不变（`card` 一直正常工作，只是没法从界面选回来）。
+- **重启/开机自启不再被强杀进程留下的旧锁卡住 30 秒**（[#5](https://github.com/monkey2jack/aiduCAT/issues/5) 多 profile 自启实测发现）：daemon 被 `SIGKILL` / `taskkill /F` 强杀时不走释放路径，profile/app 锁会占满 proper-lockfile 的 30 秒过期窗口；紧接着的 `restart` 或 supervisor 开机自动上线每个 bot 全部失败（`runtime profile lock is already held`）。现在获取锁时若锁记录里的 holder pid 已确认死亡，先清掉这把旧锁再重试一次（`EPERM` 视为存活，绝不抢别的用户的活锁；慢但活着的 holder 心跳也不会被误删）。平台无关，Windows/Linux/macOS 同一条路径。
 - CI：重启恢复测试改为轮询日志文件，不再固定等 200 毫秒（f0.4++ 那次 ubuntu CI 偶发失败）。`921c9b9`
 
 ## f0.4+ — 2026-11-02（package 0.4.1）

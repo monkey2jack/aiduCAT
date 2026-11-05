@@ -1,4 +1,4 @@
-import { chmod, mkdir, readFile, unlink, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, readFile, rm, unlink, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import * as lockfile from 'proper-lockfile';
 import type { AppPaths } from '../config/app-paths';
@@ -98,6 +98,42 @@ export function runtimeLockMetaFile(target: string): string {
   return `${target}.meta.json`;
 }
 
+/**
+ * Whether a pid is still running. `EPERM` means the process exists but belongs
+ * to another user — treat it as alive, never as a stale-holder to reap.
+ */
+function isPidAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (err) {
+    return (err as NodeJS.ErrnoException).code === 'EPERM';
+  }
+}
+
+/**
+ * Reap a lock whose holder process is gone.
+ *
+ * proper-lockfile only treats a lock as stale after `stale` ms of no mtime
+ * heartbeat (30s here). A daemon killed with SIGKILL / `taskkill /F` never runs
+ * its release path, so its lock lingers for a full 30s — long enough that an
+ * immediate `restart` (or the supervisor's boot-time auto-start) hits every
+ * profile lock as held and fails to bring any bot up.
+ *
+ * We only remove the lock when the recorded holder pid is provably dead, so a
+ * slow-but-live holder (heartbeat late, or on another user) is never stolen
+ * from. Returns true if a stale lock was cleared.
+ */
+async function reapIfHolderDead(target: string): Promise<boolean> {
+  const meta = await readRuntimeLockMeta(target);
+  if (!meta || isPidAlive(meta.pid)) return false;
+  // proper-lockfile acquires by creating a sibling `<target>.lock` DIRECTORY;
+  // its release unlinks that dir and the meta sidecar.
+  await rm(`${target}.lock`, { recursive: true, force: true }).catch(() => {});
+  await unlink(runtimeLockMetaFile(target)).catch(() => {});
+  return true;
+}
+
 export async function readRuntimeLockMeta(target: string): Promise<RuntimeLockMeta | undefined> {
   try {
     const parsed = JSON.parse(await readFile(runtimeLockMetaFile(target), 'utf8')) as unknown;
@@ -147,7 +183,27 @@ async function acquireRuntimeLock(
       update: 10_000,
     });
   } catch (err) {
-    throw new RuntimeLockConflictError(meta.kind, meta.target, await readRuntimeLockMeta(meta.target), err);
+    // Force-killed holders (SIGKILL / `taskkill /F`) leave their lock behind
+    // for the full 30s stale window. If the recorded holder is provably dead,
+    // clear it and retry once — otherwise a restart right after a kill fails.
+    if (await reapIfHolderDead(meta.target)) {
+      try {
+        release = await lockfile.lock(meta.target, {
+          realpath: false,
+          stale: 30_000,
+          update: 10_000,
+        });
+      } catch (retryErr) {
+        throw new RuntimeLockConflictError(
+          meta.kind,
+          meta.target,
+          await readRuntimeLockMeta(meta.target),
+          retryErr,
+        );
+      }
+    } else {
+      throw new RuntimeLockConflictError(meta.kind, meta.target, await readRuntimeLockMeta(meta.target), err);
+    }
   }
 
   const fullMeta: RuntimeLockMeta = {
