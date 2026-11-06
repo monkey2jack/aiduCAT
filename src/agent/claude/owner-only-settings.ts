@@ -1,6 +1,6 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { basename, dirname, join, resolve } from 'node:path';
+import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
 
 /**
  * f03p-infra-#2: tokens in the user's Claude settings (`~/.claude/settings.json`
@@ -199,7 +199,7 @@ export function expandOutsiderDenyRead(entries: readonly string[], home: string 
     const entry = raw.trim();
     if (!entry) continue;
     const full = entry === '~' ? home : entry.startsWith('~/') ? join(home, entry.slice(2)) : entry;
-    if (!full.startsWith('/')) continue;
+    if (!isAbsolute(full)) continue;
     const path = resolve(full);
     const name = basename(path);
     if (!name.includes('*')) {

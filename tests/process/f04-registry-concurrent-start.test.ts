@@ -54,7 +54,7 @@ async function buildChild(): Promise<string> {
     format: ['esm'],
     platform: 'node',
     target: 'node20',
-    external: [/^[^./]/],
+    external: [/^(?![A-Za-z]:[\\/])(?![./])/],
     outExtension: () => ({ js: '.mjs' }),
     silent: true,
     dts: false,

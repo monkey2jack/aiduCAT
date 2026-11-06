@@ -34,6 +34,7 @@ const fakeFeishuFetch = async (input: unknown): Promise<Response> =>
     : new Response('{}', { status: 500 });
 
 const doneOnly = [{ type: 'text', delta: 'ok' }, { type: 'done', terminationReason: 'normal' }] as AgentEvent[];
+const cardAnswer = [{ type: 'text', delta: 'The final answer stays in the card.' }, { type: 'done', terminationReason: 'normal' }] as AgentEvent[];
 
 describe('f03p-slim channel honours the feature switches', () => {
   it('f03p-slim-#3 meeting.enabled but features.meeting=false: no meeting manager is created', async () => {
@@ -68,11 +69,30 @@ describe('f03p-slim channel honours the feature switches', () => {
     expect(fetchSpy.mock.calls.some((c) => String(c[0]).includes('message_cot'))).toBe(false);
   });
 
-  it('f03p-slim-#4 cot on (default switch): the cot path is still tried', async () => {
+  it('does not create a separate COT completion bubble in card mode', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(fakeFeishuFetch);
+    const h = await start({
+      events: cardAnswer,
+      withAppPaths: true,
+      configPatch: (c) => ({
+        ...c,
+        preferences: { ...(c.preferences as object), cotMessages: 'detailed', messageReply: 'card' },
+      }),
+    });
+    await h.handlers.message?.(dmMessage('om_cot_card', 'hi'));
+    await waitFor(() => JSON.stringify(h.updates).includes('The final answer stays in the card.'), 6000);
+    expect(fetchSpy.mock.calls.some((c) => String(c[0]).includes('message_cot'))).toBe(false);
+    expect(h.sent.every(({ content }) => content.card !== undefined)).toBe(true);
+  });
+
+  it('f03p-slim-#4 cot on (default switch): the cot path is still tried for non-card replies', async () => {
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(fakeFeishuFetch);
     const h = await start({
       events: doneOnly,
-      configPatch: (c) => ({ ...c, preferences: { ...(c.preferences as object), cotMessages: 'detailed' } }),
+      configPatch: (c) => ({
+        ...c,
+        preferences: { ...(c.preferences as object), cotMessages: 'detailed', messageReply: 'markdown' },
+      }),
     });
     await h.handlers.message?.(dmMessage('om_cot_on', 'hi'));
     await waitFor(() => fetchSpy.mock.calls.some((c) => String(c[0]).includes('message_cot')));

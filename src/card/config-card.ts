@@ -218,8 +218,8 @@ export function configFormCard(opts: ConfigFormOpts): object {
                     content:
                       '\n**COT 过程消息**\n' +
                       '_关闭:只发送最终回复_\n' +
-                      '_简略:展示 agent 过程文本和工具摘要_\n' +
-                      '_详细:额外展示工具参数和输出摘要_',
+                      '_简略:展示 agent 思考和工具摘要;答复只在最终卡片中显示_\n' +
+                      '_详细:额外展示工具参数和输出摘要;答复只在最终卡片中显示_',
                   },
                   {
                     tag: 'select_static',

@@ -1,4 +1,4 @@
-import { spawn, execFileSync } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -11,6 +11,7 @@ import { afterAll, describe, expect, it } from 'vitest';
 // fixture project laid out like src/ (cli entry with a lazy chunk + index).
 
 const repo = resolve(__dirname, '../..');
+const tsupCli = join(repo, 'node_modules/tsup/dist/cli-default.js');
 const work = mkdtempSync(join(tmpdir(), 'f03p-fix7-'));
 afterAll(() => rmSync(work, { recursive: true, force: true }));
 
@@ -41,7 +42,7 @@ function setGen(dir: string, gen: number): void {
 }
 
 function build(dir: string): void {
-  execFileSync(join(repo, 'node_modules/.bin/tsup'), [], { cwd: dir, stdio: 'pipe', env: { ...process.env, NODE_ENV: 'production' } });
+  execFileSync(process.execPath, [tsupCli], { cwd: dir, stdio: 'pipe', env: { ...process.env, NODE_ENV: 'production' } });
 }
 
 function startOld(dir: string): Promise<{ trigger: () => Promise<string> }> {

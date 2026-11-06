@@ -1,6 +1,6 @@
 import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { ClaudeAdapter } from '../../src/agent/claude/adapter.js';
 
@@ -60,7 +60,11 @@ describe('f04 C non-owner tools', () => {
     expect(settings.env.AIDU_X_TOKEN).toBe('');
     expect(settings.permissions.allow).toEqual(expect.arrayContaining(['Bash', `Edit(/${cwd}/**)`, `Write(/${cwd}/**)`]));
     expect(settings.permissions.deny).toEqual(
-      expect.arrayContaining([`Read(/${cwd}/.claude/settings.json)`, `Edit(/${cwd}/CLAUDE.md)`, 'Read(//proc/**)']),
+      expect.arrayContaining([
+        `Read(/${resolve(join(cwd, '.claude', 'settings.json'))})`,
+        `Edit(/${resolve(join(cwd, 'CLAUDE.md'))})`,
+        'Read(//proc/**)',
+      ]),
     );
     expect(settings.sandbox).toEqual({ enabled: true, autoAllowBashIfSandboxed: true, allowUnsandboxedCommands: false });
     // Wei 12:43: sandboxed Bash reaches the internet like a normal agent.
@@ -73,7 +77,12 @@ describe('f04 C non-owner tools', () => {
     await writeFile(secret, 'x');
     await runOnce(bin, cwd, false, [secret]);
     const { settings } = JSON.parse(await readFile(record, 'utf8'));
-    expect(settings.permissions.deny).toEqual(expect.arrayContaining([`Read(/${secret})`, `Read(/${secret}/**)`]));
+    expect(settings.permissions.deny).toEqual(
+      expect.arrayContaining([
+        `Read(/${resolve(secret)})`,
+        `Read(/${resolve(secret)}/**)`,
+      ]),
+    );
     await runOnce(bin, cwd, true, [secret]);
     const owner = JSON.parse(await readFile(record, 'utf8'));
     expect(owner.settings).toBeNull();
