@@ -189,9 +189,10 @@ export function configFormCard(opts: ConfigFormOpts): object {
               name: 'message_reply',
               initial_option: opts.messageReply,
               options: [
+                // getMessageReplyMode() defaults to 'card' — label the real default.
+                { text: { tag: 'plain_text', content: '交互卡片(默认)' }, value: 'card' },
+                { text: { tag: 'plain_text', content: '消息卡片' }, value: 'markdown' },
                 { text: { tag: 'plain_text', content: '纯文本' }, value: 'text' },
-                { text: { tag: 'plain_text', content: '消息卡片(默认)' }, value: 'markdown' },
-                { text: { tag: 'plain_text', content: '交互卡片' }, value: 'card' },
               ],
             },
             {

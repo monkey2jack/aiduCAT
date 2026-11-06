@@ -55,6 +55,12 @@ describe('configFormCard reply-mode picker', () => {
     expect(sel.values).toEqual(expect.arrayContaining(['text', 'markdown', 'card']));
   });
 
+  it('labels 交互卡片 as the default (getMessageReplyMode falls back to card)', () => {
+    const json = JSON.stringify(configFormCard(base));
+    expect(json).toContain('交互卡片(默认)');
+    expect(json).not.toContain('消息卡片(默认)');
+  });
+
   it('shows card as the initial option when the profile is set to card', () => {
     // Regression: the picker used to rewrite a `card` config to `markdown`,
     // so saving the form silently downgraded the profile and cards stopped.

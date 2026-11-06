@@ -148,7 +148,7 @@ export function ConfigView({ profile }: { profile: string }) {
           </Field>
           <Field label="消息回复方式">
             <SelectRow value={cfg.messageReply} onChange={(v) => set("messageReply", v as ConfigData["messageReply"])}
-              options={[["markdown", "消息卡片（默认）"], ["card", "交互卡片"], ["text", "纯文本"]]} />
+              options={[["card", "交互卡片（默认）"], ["markdown", "消息卡片"], ["text", "纯文本"]]} />
           </Field>
           <ToggleRow label="工具调用显示" hint="显示 bot 执行的命令与文件读写过程" checked={cfg.showToolCalls}
             onChange={(v) => set("showToolCalls", v)} />

@@ -127,6 +127,11 @@ function isPidAlive(pid: number): boolean {
 async function reapIfHolderDead(target: string): Promise<boolean> {
   const meta = await readRuntimeLockMeta(target);
   if (!meta || isPidAlive(meta.pid)) return false;
+  // Two starters can race here: if another process reaped this lock and took
+  // it in the meantime, the sidecar now names a different (live) holder.
+  // Re-read right before removing so we never delete a freshly taken lock.
+  const again = await readRuntimeLockMeta(target);
+  if (!again || again.pid !== meta.pid || again.startedAt !== meta.startedAt) return false;
   // proper-lockfile acquires by creating a sibling `<target>.lock` DIRECTORY;
   // its release unlinks that dir and the meta sidecar.
   await rm(`${target}.lock`, { recursive: true, force: true }).catch(() => {});
