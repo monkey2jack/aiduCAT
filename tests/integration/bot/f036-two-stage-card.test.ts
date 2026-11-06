@@ -298,7 +298,7 @@ describe('f0.3.6 two-stage card (line first, panel on first agent output)', () =
     });
     await h.handlers.message?.(message('om_s1', 'hi'));
     expect(hasPanel(h.updates[0])).toBe(false);
-    expect(JSON.stringify(h.updates[0])).toContain('"content":"aiduCATing…"');
+    expect(JSON.stringify(h.updates[0])).toContain('"content":"☤aiduCATing…"');
     await waitFor(() => h.order.includes('agent-run'));
     await settle();
     // adopted, agent still silent → still just the line
@@ -309,7 +309,7 @@ describe('f0.3.6 two-stage card (line first, panel on first agent output)', () =
     const firstWithPanel = h.updates.findIndex(hasPanel);
     expect(firstWithPanel).toBeGreaterThan(0);
     // the first frame with a panel is the thinking frame
-    expect(JSON.stringify(h.updates[firstWithPanel])).toContain('"content":"Thinking…"');
+    expect(JSON.stringify(h.updates[firstWithPanel])).toContain('"content":"☤Thinking…"');
     // once the panel is there it stays
     expect(h.updates.slice(firstWithPanel).every(hasPanel)).toBe(true);
     const last = JSON.stringify(h.updates.at(-1));
@@ -346,7 +346,7 @@ describe('f0.3.6 two-stage card (line first, panel on first agent output)', () =
     await h.handlers.message?.(message('om_s3', '@Bridge hi', 'group'));
     await waitFor(() => summaryOf(h.updates.at(-1)) === '✅Done');
     const firstWithPanel = h.updates.findIndex(hasPanel);
-    expect(JSON.stringify(h.updates[firstWithPanel])).toContain('"content":"Processing…"');
+    expect(JSON.stringify(h.updates[firstWithPanel])).toContain('"content":"☤Processing…"');
     expect(JSON.stringify(h.updates.at(-1))).not.toContain('Bash');
   });
 

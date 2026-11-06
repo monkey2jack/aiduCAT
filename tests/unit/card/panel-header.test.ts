@@ -57,20 +57,20 @@ describe('one-line minimal panel header (f0.2+ 猴哥点单 2026-10-20)', () => 
 describe('status word flush-left above the panel (f0.4+, no ☤)', () => {
   it('f0.3.5: default running state (placeholder) renders aiduCATing [dots], no panel', () => {
     const card = renderCard(initialState, { model: 'M' });
-    expect(statusLine(card)).toBe('aiduCATing');
+    expect(statusLine(card)).toBe('☤aiduCATing');
     expect(JSON.stringify(card)).not.toContain('collapsible_panel');
   });
 
   it('thinking renders Thinking…', () => {
     const state = reduce(initialState, { type: 'thinking', delta: 'hmm' });
     const card = renderCard(state, { model: 'M' });
-    expect(statusLine(card)).toBe('Thinking');
+    expect(statusLine(card)).toBe('☤Thinking');
   });
 
   it('tool running renders Processing…', () => {
     const state = reduce(initialState, { type: 'tool_use', id: 't1', name: 'Bash', input: {} });
     const card = renderCard(state, { model: 'M' });
-    expect(statusLine(card)).toBe('Processing');
+    expect(statusLine(card)).toBe('☤Processing');
   });
 
   it('no status line once the run ends', () => {
@@ -84,6 +84,5 @@ describe('status word flush-left above the panel (f0.4+, no ☤)', () => {
     const json = JSON.stringify(renderCard(state, { model: 'M' }));
     expect(json).not.toContain('Tooling');
     expect(json).not.toContain('Reasoning...');
-    expect(json).not.toContain('☤');
   });
 });

@@ -23,9 +23,8 @@ describe('f0.3.6 two-stage placeholder card (f0.4+: panel from the start, no ☤
     expect(els[0]!.tag).toBe('column_set');
     expect(panel(initialState)).toBeUndefined();
     const j = json(initialState);
-    expect(j).toContain('"content":"aiduCATing"');
+    expect(j).toContain('"content":"☤aiduCATing"');
     expect(j).toContain(LOADING_IMG_KEY);
-    expect(j).not.toContain('☤');
     expect(j).not.toContain('💭');
     expect(j).toContain('"streaming_mode":true');
     expect(awaitingAgent(initialState)).toBe(true);
@@ -36,18 +35,17 @@ describe('f0.3.6 two-stage placeholder card (f0.4+: panel from the start, no ☤
     expect(awaitingAgent(s)).toBe(false);
     const els = elements(s);
     expect(els.map((e) => e.tag)).toEqual(['column_set', 'collapsible_panel']);
-    expect(JSON.stringify(els[0])).toContain('"content":"Thinking"');
+    expect(JSON.stringify(els[0])).toContain('"content":"☤Thinking"');
     const h = panel(s)!.header;
     expect(h.title.content).not.toContain('\n');
     expect(h.title.content).toContain('💭 1');
     expect(h.vertical_align).toBe('center');
-    expect(json(s)).not.toContain('☤');
   });
 
   it('first tool call → Processing… flush-left above the panel', () => {
     const s = reduce(initialState, { type: 'tool_use', id: 't1', name: 'Bash', input: { command: 'ls' } });
     expect(elements(s).map((e) => e.tag)).toEqual(['column_set', 'collapsible_panel']);
-    expect(JSON.stringify(elements(s)[0])).toContain('"content":"Processing"');
+    expect(JSON.stringify(elements(s)[0])).toContain('"content":"☤Processing"');
     expect(panel(s)!.header.title.content).not.toContain('Processing');
   });
 
@@ -63,7 +61,7 @@ describe('f0.3.6 two-stage placeholder card (f0.4+: panel from the start, no ☤
     const els = elements(s);
     expect(els.map((e) => e.tag)).toEqual(['markdown', 'column_set', 'collapsible_panel']);
     expect(els[0]!.content).toBe('你好');
-    expect(JSON.stringify(els[1])).toContain('"content":"aiduCATing"');
+    expect(JSON.stringify(els[1])).toContain('"content":"☤aiduCATing"');
     const done = reduce(s, { type: 'done', terminationReason: 'normal' });
     const j = json(done);
     expect(j).toContain('collapsible_panel');
