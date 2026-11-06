@@ -7,8 +7,8 @@ const read = (f: string) => readFile(new URL(`../../../${f}`, import.meta.url), 
 // f0.4+ (Wei 2026-11-02): Hermes Agent is the third agent; READMEs explain how
 // to use it and compare gateway style (Hermes gateway + aiduPOP) with bridge style.
 describe('f0.4+ Hermes docs (package 0.4.2)', () => {
-  it('package 0.4.2', () => {
-    expect(pkg.version).toBe('0.4.2');
+  it('package 0.5.0', () => {
+    expect(pkg.version).toBe('0.5.0');
   });
 
   it('zh READMEs: three agents per profile, setup, tested behaviour, gateway vs bridge, model gateway note', async () => {

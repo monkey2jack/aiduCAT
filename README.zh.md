@@ -12,7 +12,7 @@
 >
 > 给 Claude Code / Codex CLI / Hermes Agent 穿上泡波流的飞书卡片：宣白纸面上灌一道深蓝流光，一只猫，零噪音。
 
-[![Version](https://img.shields.io/badge/version-f0.4%2B%2B-blue.svg)](https://github.com/monkey2jack/aiduCAT)
+[![Version](https://img.shields.io/badge/version-f0.5-blue.svg)](https://github.com/monkey2jack/aiduCAT)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Node 20+](https://img.shields.io/badge/node-20.12%2B-brightgreen.svg)](https://nodejs.org/)
 [![Claude Code](https://img.shields.io/badge/agent-Claude%20Code%20%7C%20Codex%20%7C%20Hermes-orange.svg)](https://docs.anthropic.com/en/docs/claude-code/quickstart)
@@ -207,7 +207,13 @@ Thinking…                                            ← 运行中面板正上
 - **空跑**（agent 什么都没产出就退出）：直接显示红色报错卡和原因，提示重发
 - **超长 / 被拒**：正文超 25KB 时，第 1 张卡显示到预算边界（在段落、代码块、表格边界切开，末尾「…（未完，见下一张卡）」），其余按顺序发「续 2/N」「续 3/N」卡片，markdown 正常渲染、每张 <30KB、内容不重复；超大代码块按行切开并重新开合代码围栏，超大表格按行切开并重复表头；只有续卡被飞书拒收时，该张起的剩余部分才改发一次纯文本。飞书拒收卡片时先用严格卡（无图片链接、正文 12KB）重试，再不行发纯文本，最后发一句「卡片发送失败」
 
-## 更新日志（f0.4++）
+## 更新日志（f0.5）
+
+- **状态词带动效、更专业**：☤ 回来了，后面是飞书加载动效；进行中 aiduCATing / Thinking / Running，结束 Completed / Stopped / Failed / Timed out
+- **社区贡献**：Windows 后台服务不再挂黑窗、多个 bot 开机全部自动上线、强杀后重启不再卡锁、「交互卡片」设置不再被静默降级（@alone-lon）；不再显示「No response requested.」（@iMissNan）
+- 一张卡最多 5 个表格，多的进「续」卡
+
+### f0.4++
 
 - **卡片更简约**：面板图标按编程工具（Claude Code / Codex / Hermes Agent）显示，不再按模型猜厂商 logo（旧厂商 logo 全部删除）；☤ 去掉；Thinking… / Processing… 在面板正上方顶格
 - 中文名「爱嘟妙咪飞」，英文全称 Coding Agent Texting

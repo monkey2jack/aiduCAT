@@ -4,16 +4,9 @@ aiduCAT 的版本号用 `f` 前缀（f0.1、f0.2+ …），`package.json` 里是
 
 > **tag 说明**：`f0.2++` 原先误指 `6fa62f8`（package 0.2.1），**已于 2026-10-31 修正**为真实发布提交 `c7ff90d`（0.2.2）。`f0.2+`、`v0.2.1` 核实后保持 `6fa62f8`：f0.2+ 的 GitHub Release 于 2026-10-20 01:17 从 main 发布，当时 main 的头部就是 `6fa62f8`（package 0.2.1）；版本号提交 `f01fcd2` 与它只差文档和一个测试，没有代码差别。
 
-## f0.4++ — 2026-11-04（package 0.4.2）
+## f0.5 — 2026-11-06（package 0.5.0）
 
-基于 f0.4+（`26dca50`）。主题：**卡片更简约**——面板图标按编程工具（Claude Code / Codex / Hermes Agent）显示，☤ 去掉，状态词顶格。
-
-- **旧的模型厂商 logo 全部去掉**（Wei 11-04「把原来那些模型的 logo 去掉，不要过多空间了」）：`assets/lark-logo-keys.json` 只留 `claudecode`、`codex`、`hermes` 三个键，按模型名猜厂商的代码（`vendorLogoForModel` / `logoImgKeyForModel`）删除。
-- **面板图标改成编程工具图标，☤ 去掉**（Wei 11-04「根据用户使用的工具来决定 logo」「美观、简约」）：面板头左侧不再按模型名猜厂商 logo，改按 profile 的 `agentKind` 显示 Claude Code / Codex / Hermes Agent 图标（lobehub `claudecode-color`、`codex-color`、`hermesagent`）；Codex 跑 Claude 模型也显示 Codex。收到消息即出一个一行面板「[工具图标] aiduCATing…」（原来是不带面板的一行「☤aiduCATing…」）；agent 开始工作后面板头一行「[工具图标] 模型 · 💭 · 🛠️ · ⏱️」，Thinking… / Processing… 在面板正上方顶格（11-04 00:44 Wei 定：飞书面板头给图标留整列，状态词放头里没法顶格）；结束状态词消失。修：summer 服务工作目录 /data/home 下有份 10 月旧 `assets/lark-logo-keys.json` 先被读到，工具图标全丢，改为先读仓库内的清单。☤ 从状态词和会话列表摘要里都去掉。版本号不变（0.4.1）。
-- 中文名改为「爱嘟妙咪飞」（妙=喵、咪=猫、飞=飞书；绝妙设计的迷人简洁飞书卡片），全称 aiduCAT☤爱嘟妙咪飞；英文全称 Coding Agent Texting（去掉 Claude，三种 agent 通用）。
-- （已被工具图标取代）**模型 logo 回到面板头左侧、紧挨模型名，展开时不再翻转**（Wei 11-02 19:33「我就要这个模型logo在model的左侧，这样才自然才对，能不翻滚最好」）：以前有 logo 时没写 `icon_position`，代码注释以为默认靠左，其实飞书卡片 JSON 2.0 折叠面板默认 `right`，所以 logo 跑到面板最右边、占了箭头的位置，展开时还跟着箭头转 180 度。现在有 logo 时显式 `icon_position: left`、`icon_expanded_angle: 0`；没有 logo 的模型照旧右侧折叠箭头、展开翻转。版本号不变（0.4.1）。
-
-### f0.4++ 之后的修复
+基于 f0.4++（`dbe3dd8`）。主题：**卡片状态更专业、更有生气，社区第一次参与**——☤ 带着飞书加载动效回来，状态词统一成 aiduCATing / Thinking / Running → Completed / Stopped / Failed / Timed out；两位社区贡献者（@alone-lon、@iMissNan）的 issue 和 PR 进了主线；Windows 后台服务、多 bot 自动上线、强杀后重启等一批修复。猴哥的「IT 代码觉醒」纪念版。
 
 - **一张卡最多 5 个表格，多的进「续」卡**（11-04 12:02 嘟嘟一条 7 个表格的回答被飞书拒卡，报 230099 / ErrCode 11310 `card table number over limit`，退成纯文本）：分页时按表格数也切页，每张卡（含精简重试卡）最多 5 个表格，多出的放进「续 2/N」卡；折叠面板里的表格改成代码块，不占名额。`68e2dc3`
 - **不再显示「No response requested.」**（[#6](https://github.com/monkey2jack/aiduCAT/issues/6)，感谢 @iMissNan）：网关模型（Gemini 等）工具跑完不说话时，Claude Code 会自己补一句占位（`model: "<synthetic>"`），以前会显示成答案。现在只丢这一句占位；Claude Code 用 `<synthetic>` 发的 API 报错（401、模型不存在等）照常显示。`b020a94`
@@ -23,8 +16,17 @@ aiduCAT 的版本号用 `f` 前缀（f0.1、f0.2+ …），`package.json` 里是
 - **强杀后重启不再被旧锁卡 30 秒**（#8）：daemon 被 `SIGKILL` / `taskkill /F` 强杀后，profile/app 锁要等 30 秒才过期，紧接着的 `restart` 或自动上线全部失败。现在锁里记录的进程确认已死就清锁重试一次（`EPERM` 视为活着；清锁前再核一次锁主人，两个进程同时启动也不会互删）。Linux/macOS/Windows 同一条路径。`8929873` `a37091e`
 - **交互卡片模式不再另发 COT 过程消息**（#8）：卡片自己有状态和面板，另发一条「任务完成」气泡是重复的；消息卡片(markdown)模式照旧。另修 Windows 盘符路径识别（外人禁读路径）和 Windows 下的进程测试。`bbe228a`
 - **状态词后面换成飞书加载动效，☤ 回来了**（Wei 11-06）：收到消息只显示一行「☤aiduCATing ⋯」（三点动效，不再先出面板）；开工后面板照旧，面板上方是「☤Thinking ⋯」/「☤Processing ⋯」；结束后状态行消失。动效是飞书现成的加载图标（与 aiduPOP 同一个 img_key），文字后面用两列排版。会话列表预览是纯文字，显示静态「☤aiduCATing…」。飞书拒卡时重试卡退回纯文字「☤Thinking…」。`044b8ba` `622bd1e`
-- **状态词改成统一的专业写法**（Wei 11-06）：进行中一律 -ing，结束一律过去分词。Processing → **Running**（这一步实际是 agent 在调工具）；结束状态 Done → **Completed**、Stop → **Stopped**（Stop 是动词）、Error → **Failed**、Timeout → **Timed out**（后两个原来是名词）。aiduCATing、Thinking 不变。只改显示文字，飞书会话列表预览同步。
+- **状态词改成统一的专业写法**（Wei 11-06）：进行中一律 -ing，结束一律过去分词。Processing → **Running**（这一步实际是 agent 在调工具）；结束状态 Done → **Completed**、Stop → **Stopped**（Stop 是动词）、Error → **Failed**、Timeout → **Timed out**（后两个原来是名词）。aiduCATing、Thinking 不变。只改显示文字，飞书会话列表预览同步。`ed23e05`
 - CI：重启恢复测试改为轮询日志文件，不再固定等 200 毫秒（f0.4++ 那次 ubuntu CI 偶发失败）。`921c9b9`
+
+## f0.4++ — 2026-11-04（package 0.4.2）
+
+基于 f0.4+（`26dca50`）。主题：**卡片更简约**——面板图标按编程工具（Claude Code / Codex / Hermes Agent）显示，☤ 去掉，状态词顶格。
+
+- **旧的模型厂商 logo 全部去掉**（Wei 11-04「把原来那些模型的 logo 去掉，不要过多空间了」）：`assets/lark-logo-keys.json` 只留 `claudecode`、`codex`、`hermes` 三个键，按模型名猜厂商的代码（`vendorLogoForModel` / `logoImgKeyForModel`）删除。
+- **面板图标改成编程工具图标，☤ 去掉**（Wei 11-04「根据用户使用的工具来决定 logo」「美观、简约」）：面板头左侧不再按模型名猜厂商 logo，改按 profile 的 `agentKind` 显示 Claude Code / Codex / Hermes Agent 图标（lobehub `claudecode-color`、`codex-color`、`hermesagent`）；Codex 跑 Claude 模型也显示 Codex。收到消息即出一个一行面板「[工具图标] aiduCATing…」（原来是不带面板的一行「☤aiduCATing…」）；agent 开始工作后面板头一行「[工具图标] 模型 · 💭 · 🛠️ · ⏱️」，Thinking… / Processing… 在面板正上方顶格（11-04 00:44 Wei 定：飞书面板头给图标留整列，状态词放头里没法顶格）；结束状态词消失。修：summer 服务工作目录 /data/home 下有份 10 月旧 `assets/lark-logo-keys.json` 先被读到，工具图标全丢，改为先读仓库内的清单。☤ 从状态词和会话列表摘要里都去掉。版本号不变（0.4.1）。
+- 中文名改为「爱嘟妙咪飞」（妙=喵、咪=猫、飞=飞书；绝妙设计的迷人简洁飞书卡片），全称 aiduCAT☤爱嘟妙咪飞；英文全称 Coding Agent Texting（去掉 Claude，三种 agent 通用）。
+- （已被工具图标取代）**模型 logo 回到面板头左侧、紧挨模型名，展开时不再翻转**（Wei 11-02 19:33「我就要这个模型logo在model的左侧，这样才自然才对，能不翻滚最好」）：以前有 logo 时没写 `icon_position`，代码注释以为默认靠左，其实飞书卡片 JSON 2.0 折叠面板默认 `right`，所以 logo 跑到面板最右边、占了箭头的位置，展开时还跟着箭头转 180 度。现在有 logo 时显式 `icon_position: left`、`icon_expanded_angle: 0`；没有 logo 的模型照旧右侧折叠箭头、展开翻转。版本号不变（0.4.1）。
 
 ## f0.4+ — 2026-11-02（package 0.4.1）
 

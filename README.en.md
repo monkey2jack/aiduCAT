@@ -12,7 +12,7 @@
 >
 > Dress your Claude Code / Codex CLI / Hermes Agent in a Bubble-Wave Feishu card: deep-blue veins on paper white, one cat, zero noise.
 
-[![Version](https://img.shields.io/badge/version-f0.4%2B%2B-blue.svg)](https://github.com/monkey2jack/aiduCAT)
+[![Version](https://img.shields.io/badge/version-f0.5-blue.svg)](https://github.com/monkey2jack/aiduCAT)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Node 20+](https://img.shields.io/badge/node-20.12%2B-brightgreen.svg)](https://nodejs.org/)
 [![Claude Code](https://img.shields.io/badge/agent-Claude%20Code%20%7C%20Codex%20%7C%20Hermes-orange.svg)](https://docs.anthropic.com/en/docs/claude-code/quickstart)
@@ -35,7 +35,7 @@ aiduCAT originates from and credits the upstream [zarazhangrui/lark-coding-agent
 |------|------|
 | 🤖 **Three agents, pick one** (f0.4+) | Each profile runs Claude Code, Codex CLI or Hermes Agent with the same cards, commands and allowlists; see "Hermes Agent" below |
 | 🫧 **Single Bubble-Wave panel** | The answer streams on top; thinking and every tool call fold into one collapsible panel (aiduPOP layout) |
-| 💭 **Counter header** | Panel header: `model · 💭 thinking segments · 🛠️ tools · ⏱️ elapsed`; while running a status line sits flush-left right above the panel (Thinking… / Processing… / aiduCATing…), gone on completion |
+| 💭 **Counter header** | Panel header: `model · 💭 thinking segments · 🛠️ tools · ⏱️ elapsed`; while running a status line sits flush-left right above the panel (☤aiduCATing / ☤Thinking / ☤Running, followed by loading dots), gone on completion |
 | 🏷 **Agent icon** | The panel header shows the profile's coding agent (Claude Code / Codex / Hermes Agent), not the model vendor; the model id follows the icon |
 | 🔌 **Multi-provider** | `/model` card with Provider → Model → Effort dropdowns; provider keys resolve from env/secret refs, never plaintext; takes effect next turn without restart; 10router gateways only offer curated combos |
 | 🗜️ **Window-based auto-compact** | Compacts at 60% of the model window (`AIDUCAT_COMPACT_PCT`); the window comes from the 10router combo (when `/api/combos` carries a window field) or the provider's `contextWindow`; when neither has one aiduCAT sets nothing and Claude Code keeps `CLAUDE_CODE_MAX_CONTEXT_TOKENS` / `CLAUDE_CODE_AUTO_COMPACT_WINDOW` from its own `settings.json` (since f0.3.4 the full 10router `/v1/models` list is never pulled) |
@@ -193,7 +193,7 @@ One card, top to bottom:
 ```
 [the model's answer, streaming]
 
-Thinking…                                            ← flush-left above the panel while running: status word (aiduCATing / Thinking / Processing), gone on completion
+Thinking…                                            ← flush-left above the panel while running: status word (aiduCATing / Thinking / Running), gone on completion
 ┌─                                               ─┐
 │ [agent icon] Claude-Opus-4.6 · 💭 2 · 🛠️ 4 · ⏱️ 38s │  ← collapsed panel header: agent icon · model · thinking segments · tools · elapsed
 │ 💭 thinking text (up to 1500 chars)               │  ← when expanded
@@ -203,11 +203,17 @@ Thinking…                                            ← flush-left above the 
 ```
 
 - **Tool emoji**: 🖥️Bash 📖Read ⌨️Edit 📝Write 🔍Grep 🗂️Glob 🌐Web 🤖Agent/sub-agent 💻other; with many tools only the latest are listed, the rest fold into "…N more"
-- **On completion**: the status word disappears; the **border carries the result** — done green / stopped yellow / error red; the Feishu chat-list preview shows ✅Done / ⭕️Stop / ❌Error / ⚠️Timeout
+- **On completion**: the status word disappears; the **border carries the result** — done green / stopped yellow / error red; the Feishu chat-list preview shows ✅Completed / ⭕️Stopped / ❌Failed / ⚠️Timed out
 - **Empty run** (the agent exits without output): a red error card with the reason, asking you to resend
 - **Too long / rejected**: an answer over 25KB fills card 1 up to the budget (cut at a paragraph, code-block or table boundary, ending in "…（未完，见下一张卡）"), then continues on ordered "续 2/N", "续 3/N" cards — rendered markdown, each <30KB, nothing repeated; an oversized code block is split between lines with the fence reopened, an oversized table between rows with the header repeated; only if Feishu rejects a continuation card does the rest from that card on go out once as plain text. if Feishu rejects the card, a strict card (no image links, 12KB answer) is retried, then plain text, then a one-line "card failed" notice
 
-## Changelog (f0.4++)
+## Changelog (f0.5)
+
+- **Status words with motion, more professional**: ☤ is back, followed by Feishu's loading dots; in progress aiduCATing / Thinking / Running, finished Completed / Stopped / Failed / Timed out
+- **Community contributions**: Windows background service without a console window, every bot comes online at boot, no lock stall after a forced kill, the "interactive card" setting no longer silently downgraded (@alone-lon); "No response requested." no longer shown (@iMissNan)
+- At most 5 tables per card; the rest go to 「续」 cards
+
+### f0.4++
 
 - **Leaner card**: the panel icon is the coding agent (Claude Code / Codex / Hermes Agent) instead of a vendor logo guessed from the model (all vendor logos removed); ☤ dropped; Thinking… / Processing… sit flush-left right above the panel
 - Chinese name 爱嘟妙咪飞, full English name Coding Agent Texting
