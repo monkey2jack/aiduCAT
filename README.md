@@ -443,6 +443,7 @@ pnpm build
 
 - **上游**：[zarazhangrui/lark-coding-agent-bridge](https://github.com/zarazhangrui/lark-coding-agent-bridge)（npm 包 `lark-channel-bridge` v0.7.1）
 - **样式灵感**：[monkey2jack/aiduPOP](https://github.com/monkey2jack/aiduPOP) —— 泡波样式（Bubble Wave）设计语言起源
+- **贡献者**：[@alone-lon](https://github.com/alone-lon) —— Windows 后台服务（[#7](https://github.com/monkey2jack/aiduCAT/pull/7)）、多 bot 自动上线与锁自愈（[#8](https://github.com/monkey2jack/aiduCAT/pull/8)）；[@iMissNan](https://github.com/iMissNan) —— 问题反馈（[#6](https://github.com/monkey2jack/aiduCAT/issues/6)）
 - **定制**：aidu
 
 ---
