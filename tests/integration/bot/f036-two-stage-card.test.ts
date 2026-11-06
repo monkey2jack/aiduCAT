@@ -304,7 +304,7 @@ describe('f0.3.6 two-stage card (line first, panel on first agent output)', () =
     // adopted, agent still silent → still just the line
     expect(h.updates.every((u) => !hasPanel(u))).toBe(true);
     g.open();
-    await waitFor(() => summaryOf(h.updates.at(-1)) === '✅Done');
+    await waitFor(() => summaryOf(h.updates.at(-1)) === '✅Completed');
     await settle();
     const firstWithPanel = h.updates.findIndex(hasPanel);
     expect(firstWithPanel).toBeGreaterThan(0);
@@ -324,7 +324,7 @@ describe('f0.3.6 two-stage card (line first, panel on first agent output)', () =
   it('f036 pure text turn: the panel arrives together with the first answer text', async () => {
     const h = await setup({ events: answer('PURE_TEXT'), model: 'aiduPARK', stepMs: 30 });
     await h.handlers.message?.(message('om_s2', 'hi'));
-    await waitFor(() => summaryOf(h.updates.at(-1)) === '✅Done');
+    await waitFor(() => summaryOf(h.updates.at(-1)) === '✅Completed');
     await settle();
     const firstWithPanel = h.updates.findIndex(hasPanel);
     expect(firstWithPanel).toBeGreaterThan(0);
@@ -344,9 +344,9 @@ describe('f0.3.6 two-stage card (line first, panel on first agent output)', () =
       stepMs: 30,
     });
     await h.handlers.message?.(message('om_s3', '@Bridge hi', 'group'));
-    await waitFor(() => summaryOf(h.updates.at(-1)) === '✅Done');
+    await waitFor(() => summaryOf(h.updates.at(-1)) === '✅Completed');
     const firstWithPanel = h.updates.findIndex(hasPanel);
-    expect(JSON.stringify(h.updates[firstWithPanel])).toContain('"content":"☤Processing…"');
+    expect(JSON.stringify(h.updates[firstWithPanel])).toContain('"content":"☤Running…"');
     expect(JSON.stringify(h.updates.at(-1))).not.toContain('Bash');
   });
 
@@ -357,21 +357,21 @@ describe('f0.3.6 two-stage card (line first, panel on first agent output)', () =
       stepMs: 30,
     });
     await h.handlers.message?.(message('om_s4', 'hi'));
-    await waitFor(() => summaryOf(h.updates.at(-1)) === '✅Done');
+    await waitFor(() => summaryOf(h.updates.at(-1)) === '✅Completed');
     await settle();
     const last = JSON.stringify(h.updates.at(-1));
     expect(last).toContain('KEEP_ME');
     expect(hasPanel(h.updates.at(-1))).toBe(true);
   });
 
-  it('f036 /stop while still on the line: card ends ⭕️Stop as before', async () => {
+  it('f036 /stop while still on the line: card ends ⭕️Stopped as before', async () => {
     const g = gate();
     const h = await setup({ events: answer('NEVER_SHOWN'), gate: g.promise });
     await h.handlers.message?.(message('om_s5', 'hi'));
     await waitFor(() => h.order.includes('agent-run'));
     await h.handlers.message?.(message('om_s6', '/stop'));
     g.open();
-    await waitFor(() => summaryOf(h.updates.at(-1)) === '⭕️Stop');
+    await waitFor(() => summaryOf(h.updates.at(-1)) === '⭕️Stopped');
     await settle();
     expect(hasPanel(h.updates.at(-1))).toBe(true);
     expect(h.order.filter((o) => o === 'card-open')).toHaveLength(1);

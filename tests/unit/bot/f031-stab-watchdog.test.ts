@@ -72,7 +72,7 @@ describe('f031-stab-#4 RunWatchdog', () => {
 });
 
 describe('f031-stab-#4 the card says what happened', () => {
-  it('f031-stab-#4 idle timeout shows a visible note on the card (not only ⚠️Timeout)', () => {
+  it('f031-stab-#4 idle timeout shows a visible note on the card (not only ⚠️Timed out)', () => {
     const card = JSON.stringify(renderCard(markIdleTimeout(initialState, 15)));
     expect(card).toContain('15 分钟');
     expect(card).toContain('重发');

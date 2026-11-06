@@ -274,7 +274,7 @@ const answer = (text: string): AgentEvent[] =>
   [{ type: 'text', delta: text }, { type: 'done', terminationReason: 'normal' }] as AgentEvent[];
 
 describe('f0.3.5 ☤aiduCATing… card at intake (no reaction)', () => {
-  it('f035-early the card opens at intake, before the debounce and the agent; no reaction; same card ends ✅Done', async () => {
+  it('f035-early the card opens at intake, before the debounce and the agent; no reaction; same card ends ✅Completed', async () => {
     const g = gate();
     const h = await setup({ events: answer('EARLY_ANSWER'), gate: g.promise, model: 'aiduPARK' });
     await h.handlers.message?.(message('om_e1', 'hi'));
@@ -291,7 +291,7 @@ describe('f0.3.5 ☤aiduCATing… card at intake (no reaction)', () => {
     expect(JSON.stringify(h.updates.at(-1))).not.toContain('💭');
     g.open();
     await waitFor(() => JSON.stringify(h.updates.at(-1)).includes('💭'));
-    await waitFor(() => summaryOf(h.updates.at(-1)) === '✅Done');
+    await waitFor(() => summaryOf(h.updates.at(-1)) === '✅Completed');
     await settle();
     expect(JSON.stringify(h.updates.at(-1))).toContain('EARLY_ANSWER');
     expect(h.order.filter((o) => o === 'card-open')).toHaveLength(1);
@@ -327,7 +327,7 @@ describe('f0.3.5 ☤aiduCATing… card at intake (no reaction)', () => {
     const h = await setup({ events: answer('B') });
     await h.handlers.message?.(message('om_b1', 'a'));
     await h.handlers.message?.(message('om_b2', 'b'));
-    await waitFor(() => summaryOf(h.updates.at(-1)) === '✅Done');
+    await waitFor(() => summaryOf(h.updates.at(-1)) === '✅Completed');
     await settle();
     expect(h.order.filter((o) => o === 'card-open')).toHaveLength(1);
     expect(h.order.filter((o) => o === 'agent-run')).toHaveLength(1);
@@ -347,7 +347,7 @@ describe('f0.3.5 ☤aiduCATing… card at intake (no reaction)', () => {
     const h = await setup({ events: answer('G') });
     await h.handlers.message?.(message('om_g1', '@Bridge hi', 'group'));
     expect(h.order).toEqual(['card-open']);
-    await waitFor(() => summaryOf(h.updates.at(-1)) === '✅Done');
+    await waitFor(() => summaryOf(h.updates.at(-1)) === '✅Completed');
     expect(h.reactions.added).toHaveLength(0);
   });
 

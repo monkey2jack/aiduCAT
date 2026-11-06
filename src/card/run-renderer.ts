@@ -196,7 +196,7 @@ function buildCard(
     elements.push(noteMd(errorText(state.errorMsg)));
   }
   // f031-stab-#4: a timeout (idle or one tool over its cap) says so on the
-  // card itself — ⚠️Timeout in the summary alone left the user guessing.
+  // card itself — ⚠️Timed out in the summary alone left the user guessing.
   if (state.terminal === 'idle_timeout') {
     elements.push(noteMd(timeoutNotice(state)));
   }
@@ -211,7 +211,7 @@ function buildCard(
   const statusWord =
     state.terminal === 'running'
       ? state.footer === 'tool_running'
-        ? '☤Processing'
+        ? '☤Running'
         : state.footer === 'streaming' || state.footer === 'received'
           ? '☤aiduCATing'
           : '☤Thinking'
@@ -541,12 +541,14 @@ function noteMd(content: string): object {
 }
 
 function summaryText(state: RunState): string {
-  if (state.terminal === 'interrupted') return '⭕️Stop';
-  if (state.terminal === 'idle_timeout') return '⚠️Timeout';
-  if (state.terminal === 'error') return '❌Error';
-  if (state.terminal === 'done') return '✅Done';
+  // Wei 2026-11-06: in-progress words are -ing, end states are past participles
+  // (Thinking / Running → Completed / Stopped / Failed / Timed out).
+  if (state.terminal === 'interrupted') return '⭕️Stopped';
+  if (state.terminal === 'idle_timeout') return '⚠️Timed out';
+  if (state.terminal === 'error') return '❌Failed';
+  if (state.terminal === 'done') return '✅Completed';
   // f0.4++ (Wei 2026-11-06): ☤ back as the brand mark — status words and chat-list preview.
-  if (state.footer === 'tool_running') return '☤Processing…';
+  if (state.footer === 'tool_running') return '☤Running…';
   // f0.3.5: the placeholder card (received) reads the same as streaming.
   if (state.footer === 'streaming' || state.footer === 'received') return '☤aiduCATing…';
   return '☤Thinking…';

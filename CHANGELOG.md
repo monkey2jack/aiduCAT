@@ -23,6 +23,7 @@ aiduCAT 的版本号用 `f` 前缀（f0.1、f0.2+ …），`package.json` 里是
 - **强杀后重启不再被旧锁卡 30 秒**（#8）：daemon 被 `SIGKILL` / `taskkill /F` 强杀后，profile/app 锁要等 30 秒才过期，紧接着的 `restart` 或自动上线全部失败。现在锁里记录的进程确认已死就清锁重试一次（`EPERM` 视为活着；清锁前再核一次锁主人，两个进程同时启动也不会互删）。Linux/macOS/Windows 同一条路径。`8929873` `a37091e`
 - **交互卡片模式不再另发 COT 过程消息**（#8）：卡片自己有状态和面板，另发一条「任务完成」气泡是重复的；消息卡片(markdown)模式照旧。另修 Windows 盘符路径识别（外人禁读路径）和 Windows 下的进程测试。`bbe228a`
 - **状态词后面换成飞书加载动效，☤ 回来了**（Wei 11-06）：收到消息只显示一行「☤aiduCATing ⋯」（三点动效，不再先出面板）；开工后面板照旧，面板上方是「☤Thinking ⋯」/「☤Processing ⋯」；结束后状态行消失。动效是飞书现成的加载图标（与 aiduPOP 同一个 img_key），文字后面用两列排版。会话列表预览是纯文字，显示静态「☤aiduCATing…」。飞书拒卡时重试卡退回纯文字「☤Thinking…」。`044b8ba` `622bd1e`
+- **状态词改成统一的专业写法**（Wei 11-06）：进行中一律 -ing，结束一律过去分词。Processing → **Running**（这一步实际是 agent 在调工具）；结束状态 Done → **Completed**、Stop → **Stopped**（Stop 是动词）、Error → **Failed**、Timeout → **Timed out**（后两个原来是名词）。aiduCATing、Thinking 不变。只改显示文字，飞书会话列表预览同步。
 - CI：重启恢复测试改为轮询日志文件，不再固定等 200 毫秒（f0.4++ 那次 ubuntu CI 偶发失败）。`921c9b9`
 
 ## f0.4+ — 2026-11-02（package 0.4.1）

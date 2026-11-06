@@ -67,10 +67,10 @@ describe('status word flush-left above the panel (f0.4+, no ☤)', () => {
     expect(statusLine(card)).toBe('☤Thinking');
   });
 
-  it('tool running renders Processing…', () => {
+  it('tool running renders Running…', () => {
     const state = reduce(initialState, { type: 'tool_use', id: 't1', name: 'Bash', input: {} });
     const card = renderCard(state, { model: 'M' });
-    expect(statusLine(card)).toBe('☤Processing');
+    expect(statusLine(card)).toBe('☤Running');
   });
 
   it('no status line once the run ends', () => {

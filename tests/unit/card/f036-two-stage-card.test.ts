@@ -42,11 +42,11 @@ describe('f0.3.6 two-stage placeholder card (f0.4+: panel from the start, no ☤
     expect(h.vertical_align).toBe('center');
   });
 
-  it('first tool call → Processing… flush-left above the panel', () => {
+  it('first tool call → Running… flush-left above the panel', () => {
     const s = reduce(initialState, { type: 'tool_use', id: 't1', name: 'Bash', input: { command: 'ls' } });
     expect(elements(s).map((e) => e.tag)).toEqual(['column_set', 'collapsible_panel']);
-    expect(JSON.stringify(elements(s)[0])).toContain('"content":"☤Processing"');
-    expect(panel(s)!.header.title.content).not.toContain('Processing');
+    expect(JSON.stringify(elements(s)[0])).toContain('"content":"☤Running"');
+    expect(panel(s)!.header.title.content).not.toContain('Running');
   });
 
   it('tool call hidden by group prefs (tool blocks filtered) still brings the panel', () => {
@@ -78,7 +78,7 @@ describe('f0.3.6 two-stage placeholder card (f0.4+: panel from the start, no ☤
     expect(json(s)).toContain('collapsible_panel');
   });
 
-  it('terminal states keep the panel even with no agent output (⭕️Stop / ❌Error unchanged)', () => {
+  it('terminal states keep the panel even with no agent output (⭕️Stopped / ❌Failed unchanged)', () => {
     const stopped = markInterrupted(initialState);
     expect(json(stopped)).toContain('collapsible_panel');
     expect(json(stopped)).toContain('"color":"yellow"');

@@ -228,7 +228,7 @@ describe('card-mode stream failures (f0.3.1)', () => {
     expect(json).toContain('ANSWER_SENTINEL');
     expect(json).not.toContain('![');
     expect(json).not.toContain('https://ex.com/cat.png');
-    expect(summaryOf(retry.card)).toBe('✅Done');
+    expect(summaryOf(retry.card)).toBe('✅Completed');
     // Strict retry worked: no extra messages needed.
     expect(h.sent).toHaveLength(0);
   });
@@ -371,11 +371,11 @@ describe('card-mode stream failures (f0.3.1)', () => {
     await h.handlers.message?.(message('om_7', 'hi'));
     // f0.3.4: the card is open from the start, so the error lands on that
     // same card instead of a separately sent one.
-    await waitFor(() => summaryOf(h.updates.at(-1)) === '❌Error');
+    await waitFor(() => summaryOf(h.updates.at(-1)) === '❌Failed');
     await settle();
     const card = h.updates.at(-1);
     expect(card).toBeDefined();
-    expect(summaryOf(card)).toBe('❌Error');
+    expect(summaryOf(card)).toBe('❌Failed');
     expect(JSON.stringify(card)).toContain('没有产出');
     expect(h.sent).toHaveLength(0);
   });

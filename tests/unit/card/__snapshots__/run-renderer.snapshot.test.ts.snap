@@ -9,7 +9,7 @@ exports[`run card renderer snapshots > collapses consecutive tools while preserv
           {
             "elements": [
               {
-                "content": "☤Processing",
+                "content": "☤Running",
                 "tag": "markdown",
                 "text_size": "notation",
               },
@@ -81,7 +81,7 @@ exports[`run card renderer snapshots > collapses consecutive tools while preserv
   "config": {
     "streaming_mode": true,
     "summary": {
-      "content": "☤Processing…",
+      "content": "☤Running…",
     },
   },
   "schema": "2.0",
@@ -131,7 +131,7 @@ exports[`run card renderer snapshots > collapses consecutive tools while preserv
   "config": {
     "streaming_mode": false,
     "summary": {
-      "content": "✅Done",
+      "content": "✅Completed",
     },
   },
   "schema": "2.0",
@@ -269,7 +269,7 @@ exports[`run card renderer snapshots > renders active and completed thinking 2`]
   "config": {
     "streaming_mode": false,
     "summary": {
-      "content": "✅Done",
+      "content": "✅Completed",
     },
   },
   "schema": "2.0",
@@ -317,7 +317,7 @@ exports[`run card renderer snapshots > renders done, error, interrupted, and idl
   "config": {
     "streaming_mode": false,
     "summary": {
-      "content": "✅Done",
+      "content": "✅Completed",
     },
   },
   "schema": "2.0",
@@ -370,7 +370,7 @@ exports[`run card renderer snapshots > renders done, error, interrupted, and idl
   "config": {
     "streaming_mode": false,
     "summary": {
-      "content": "❌Error",
+      "content": "❌Failed",
     },
   },
   "schema": "2.0",
@@ -422,7 +422,7 @@ exports[`run card renderer snapshots > renders done, error, interrupted, and idl
   "config": {
     "streaming_mode": false,
     "summary": {
-      "content": "⭕️Stop",
+      "content": "⭕️Stopped",
     },
   },
   "schema": "2.0",
@@ -479,7 +479,7 @@ exports[`run card renderer snapshots > renders done, error, interrupted, and idl
   "config": {
     "streaming_mode": false,
     "summary": {
-      "content": "⚠️Timeout",
+      "content": "⚠️Timed out",
     },
   },
   "schema": "2.0",
@@ -581,7 +581,7 @@ exports[`run card renderer snapshots > renders tool running, done, and error sta
           {
             "elements": [
               {
-                "content": "☤Processing",
+                "content": "☤Running",
                 "tag": "markdown",
                 "text_size": "notation",
               },
@@ -651,7 +651,7 @@ exports[`run card renderer snapshots > renders tool running, done, and error sta
   "config": {
     "streaming_mode": true,
     "summary": {
-      "content": "☤Processing…",
+      "content": "☤Running…",
     },
   },
   "schema": "2.0",
@@ -699,7 +699,7 @@ exports[`run card renderer snapshots > renders tool running, done, and error sta
   "config": {
     "streaming_mode": false,
     "summary": {
-      "content": "✅Done",
+      "content": "✅Completed",
     },
   },
   "schema": "2.0",
@@ -747,7 +747,7 @@ exports[`run card renderer snapshots > renders tool running, done, and error sta
   "config": {
     "streaming_mode": false,
     "summary": {
-      "content": "✅Done",
+      "content": "✅Completed",
     },
   },
   "schema": "2.0",

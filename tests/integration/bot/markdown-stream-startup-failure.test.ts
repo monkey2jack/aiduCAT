@@ -424,7 +424,7 @@ describe('markdown stream startup failures', () => {
     const finalCard = JSON.stringify(progressCards.at(-1));
     expect(finalCard).toContain('progress update');
     expect(finalCard).toContain('FINAL_SENTINEL');
-    expect(finalCard).toContain('✅Done');
+    expect(finalCard).toContain('✅Completed');
     expect(h.channel.sent).toHaveLength(0);
   });
 });

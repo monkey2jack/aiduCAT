@@ -278,7 +278,7 @@ describe('f0.3.4 latency: early reaction + early card', () => {
     expect(h.sent).toHaveLength(0);
 
     g.open();
-    await waitFor(() => summaryOf(h.updates.at(-1)) === '✅Done');
+    await waitFor(() => summaryOf(h.updates.at(-1)) === '✅Completed');
     await settle();
     // same single card carries the answer + the panel (agent icon); nothing sent separately
     expect(JSON.stringify(h.updates.at(-1))).toContain('FINAL_SENTINEL');
@@ -293,7 +293,7 @@ describe('f0.3.4 latency: early reaction + early card', () => {
   it('f034-#3 (f0.3.5) card mode never calls the reaction API, even when it is slow or down', async () => {
     const h = await setup({ events: answer('OK_SENTINEL'), failReaction: true, addReactionDelayMs: 300 });
     await h.handlers.message?.(message('om_b', 'hi'));
-    await waitFor(() => summaryOf(h.updates.at(-1)) === '✅Done');
+    await waitFor(() => summaryOf(h.updates.at(-1)) === '✅Completed');
     expect(h.order).not.toContain('reaction');
     expect(JSON.stringify(h.updates.at(-1))).toContain('OK_SENTINEL');
     expect(h.reactions.removed).toHaveLength(0);
@@ -302,7 +302,7 @@ describe('f0.3.4 latency: early reaction + early card', () => {
   it('f034-#4 empty-run guard still shows its error on the (early) card, not recalled', async () => {
     const h = await setup({ events: [{ type: 'done', terminationReason: 'normal' }] as AgentEvent[] });
     await h.handlers.message?.(message('om_c', 'hi'));
-    await waitFor(() => summaryOf(h.updates.at(-1)) === '❌Error');
+    await waitFor(() => summaryOf(h.updates.at(-1)) === '❌Failed');
     await settle();
     expect(h.order.filter((o) => o === 'card-open')).toHaveLength(1);
     expect(h.recalled).toHaveLength(0);
@@ -310,14 +310,14 @@ describe('f0.3.4 latency: early reaction + early card', () => {
     expect(h.reactions.added).toHaveLength(0);
   });
 
-  it('f034-#4 a stopped run ends on the same early card as ⭕️Stop (no second message)', async () => {
+  it('f034-#4 a stopped run ends on the same early card as ⭕️Stopped (no second message)', async () => {
     const h = await setup({
       events: [{ type: 'done', terminationReason: 'interrupted' }] as AgentEvent[],
     });
     await h.handlers.message?.(message('om_d', 'hi'));
     await waitFor(() => summaryOf(h.updates.at(-1)) !== '☤Thinking…' && h.updates.length >= 2);
     await settle();
-    expect(summaryOf(h.updates.at(-1))).toBe('⭕️Stop');
+    expect(summaryOf(h.updates.at(-1))).toBe('⭕️Stopped');
     expect(h.order.filter((o) => o === 'card-open')).toHaveLength(1);
     expect(h.sent).toHaveLength(0);
   });
@@ -368,7 +368,7 @@ describe('f0.3.4 latency: early reaction + early card', () => {
     const m = message('om_t', 'hi');
     (m as { createTime: number }).createTime = Date.now() - 1000;
     await h.handlers.message?.(m);
-    await waitFor(() => summaryOf(h.updates.at(-1)) === '✅Done');
+    await waitFor(() => summaryOf(h.updates.at(-1)) === '✅Completed');
     const find = (phase: string, event: string) =>
       info.mock.calls.find((c) => c[0] === phase && c[1] === event)?.[2] as Record<string, number> | undefined;
     const enter = find('intake', 'enter');
@@ -400,7 +400,7 @@ describe('f0.3.4 latency: early reaction + early card', () => {
     try {
       const h = await setup({ events: answer('NOFETCH_SENTINEL'), model: 'Gemini-3.8-Flash' });
       await h.handlers.message?.(message('om_h', 'hi'));
-      await waitFor(() => summaryOf(h.updates.at(-1)) === '✅Done');
+      await waitFor(() => summaryOf(h.updates.at(-1)) === '✅Completed');
       expect(urls.some((u) => u.includes('/v1/models'))).toBe(false);
       expect(urls.length).toBeGreaterThanOrEqual(1); // startup prewarm ran
       expect(urls.every((u) => u.endsWith('/api/combos'))).toBe(true);

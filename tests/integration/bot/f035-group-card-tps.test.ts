@@ -288,7 +288,7 @@ const workEvents = (answerText: string): AgentEvent[] =>
   ] as AgentEvent[];
 
 describe('f0.3.5 group chats get the same panel card as DMs', () => {
-  it('f035-group a group @mention streams a card (☤aiduCATing… first, panel, ✅Done) — no markdown/post', async () => {
+  it('f035-group a group @mention streams a card (☤aiduCATing… first, panel, ✅Completed) — no markdown/post', async () => {
     const g = gate();
     const h = await setup({ events: workEvents('GROUP_ANSWER'), gate: g.promise, model: 'aiduPARK' });
     const info = vi.spyOn(log, 'info');
@@ -296,7 +296,7 @@ describe('f0.3.5 group chats get the same panel card as DMs', () => {
     await waitFor(() => h.order.includes('card-open'));
     expect(summaryOf(h.updates[0])).toBe('☤aiduCATing…');
     g.open();
-    await waitFor(() => summaryOf(h.updates.at(-1)) === '✅Done');
+    await waitFor(() => summaryOf(h.updates.at(-1)) === '✅Completed');
     await settle();
     const last = h.updates.at(-1);
     expect(JSON.stringify(last)).toContain('GROUP_ANSWER');
@@ -313,7 +313,7 @@ describe('f0.3.5 group chats get the same panel card as DMs', () => {
   it('f035-group tool lines stay hidden in groups by default (f031-sec-#4), the panel itself stays', async () => {
     const h = await setup({ events: workEvents('A') });
     await h.handlers.message?.(message('om_g2', '@Bridge hi', 'group'));
-    await waitFor(() => summaryOf(h.updates.at(-1)) === '✅Done');
+    await waitFor(() => summaryOf(h.updates.at(-1)) === '✅Completed');
     const panel = panelOf(h.updates.at(-1));
     expect(panel).toContain('🛠️ 0');
     expect(panel).not.toContain('Bash');
@@ -322,10 +322,10 @@ describe('f0.3.5 group chats get the same panel card as DMs', () => {
   it('f035-group showToolCallsInGroups=true shows the tools exactly like a DM', async () => {
     const hg = await setup({ events: workEvents('A'), showToolCallsInGroups: true });
     await hg.handlers.message?.(message('om_g3', '@Bridge hi', 'group'));
-    await waitFor(() => summaryOf(hg.updates.at(-1)) === '✅Done');
+    await waitFor(() => summaryOf(hg.updates.at(-1)) === '✅Completed');
     const hd = await setup({ events: workEvents('A') });
     await hd.handlers.message?.(message('om_d3', 'hi'));
-    await waitFor(() => summaryOf(hd.updates.at(-1)) === '✅Done');
+    await waitFor(() => summaryOf(hd.updates.at(-1)) === '✅Completed');
     expect(panelOf(hg.updates.at(-1))).toContain('🛠️ 1');
     expect(panelOf(hd.updates.at(-1))).toContain('🛠️ 1');
   });
@@ -333,7 +333,7 @@ describe('f0.3.5 group chats get the same panel card as DMs', () => {
   it('f035-group the card keeps a person @mention the agent wrote (<at user_id> → <at id>)', async () => {
     const h = await setup({ events: answer('请 <at user_id="ou_abc123">小明</at> 看一下') });
     await h.handlers.message?.(message('om_g4', '@Bridge hi', 'group'));
-    await waitFor(() => summaryOf(h.updates.at(-1)) === '✅Done');
+    await waitFor(() => summaryOf(h.updates.at(-1)) === '✅Completed');
     const json = JSON.stringify(h.updates.at(-1));
     expect(json).toContain('<at id=ou_abc123></at>');
     expect(json).not.toContain('user_id');
@@ -345,7 +345,7 @@ describe('f0.3.5 turn TPS in /status (f0.3.6: not on the card)', () => {
     const h = await setup({ events: workEvents('TPS_ANSWER'), stepMs: 60 });
     const info = vi.spyOn(log, 'info');
     await h.handlers.message?.(message('om_t1', 'hi'));
-    await waitFor(() => summaryOf(h.updates.at(-1)) === '✅Done');
+    await waitFor(() => summaryOf(h.updates.at(-1)) === '✅Completed');
     await settle();
     const tpsLog = info.mock.calls.find((c) => c[1] === 'turn-tps')?.[2] as
       | { outTok: number; genMs: number; tps: number | null }
@@ -377,7 +377,7 @@ describe('f0.3.5 turn TPS in /status (f0.3.6: not on the card)', () => {
       stepMs: 60,
     });
     await h.handlers.message?.(message('om_t2', 'hi'));
-    await waitFor(() => summaryOf(h.updates.at(-1)) === '⭕️Stop');
+    await waitFor(() => summaryOf(h.updates.at(-1)) === '⭕️Stopped');
     await settle();
     expect(JSON.stringify(h.updates.at(-1))).not.toContain('tok/s');
     expect(h.sessions.getRaw('oc_dm')?.stats?.tpsAvg).toBeUndefined();
