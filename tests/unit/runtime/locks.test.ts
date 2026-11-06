@@ -114,7 +114,11 @@ describe('runtime locks', () => {
     const pid = child.pid;
     if (pid === undefined) throw new Error('failed to spawn child');
     await new Promise((r) => setTimeout(r, 300));
+    // Wait for the exit to be reaped: until then the pid is a zombie and
+    // kill(pid, 0) still succeeds, so the holder would look alive (flaked on rose).
+    const exited = new Promise((r) => child.once('exit', r));
     process.kill(pid, 'SIGKILL');
+    await exited;
 
     // proper-lockfile acquires by creating a sibling <target>.lock DIRECTORY.
     await mkdir(`${paths.profileLockFile}.lock`, { recursive: true });
