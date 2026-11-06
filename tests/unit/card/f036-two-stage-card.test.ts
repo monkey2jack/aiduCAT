@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { awaitingAgent, renderCard } from '../../../src/card/run-renderer.js';
+import { LOADING_IMG_KEY, awaitingAgent, renderCard } from '../../../src/card/run-renderer.js';
 import { initialState, markInterrupted, markEmptyRun, reduce, type RunState } from '../../../src/card/run-state.js';
 import { statusCard, type StatusInfo } from '../../../src/card/templates.js';
 
@@ -16,13 +16,15 @@ describe('f0.3.6 two-stage placeholder card (f0.4+: panel from the start, no ☤
     | { header: { title: { content: string }; icon: { tag: string }; vertical_align: string } }
     | undefined;
 
-  it('received: exactly one element, a one-line panel「aiduCATing…」— no counters, no ☤', () => {
+  it('received: exactly one element, 「aiduCATing [dots]」, no panel — no counters, no ☤', () => {
     const els = elements(initialState);
+    // f0.4++ (Wei 2026-11-06): just「aiduCATing [loading dots]」, no panel
     expect(els).toHaveLength(1);
-    expect(els[0]!.tag).toBe('collapsible_panel');
-    expect(panel(initialState)!.header.title.content).toBe('aiduCATing…');
-    expect(panel(initialState)!.header.vertical_align).toBe('center');
+    expect(els[0]!.tag).toBe('column_set');
+    expect(panel(initialState)).toBeUndefined();
     const j = json(initialState);
+    expect(j).toContain('"content":"aiduCATing"');
+    expect(j).toContain(LOADING_IMG_KEY);
     expect(j).not.toContain('☤');
     expect(j).not.toContain('💭');
     expect(j).toContain('"streaming_mode":true');
@@ -33,8 +35,8 @@ describe('f0.3.6 two-stage placeholder card (f0.4+: panel from the start, no ☤
     const s = reduce(initialState, { type: 'thinking', delta: '想一想' });
     expect(awaitingAgent(s)).toBe(false);
     const els = elements(s);
-    expect(els.map((e) => e.tag)).toEqual(['markdown', 'collapsible_panel']);
-    expect(els[0]!.content).toBe('Thinking…');
+    expect(els.map((e) => e.tag)).toEqual(['column_set', 'collapsible_panel']);
+    expect(JSON.stringify(els[0])).toContain('"content":"Thinking"');
     const h = panel(s)!.header;
     expect(h.title.content).not.toContain('\n');
     expect(h.title.content).toContain('💭 1');
@@ -44,8 +46,8 @@ describe('f0.3.6 two-stage placeholder card (f0.4+: panel from the start, no ☤
 
   it('first tool call → Processing… flush-left above the panel', () => {
     const s = reduce(initialState, { type: 'tool_use', id: 't1', name: 'Bash', input: { command: 'ls' } });
-    expect(elements(s).map((e) => e.tag)).toEqual(['markdown', 'collapsible_panel']);
-    expect(elements(s)[0]!.content).toBe('Processing…');
+    expect(elements(s).map((e) => e.tag)).toEqual(['column_set', 'collapsible_panel']);
+    expect(JSON.stringify(elements(s)[0])).toContain('"content":"Processing"');
     expect(panel(s)!.header.title.content).not.toContain('Processing');
   });
 
@@ -59,9 +61,9 @@ describe('f0.3.6 two-stage placeholder card (f0.4+: panel from the start, no ☤
   it('pure text turn: the panel appears together with the first answer text', () => {
     const s = reduce(initialState, { type: 'text', delta: '你好' });
     const els = elements(s);
-    expect(els.map((e) => e.tag)).toEqual(['markdown', 'markdown', 'collapsible_panel']);
+    expect(els.map((e) => e.tag)).toEqual(['markdown', 'column_set', 'collapsible_panel']);
     expect(els[0]!.content).toBe('你好');
-    expect(els[1]!.content).toBe('aiduCATing…');
+    expect(JSON.stringify(els[1])).toContain('"content":"aiduCATing"');
     const done = reduce(s, { type: 'done', terminationReason: 'normal' });
     const j = json(done);
     expect(j).toContain('collapsible_panel');

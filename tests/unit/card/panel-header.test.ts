@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { renderCard } from '../../../src/card/run-renderer.js';
+import { LOADING_IMG_KEY, renderCard } from '../../../src/card/run-renderer.js';
 import { initialState, reduce, type RunState } from '../../../src/card/run-state.js';
 
 // f0.3.6: the received placeholder has no panel; header tests use a running
@@ -17,11 +17,11 @@ function panelTitle(card: object): string {
 /** f0.4+ (revised 11-04 00:44): the status word is a flush-left markdown
  *  line right above the panel; the received placeholder is the panel title. */
 function statusLine(card: object): string | null {
-  const els = (card as { body: { elements: Array<{ tag: string; content?: string }> } }).body.elements;
-  const i = els.findIndex((e) => e.tag === 'collapsible_panel');
-  const above = i > 0 ? els[i - 1] : undefined;
-  if (above?.tag === 'markdown' && /^(Thinking|Processing|aiduCATing)…$/.test(above.content ?? '')) return above.content!;
-  return panelTitle(card) === 'aiduCATing…' ? 'aiduCATing…' : null;
+  // f0.4++ (Wei 2026-11-06): a column_set「word [loading dots]」— no「…」text.
+  type Row = { tag: string; columns?: Array<{ elements: Array<{ tag: string; content?: string; icon?: { img_key?: string } }> }> };
+  const els = (card as { body: { elements: Row[] } }).body.elements;
+  const row = els.find((e) => e.tag === 'column_set' && e.columns?.[1]?.elements[0]?.icon?.img_key === LOADING_IMG_KEY);
+  return row ? row.columns![0]!.elements[0]!.content! : null;
 }
 
 describe('one-line minimal panel header (f0.2+ 猴哥点单 2026-10-20)', () => {
@@ -55,21 +55,22 @@ describe('one-line minimal panel header (f0.2+ 猴哥点单 2026-10-20)', () => 
 });
 
 describe('status word flush-left above the panel (f0.4+, no ☤)', () => {
-  it('f0.3.5: default running state (placeholder) renders aiduCATing…', () => {
+  it('f0.3.5: default running state (placeholder) renders aiduCATing [dots], no panel', () => {
     const card = renderCard(initialState, { model: 'M' });
-    expect(statusLine(card)).toBe('aiduCATing…');
+    expect(statusLine(card)).toBe('aiduCATing');
+    expect(JSON.stringify(card)).not.toContain('collapsible_panel');
   });
 
   it('thinking renders Thinking…', () => {
     const state = reduce(initialState, { type: 'thinking', delta: 'hmm' });
     const card = renderCard(state, { model: 'M' });
-    expect(statusLine(card)).toBe('Thinking…');
+    expect(statusLine(card)).toBe('Thinking');
   });
 
   it('tool running renders Processing…', () => {
     const state = reduce(initialState, { type: 'tool_use', id: 't1', name: 'Bash', input: {} });
     const card = renderCard(state, { model: 'M' });
-    expect(statusLine(card)).toBe('Processing…');
+    expect(statusLine(card)).toBe('Processing');
   });
 
   it('no status line once the run ends', () => {

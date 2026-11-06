@@ -5,9 +5,42 @@ exports[`run card renderer snapshots > collapses consecutive tools while preserv
   "body": {
     "elements": [
       {
-        "content": "Processing…",
-        "tag": "markdown",
-        "text_size": "notation",
+        "columns": [
+          {
+            "elements": [
+              {
+                "content": "Processing",
+                "tag": "markdown",
+                "text_size": "notation",
+              },
+            ],
+            "tag": "column",
+            "vertical_align": "center",
+            "width": "auto",
+          },
+          {
+            "elements": [
+              {
+                "icon": {
+                  "img_key": "img_v3_02vb_496bec09-4b43-4773-ad6b-0cdd103cd2bg",
+                  "size": "16px 16px",
+                  "tag": "custom_icon",
+                },
+                "tag": "div",
+                "text": {
+                  "content": " ",
+                  "tag": "plain_text",
+                },
+              },
+            ],
+            "tag": "column",
+            "vertical_align": "center",
+            "width": "auto",
+          },
+        ],
+        "flex_mode": "none",
+        "horizontal_spacing": "4px",
+        "tag": "column_set",
       },
       {
         "border": {
@@ -110,9 +143,42 @@ exports[`run card renderer snapshots > renders active and completed thinking 1`]
   "body": {
     "elements": [
       {
-        "content": "Thinking…",
-        "tag": "markdown",
-        "text_size": "notation",
+        "columns": [
+          {
+            "elements": [
+              {
+                "content": "Thinking",
+                "tag": "markdown",
+                "text_size": "notation",
+              },
+            ],
+            "tag": "column",
+            "vertical_align": "center",
+            "width": "auto",
+          },
+          {
+            "elements": [
+              {
+                "icon": {
+                  "img_key": "img_v3_02vb_496bec09-4b43-4773-ad6b-0cdd103cd2bg",
+                  "size": "16px 16px",
+                  "tag": "custom_icon",
+                },
+                "tag": "div",
+                "text": {
+                  "content": " ",
+                  "tag": "plain_text",
+                },
+              },
+            ],
+            "tag": "column",
+            "vertical_align": "center",
+            "width": "auto",
+          },
+        ],
+        "flex_mode": "none",
+        "horizontal_spacing": "4px",
+        "tag": "column_set",
       },
       {
         "border": {
@@ -425,36 +491,42 @@ exports[`run card renderer snapshots > renders initial running state 1`] = `
   "body": {
     "elements": [
       {
-        "border": {
-          "color": "grey",
-          "corner_radius": "5px",
-        },
-        "elements": [
+        "columns": [
           {
-            "content": "_等待响应…_",
-            "tag": "markdown",
-            "text_size": "notation",
+            "elements": [
+              {
+                "content": "aiduCATing",
+                "tag": "markdown",
+                "text_size": "notation",
+              },
+            ],
+            "tag": "column",
+            "vertical_align": "center",
+            "width": "auto",
+          },
+          {
+            "elements": [
+              {
+                "icon": {
+                  "img_key": "img_v3_02vb_496bec09-4b43-4773-ad6b-0cdd103cd2bg",
+                  "size": "16px 16px",
+                  "tag": "custom_icon",
+                },
+                "tag": "div",
+                "text": {
+                  "content": " ",
+                  "tag": "plain_text",
+                },
+              },
+            ],
+            "tag": "column",
+            "vertical_align": "center",
+            "width": "auto",
           },
         ],
-        "expanded": false,
-        "header": {
-          "icon": {
-            "size": "16px 16px",
-            "tag": "standard_icon",
-            "token": "down-small-ccm_outlined",
-          },
-          "icon_expanded_angle": -180,
-          "icon_position": "right",
-          "title": {
-            "content": "aiduCATing…",
-            "tag": "markdown",
-            "text_size": "notation",
-          },
-          "vertical_align": "center",
-        },
-        "padding": "6px 8px 6px 8px",
-        "tag": "collapsible_panel",
-        "vertical_spacing": "4px",
+        "flex_mode": "none",
+        "horizontal_spacing": "4px",
+        "tag": "column_set",
       },
     ],
   },
@@ -505,9 +577,42 @@ exports[`run card renderer snapshots > renders tool running, done, and error sta
   "body": {
     "elements": [
       {
-        "content": "Processing…",
-        "tag": "markdown",
-        "text_size": "notation",
+        "columns": [
+          {
+            "elements": [
+              {
+                "content": "Processing",
+                "tag": "markdown",
+                "text_size": "notation",
+              },
+            ],
+            "tag": "column",
+            "vertical_align": "center",
+            "width": "auto",
+          },
+          {
+            "elements": [
+              {
+                "icon": {
+                  "img_key": "img_v3_02vb_496bec09-4b43-4773-ad6b-0cdd103cd2bg",
+                  "size": "16px 16px",
+                  "tag": "custom_icon",
+                },
+                "tag": "div",
+                "text": {
+                  "content": " ",
+                  "tag": "plain_text",
+                },
+              },
+            ],
+            "tag": "column",
+            "vertical_align": "center",
+            "width": "auto",
+          },
+        ],
+        "flex_mode": "none",
+        "horizontal_spacing": "4px",
+        "tag": "column_set",
       },
       {
         "border": {

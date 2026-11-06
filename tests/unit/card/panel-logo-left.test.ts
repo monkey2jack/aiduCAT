@@ -29,7 +29,7 @@ describe('panel header agent icon', () => {
   it.each(['claude', 'codex', 'hermes'] as const)('%s → its own custom_icon on the left, no rotation', (agent) => {
     const key = logoImgKeyForAgent(agent);
     expect(key).toBeTruthy();
-    for (const s of [initialState, thinking, reduce(thinking, { type: 'done', terminationReason: 'normal' })]) {
+    for (const s of [thinking, reduce(thinking, { type: 'done', terminationReason: 'normal' })]) {
       const h = header(s, { agentKind: agent, model: 'aiduPARK' });
       expect(h.icon).toMatchObject({ tag: 'custom_icon', img_key: key });
       expect(h.icon_position).toBe('left');
@@ -47,9 +47,8 @@ describe('panel header agent icon', () => {
     expect(h.icon.img_key).toBe(logoImgKeyForAgent('codex'));
   });
 
-  it('header is always one line → icon centered (placeholder and working)', () => {
+  it('header is always one line → icon centered (f0.4++: placeholder has no panel)', () => {
     expect(header(thinking, { agentKind: 'claude', model: 'M' }).vertical_align).toBe('center');
-    expect(header(initialState, { agentKind: 'claude', model: 'M' }).vertical_align).toBe('center');
   });
 
   it('no agent given → chevron stays on the right and flips -180', () => {

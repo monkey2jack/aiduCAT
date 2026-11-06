@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { AgentEvent } from '../../../src/agent/types.js';
 import { createDefaultProfileConfig } from '../../../src/config/profile-schema.js';
+import { LOADING_IMG_KEY } from '../../../src/card/run-renderer.js';
 import { log } from '../../../src/core/logger.js';
 import { SessionStore } from '../../../src/session/store.js';
 import { WorkspaceStore } from '../../../src/workspace/store.js';
@@ -268,10 +269,10 @@ describe('f0.3.4 latency: early reaction + early card', () => {
     const first = h.updates[0];
     expect(summaryOf(first)).toBe('aiduCATing…');
     const firstJson = JSON.stringify(first);
-    // f0.4+: the placeholder is a one-line panel「[agent icon] aiduCATing…」
-    expect(firstJson).toContain('"content":"aiduCATing…"');
-    expect(firstJson).toContain('collapsible_panel');
-    expect(firstJson).toContain('custom_icon');
+    // f0.4++ (Wei 2026-11-06): the placeholder is「aiduCATing [loading dots]」, no panel
+    expect(firstJson).toContain('"content":"aiduCATing"');
+    expect(firstJson).not.toContain('collapsible_panel');
+    expect(firstJson).toContain(LOADING_IMG_KEY);
     expect(firstJson).not.toContain('💭');
     expect(firstJson).not.toContain('☤');
     expect(firstJson).not.toContain('FINAL_SENTINEL');

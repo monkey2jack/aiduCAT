@@ -211,10 +211,10 @@ function buildCard(
   const statusWord =
     state.terminal === 'running'
       ? state.footer === 'tool_running'
-        ? 'Processing…'
+        ? 'Processing'
         : state.footer === 'streaming' || state.footer === 'received'
-          ? 'aiduCATing…'
-          : 'Thinking…'
+          ? 'aiduCATing'
+          : 'Thinking'
       : '';
 
   // aiduCAT: one collapsed panel carrying reasoning + every tool call + the
@@ -227,9 +227,15 @@ function buildCard(
   //   ended    → status line gone, panel only (border colour = result)
   // Feishu reserves an icon column for the whole panel header, so a status
   // word inside the header could never sit flush-left.
+  // f0.4++ loading dots (Wei 2026-11-06 15:11): the trailing「…」is Feishu's
+  // animated loading icon (same img_key as aiduPOP), rendered by the client.
+  // Received → only「aiduCATing [dots]」, no panel; working → status row
+  // above the panel; ended → row gone.
   const waiting = awaitingAgent(state);
-  if (statusWord && !waiting) elements.push(noteMd(statusWord));
-  const popPanel = waiting ? placeholderPanel(options) : aiduPopPanel(state, options, budget);
+  // strict retry (any rejected patch) falls back to plain text「Thinking…」,
+  // so a refused img_key can never freeze the card.
+  if (statusWord) elements.push(options.strict ? noteMd(`${statusWord}…`) : statusRow(statusWord));
+  const popPanel = waiting ? null : aiduPopPanel(state, options, budget);
   if (popPanel) elements.push(popPanel);
 
   // aiduCAT clarify: when the run ended while waiting on a parsed
@@ -380,19 +386,34 @@ function agentLogoOpt(options: RunCardRenderOptions): { logoImgKey?: string } {
   return key ? { logoImgKey: key } : {};
 }
 
+/** Feishu's animated loading icon — the img_key aiduPOP has always used. */
+export const LOADING_IMG_KEY = 'img_v3_02vb_496bec09-4b43-4773-ad6b-0cdd103cd2bg';
+
 /**
- * f0.4+ (Wei 2026-11-04): the instant reply is already a panel — one header
- * line「[agent icon] aiduCATing…」. Feishu needs a panel body, so a short
- * waiting note sits inside for anyone who expands it.
+ * f0.4++ (Wei 2026-11-06): status word with the animated dots right after it —
+ * two auto-width columns, since a div icon can only sit before its text.
  */
-function placeholderPanel(options: RunCardRenderOptions): object {
-  return collapsiblePanel({
-    title: 'aiduCATing…',
-    expanded: false,
-    border: 'grey',
-    body: '_等待响应…_',
-    ...agentLogoOpt(options),
-  });
+function statusRow(word: string): object {
+  return {
+    tag: 'column_set',
+    flex_mode: 'none',
+    horizontal_spacing: '4px',
+    columns: [
+      { tag: 'column', width: 'auto', vertical_align: 'center', elements: [noteMd(word)] },
+      {
+        tag: 'column',
+        width: 'auto',
+        vertical_align: 'center',
+        elements: [
+          {
+            tag: 'div',
+            icon: { tag: 'custom_icon', img_key: LOADING_IMG_KEY, size: '16px 16px' },
+            text: { tag: 'plain_text', content: ' ' },
+          },
+        ],
+      },
+    ],
+  };
 }
 
 /**
