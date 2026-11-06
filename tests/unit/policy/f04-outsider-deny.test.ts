@@ -1,6 +1,6 @@
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { buildNonOwnerSettings, expandOutsiderDenyRead } from '../../../src/agent/claude/owner-only-settings';
 import { createDefaultProfileConfig, normalizeProfileConfig } from '../../../src/config/profile-schema';
@@ -28,16 +28,22 @@ async function fakeHome() {
 describe('f04 outsider deny-read', () => {
   it('expands ~/, matches * in the last segment (backups), ignores relative / missing', async () => {
     const { home, mem } = await fakeHome();
+    const missingPattern = join(home, 'nope', 'dir', '*.md');
+    const absoluteFile = join(home, 'abs-file');
     const out = expandOutsiderDenyRead(
-      ['~/.xiaohou/memory/服务器信息.md*', '~/.xiaohou/memory/角色记忆.md', '  ', 'relative/x', '/nope/dir/*.md', '/abs/file'],
+      ['~/.xiaohou/memory/服务器信息.md*', '~/.xiaohou/memory/角色记忆.md', '  ', 'relative/x', missingPattern, absoluteFile],
       home,
     );
     expect(out).toEqual(
-      [join(mem, '服务器信息.md'), join(mem, '服务器信息.md.bak_20261102_0121'), join(mem, '角色记忆.md'), '/abs/file'].sort(),
+      [join(mem, '服务器信息.md'), join(mem, '服务器信息.md.bak_20261102_0121'), join(mem, '角色记忆.md'), resolve(absoluteFile)].sort(),
     );
     expect(out).not.toContain(join(mem, '群服务机器人守则与业务RAG.md'));
     // a regex-looking name is literal, not a pattern
     expect(expandOutsiderDenyRead(['~/.xiaohou/memory/服务器信息.(md)*'], home)).toEqual([]);
+  });
+
+  it.runIf(process.platform === 'win32')('accepts absolute Windows drive paths', () => {
+    expect(expandOutsiderDenyRead(['C:\\private\\notes.md'])).toContain('C:\\private\\notes.md');
   });
 
   it('adds Read/Edit/Write deny for each path (and its subtree); rules file untouched', async () => {

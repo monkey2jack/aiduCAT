@@ -1,7 +1,7 @@
 import { chmod, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { CodexAdapter } from '../../src/agent/codex/adapter.js';
 import { buildCodexArgs } from '../../src/agent/codex/argv.js';
 import type { AgentEvent } from '../../src/agent/types.js';
@@ -16,6 +16,13 @@ describe('CodexAdapter process contract', () => {
   const cleanup: string[] = [];
   const oldCodexHome = process.env.CODEX_HOME;
   const oldAppSecret = process.env.APP_SECRET;
+  let testCodexHome: string;
+
+  beforeEach(async () => {
+    testCodexHome = await mkdtemp(join(tmpdir(), 'codex-adapter-home-'));
+    process.env.CODEX_HOME = testCodexHome;
+    delete process.env.APP_SECRET;
+  });
 
   afterEach(async () => {
     if (oldCodexHome === undefined) {
@@ -28,11 +35,12 @@ describe('CodexAdapter process contract', () => {
     } else {
       process.env.APP_SECRET = oldAppSecret;
     }
-    await Promise.all(
-      cleanup.splice(0).map((dir) =>
+    await Promise.all([
+      rm(testCodexHome, { recursive: true, force: true }),
+      ...cleanup.splice(0).map((dir) =>
         rm(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 25 }),
       ),
-    );
+    ]);
   });
 
   it('spawns a fresh JSON run with prompt on stdin and inherits the user Codex home by default', async () => {

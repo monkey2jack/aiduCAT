@@ -1534,7 +1534,9 @@ async function runAgentBatch(deps: RunBatchDeps): Promise<void> {
   log.info('flush', 'reply-mode', { mode: replyMode, chatType: firstMsg.chatType });
   // f03p-slim-#4: a profile with features.cot=false never uses CoT.
   const cotMessages = getEffectiveCotMessages(controls.cfg, controls.profileConfig);
-  const cotEnabled = cotMessages !== 'off';
+  // Card replies already carry their own terminal status; a separate COT
+  // bubble would expose a second "task completed" message outside the card.
+  const cotEnabled = cotMessages !== 'off' && replyMode !== 'card';
 
   // Re-read prefs on every flush so toggling /config mid-stream takes
   // effect immediately. Cheap object lookups, no allocation when on.
