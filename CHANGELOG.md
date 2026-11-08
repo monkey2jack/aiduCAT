@@ -19,6 +19,10 @@ aiduCAT 的版本号用 `f` 前缀（f0.1、f0.2+ …），`package.json` 里是
 - **状态词改成统一的专业写法**（Wei 11-06）：进行中一律 -ing，结束一律过去分词。Processing → **Running**（这一步实际是 agent 在调工具）；结束状态 Done → **Completed**、Stop → **Stopped**（Stop 是动词）、Error → **Failed**、Timeout → **Timed out**（后两个原来是名词）。aiduCATing、Thinking 不变。只改显示文字，飞书会话列表预览同步。`ed23e05`
 - CI：重启恢复测试改为轮询日志文件，不再固定等 200 毫秒（f0.4++ 那次 ubuntu CI 偶发失败）。`921c9b9`
 
+### f0.5 之后的修复
+
+- **嘟嘟不再「响应后撤回」**（11-08 生产一天 4 次）：上一轮用了后台 Bash，轮次结束关掉 Claude Code 时后台任务被停，Claude Code 在会话里排了一条「后台命令已停止」通知；下一轮它先对这条通知出一个空结果，再去回答真问题。aiduCAT 以前把第一个结果当本轮结束：卡片空了被撤回，15 秒后还把正在回答的进程杀掉。现在空结果先扣住：Claude Code 接着出内容就继续等真正的回答，进程退出或 2 分钟没动静才收尾；有内容的轮次照旧立即结束。日志 `empty-result-skipped` / `empty-result-released`。
+
 ## f0.4++ — 2026-11-04（package 0.4.2）
 
 基于 f0.4+（`26dca50`）。主题：**卡片更简约**——面板图标按编程工具（Claude Code / Codex / Hermes Agent）显示，☤ 去掉，状态词顶格。

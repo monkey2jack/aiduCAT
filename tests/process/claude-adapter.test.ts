@@ -67,6 +67,29 @@ describe('ClaudeAdapter process contract', () => {
     expect(record.argv).not.toContain('--model');
   });
 
+  it('prod 2026-11-08: an empty result (queued task-notification) does not end the turn when claude goes on', async () => {
+    const fake = await createFakeClaude({
+      lines: [
+        { type: 'result', session_id: 'sess-n' },
+        { type: 'assistant', message: { model: 'gemini', content: [{ type: 'text', text: 'real answer' }] } },
+        { type: 'result', session_id: 'sess-n' },
+      ],
+    });
+    cleanup.push(fake.dir);
+
+    const run = new ClaudeAdapter({ binary: fake.path }).run({
+      runId: 'run-notify',
+      prompt: 'hello',
+      cwd: fake.dir,
+      permissionMode: 'acceptEdits',
+    });
+
+    expect(await collect(run.events)).toEqual([
+      { type: 'text', delta: 'real answer' },
+      { type: 'done', sessionId: 'sess-n', terminationReason: 'normal' },
+    ]);
+  });
+
   it('injects the active bridge profile env into spawned runs', async () => {
     const fake = await createFakeClaude({
       lines: [{ type: 'result', session_id: 'sess-profile' }],
@@ -224,7 +247,11 @@ describe('ClaudeAdapter process contract', () => {
 
   it('waits for post-done process exit before stop fallback is needed', async () => {
     const fake = await createFakeClaude({
-      lines: [{ type: 'result', session_id: 'sess-tail' }],
+      // A turn with output: its done is not held (see hold-empty-done.ts).
+      lines: [
+        { type: 'assistant', message: { content: [{ type: 'text', text: 'ok' }] } },
+        { type: 'result', session_id: 'sess-tail' },
+      ],
       exitDelayMs: 150,
     });
     cleanup.push(fake.dir);
@@ -236,6 +263,7 @@ describe('ClaudeAdapter process contract', () => {
     });
     const iterator = run.events[Symbol.asyncIterator]();
 
+    expect(await iterator.next()).toEqual({ done: false, value: { type: 'text', delta: 'ok' } });
     expect(await iterator.next()).toEqual({
       done: false,
       value: { type: 'done', sessionId: 'sess-tail', terminationReason: 'normal' },

@@ -25,6 +25,7 @@ import {
   type AgentRun,
   type AgentRunOptions,
 } from '../types';
+import { holdEmptyDone } from './hold-empty-done';
 import { translateEvent } from './stream-json';
 
 export interface ClaudeAdapterOptions {
@@ -34,7 +35,12 @@ export interface ClaudeAdapterOptions {
   envPassthrough?: readonly string[];
   /** f0.4 之后的修复: profile `access.outsiderDenyRead` (non-owner runs only). */
   outsiderDenyRead?: readonly string[];
+  /** Prod 2026-11-08: how long an empty `result` waits for claude to go on (ms). */
+  emptyResultHoldMs?: number;
 }
+
+/** See hold-empty-done.ts. Long enough for the real answer's first token. */
+const DEFAULT_EMPTY_RESULT_HOLD_MS = 120_000;
 
 type ClaudeChild = SpawnedProcessByStdio<Writable, Readable, Readable>;
 
@@ -51,6 +57,7 @@ export class ClaudeAdapter implements AgentAdapter {
   private readonly larkChannel: LarkChannelEnvContext | undefined;
   private readonly envPassthrough: readonly string[];
   private readonly outsiderDenyRead: readonly string[];
+  private readonly emptyResultHoldMs: number;
   private botIdentity: AgentBotIdentity | undefined;
 
   constructor(opts: ClaudeAdapterOptions = {}) {
@@ -58,6 +65,7 @@ export class ClaudeAdapter implements AgentAdapter {
     this.larkChannel = opts.larkChannel;
     this.envPassthrough = opts.envPassthrough ?? [];
     this.outsiderDenyRead = opts.outsiderDenyRead ?? [];
+    this.emptyResultHoldMs = opts.emptyResultHoldMs ?? DEFAULT_EMPTY_RESULT_HOLD_MS;
   }
 
   setBotIdentity(identity: AgentBotIdentity): void {
@@ -242,7 +250,9 @@ export class ClaudeAdapter implements AgentAdapter {
 
     return {
       runId: opts.runId,
-      events: createEventStream(child, stderrChunks, () => runtimeError),
+      events: holdEmptyDone(createEventStream(child, stderrChunks, () => runtimeError), {
+        holdMs: this.emptyResultHoldMs,
+      }),
       async stop() {
         if (child.exitCode !== null || child.signalCode !== null) return;
         log.info('agent', 'stop-sigterm', { pid: child.pid ?? null, graceMs: stopGraceMs });
