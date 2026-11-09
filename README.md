@@ -209,13 +209,13 @@ Thinking…                                            ← 运行中面板正上
 
 ## 更新日志（f0.5）
 
-- **状态词带动效、更专业**：☤ 回来了，后面是飞书加载动效；进行中 aiduCATing / Thinking / Running，结束 Completed / Stopped / Failed / Timed out
+- **状态词带动效、更专业**：· 回来了，后面是飞书加载动效；进行中 aiduCATing / Thinking / Running，结束 Completed / Stopped / Failed / Timed out
 - **社区贡献**：Windows 后台服务不再挂黑窗、多个 bot 开机全部自动上线、强杀后重启不再卡锁、「交互卡片」设置不再被静默降级（@alone-lon）；不再显示「No response requested.」（@iMissNan）
 - 一张卡最多 5 个表格，多的进「续」卡
 
 ### f0.4++
 
-- **卡片更简约**：面板图标按编程工具（Claude Code / Codex / Hermes Agent）显示，不再按模型猜厂商 logo（旧厂商 logo 全部删除）；☤ 去掉；Thinking… / Processing… 在面板正上方顶格
+- **卡片更简约**：面板图标按编程工具（Claude Code / Codex / Hermes Agent）显示，不再按模型猜厂商 logo（旧厂商 logo 全部删除）；· 去掉；Thinking… / Processing… 在面板正上方顶格
 - 中文名「爱嘟妙咪飞」，英文全称 Coding Agent Texting
 
 ### f0.4+
