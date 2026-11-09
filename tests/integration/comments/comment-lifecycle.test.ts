@@ -289,12 +289,17 @@ class BlockingAgentAdapter implements AgentAdapter {
     this.runOptions.push(opts);
     return {
       runId: opts.runId,
+      pid: undefined,
       events: this.events(runIndex),
       stop: async () => {
         this.wasStopped = true;
         this.release(runIndex);
       },
       waitForExit: async () => true,
+      forceKillTree: async () => {
+        this.wasStopped = true;
+        this.release(runIndex);
+      },
     };
   }
 

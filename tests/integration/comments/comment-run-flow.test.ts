@@ -517,6 +517,7 @@ class BlockingAgentAdapter implements AgentAdapter {
     this.finishers[index] = finish;
     return {
       runId: opts.runId,
+      pid: undefined,
       events: this.events(index, done, () => stopped),
       async stop() {
         stopped = true;
@@ -524,6 +525,10 @@ class BlockingAgentAdapter implements AgentAdapter {
       },
       async waitForExit() {
         return true;
+      },
+      async forceKillTree() {
+        stopped = true;
+        finish();
       },
     };
   }

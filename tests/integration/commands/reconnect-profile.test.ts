@@ -124,6 +124,7 @@ class ManualRun implements AgentRun {
   readonly events: AsyncIterable<never> = {
     async *[Symbol.asyncIterator]() {},
   };
+  readonly pid = undefined;
   stopCalls = 0;
   waitForExitCalls = 0;
 
@@ -137,6 +138,8 @@ class ManualRun implements AgentRun {
     this.waitForExitCalls++;
     return true;
   }
+
+  async forceKillTree(): Promise<void> {}
 }
 
 function message(content: string): NormalizedMessage {

@@ -1,9 +1,19 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi, beforeEach } from 'vitest';
 import type { AgentAdapter, AgentEvent, AgentRun, AgentRunOptions } from '../../../src/agent/types';
 import { ActiveRuns } from '../../../src/bot/active-runs';
 import { ProcessPool } from '../../../src/bot/process-pool';
 import type { RunPolicyAllow } from '../../../src/policy/run-policy';
 import { RunExecutor } from '../../../src/runtime/run-executor';
+import { killProcessTree } from '../../../src/platform/kill-tree';
+
+// issue #9 (P2): the drain-timeout hard kill must go through killProcessTree.
+vi.mock('../../../src/platform/kill-tree', () => ({
+  killProcessTree: vi.fn(async () => {}),
+}));
+const killTreeMock = vi.mocked(killProcessTree);
+beforeEach(() => {
+  killTreeMock.mockClear();
+});
 
 // f031-stab-#3: the old claude must really be gone before the next round on the
 // same scope starts. Before the fix, cleanup released the scope first and then
@@ -13,6 +23,7 @@ import { RunExecutor } from '../../../src/runtime/run-executor';
 
 class ControlledRun implements AgentRun {
   readonly runId: string;
+  readonly pid = undefined;
   readonly events: AsyncIterable<AgentEvent>;
   exited = false;
   stopCalls = 0;
@@ -30,6 +41,9 @@ class ControlledRun implements AgentRun {
   async stop(): Promise<void> {
     this.stopCalls++;
     if (this.exitOnStop) this.exit();
+  }
+  async forceKillTree(): Promise<void> {
+    this.exit();
   }
   waitForExit(timeoutMs: number): Promise<boolean> {
     if (this.exited) return Promise.resolve(true);
@@ -60,6 +74,45 @@ class ControlledAgent implements AgentAdapter {
   }
 }
 
+// issue #9 (P2): a run whose stop() never resolves and whose pid is set —
+// the drain-timeout path must hard-kill it by pid.
+class HangingStopRun implements AgentRun {
+  readonly pid = 1234;
+  readonly events: AsyncIterable<AgentEvent>;
+  exited = false;
+  constructor(runId: string) {
+    this.runId = runId;
+    this.events = (async function* () {
+      yield { type: 'text', delta: 'hi' } as AgentEvent;
+      yield { type: 'done', terminationReason: 'normal' } as AgentEvent;
+    })();
+  }
+  readonly runId: string;
+  async stop(): Promise<void> {
+    await new Promise<never>(() => {});
+  }
+  async waitForExit(): Promise<boolean> {
+    return this.exited ? Promise.resolve(true) : new Promise<boolean>(() => {});
+  }
+  async forceKillTree(): Promise<void> {
+    this.exited = true;
+  }
+}
+
+class HangingStopAgent implements AgentAdapter {
+  readonly id = 'claude';
+  readonly displayName = 'Claude';
+  readonly runs: HangingStopRun[] = [];
+  async isAvailable() {
+    return true;
+  }
+  run(opts: AgentRunOptions): AgentRun {
+    const r = new HangingStopRun(opts.runId);
+    this.runs.push(r);
+    return r;
+  }
+}
+
 function policy(): RunPolicyAllow {
   return {
     ok: true,
@@ -83,11 +136,18 @@ async function consumeToTerminal(it: AsyncIterable<AgentEvent>): Promise<void> {
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-function make(agent: ControlledAgent, graceMs: number) {
+function make(agent: ControlledAgent, graceMs: number, drainKillBudgetMs?: number) {
   const activeRuns = new ActiveRuns();
   const pool = new ProcessPool(() => 4);
   let n = 0;
-  const executor = new RunExecutor({ agent, pool, activeRuns, postDoneExitGraceMs: graceMs, createRunId: () => `run-${++n}` });
+  const executor = new RunExecutor({
+    agent,
+    pool,
+    activeRuns,
+    postDoneExitGraceMs: graceMs,
+    ...(drainKillBudgetMs !== undefined ? { drainKillBudgetMs } : {}),
+    createRunId: () => `run-${++n}`,
+  });
   return { executor, activeRuns, pool };
 }
 
@@ -162,4 +222,93 @@ describe('f031-stab-#3 next round waits for the previous claude to exit', () => 
     agent.runs[0]!.exit();
     await consumeToTerminal(other.subscribe());
   });
+});
+
+// issue #9 (P1): a wedged event stream (child dead, grandchild holds stdout)
+// used to freeze the slot forever — the watchdog's stop() was a no-op and
+// nothing else could end the run. forceClose is the guaranteed hard exit.
+describe('issue #9 forceClose hard exit', () => {
+  class WedgedRun implements AgentRun {
+    readonly runId: string;
+    readonly pid = 4242;
+    // A stream that never yields and never ends, no matter what.
+    readonly events: AsyncIterable<AgentEvent> = new Promise<never>(() => {}) as never;
+    forceKillCalls = 0;
+    constructor(runId: string) {
+      this.runId = runId;
+    }
+    async stop(): Promise<void> {}
+    async waitForExit(): Promise<boolean> {
+      return false;
+    }
+    async forceKillTree(): Promise<void> {
+      this.forceKillCalls++;
+    }
+  }
+
+  class WedgedAgent implements AgentAdapter {
+    readonly id = 'claude';
+    readonly displayName = 'Claude';
+    readonly runs: WedgedRun[] = [];
+    async isAvailable() {
+      return true;
+    }
+    run(opts: AgentRunOptions): AgentRun {
+      const r = new WedgedRun(opts.runId);
+      this.runs.push(r);
+      return r;
+    }
+  }
+
+  it('forceClose injects a terminal error, releases the scope, and kills the tree', async () => {
+    const agent = new WedgedAgent();
+    const { executor, activeRuns } = make(agent as unknown as ControlledAgent, 5_000);
+    const execution = await executor.submit({ scopeId: 's', policy: policy() });
+
+    const consumer = (async () => {
+      const out: AgentEvent[] = [];
+      for await (const e of execution.subscribe()) {
+        out.push(e);
+        if (e.type === 'error' || e.type === 'done') break;
+      }
+      return out;
+    })();
+
+    await execution.forceClose('watchdog-idle-timeout');
+    const events = await consumer;
+
+    const last = events[events.length - 1];
+    expect(last?.type).toBe('error');
+    expect((last as { message?: string }).message).toContain('force-closed');
+    expect((last as { terminationReason?: string }).terminationReason).toBe('timeout');
+    // Slot released: the scope can take a new run right away.
+    expect(activeRuns.get('s')).toBeUndefined();
+    const next = await executor.submit({ scopeId: 's', policy: policy() });
+    expect(agent.runs).toHaveLength(2);
+    await next.forceClose('cleanup');
+  });
+
+  it('forceClose is idempotent and safe even if the run already terminated', async () => {
+    const agent = new WedgedAgent();
+    const { executor } = make(agent as unknown as ControlledAgent, 5_000);
+    const execution = await executor.submit({ scopeId: 's', policy: policy() });
+    await execution.forceClose('first');
+    await execution.forceClose('second');
+    expect(agent.runs[0]!.forceKillCalls).toBeGreaterThanOrEqual(1);
+  });
+
+  it('the previous-exit-timeout path calls forceKillTree instead of leaking the process', async () => {
+    // stop() hangs forever (a wedged run); the scope's next submit hits the
+    // drain cap and must hard-kill the tree instead of leaking the process.
+    const agent = new HangingStopAgent();
+    const { executor } = make(agent as unknown as ControlledAgent, 20, 100);
+    const first = await executor.submit({ scopeId: 's', policy: policy() });
+    await consumeToTerminal(first.subscribe());
+    const t0 = Date.now();
+    const second = await executor.submit({ scopeId: 's', policy: policy() });
+    expect(Date.now() - t0).toBeLessThan(3_000);
+    expect(killTreeMock).toHaveBeenCalledWith(agent.runs[0]!.pid, expect.any(String));
+    expect(agent.runs).toHaveLength(2);
+    await consumeToTerminal(second.subscribe());
+  }, 10_000);
 });

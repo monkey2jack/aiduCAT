@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import type { SandboxMode } from '../../config/profile-schema';
 import { log } from '../../core/logger';
 import { buildAgentEnv } from '../../platform/agent-env';
+import { killProcessTree } from '../../platform/kill-tree';
 import { spawnProcess, type SpawnedProcessByStdio } from '../../platform/spawn';
 import { SpawnFailed } from '../../runtime/errors';
 import { prefixBridgeSystemPrompt } from '../bridge-system-prompt';
@@ -183,6 +184,7 @@ export class CodexAdapter implements AgentAdapter {
 
     return {
       runId: opts.runId,
+      pid: child.pid,
       events: createEventStream(child, stderrChunks, () => runtimeError, () => stopReason, codexHomeDir),
       async stop() {
         if (child.exitCode !== null || child.signalCode !== null) return;
@@ -197,7 +199,10 @@ export class CodexAdapter implements AgentAdapter {
                 graceMs: stopGraceMs,
                 reason: 'grace-period-expired',
               });
-              child.kill('SIGKILL');
+              // issue #9 (P2): child.kill() cannot reach past a .cmd shim to
+              // the real codex.exe or its grandchilds — same orphan failure
+              // mode as the claude adapter.
+              void killProcessTree(child.pid, 'stop-grace-expired');
             }
             resolve();
           }, stopGraceMs);
@@ -206,6 +211,11 @@ export class CodexAdapter implements AgentAdapter {
             resolve();
           });
         });
+      },
+      async forceKillTree() {
+        // Works even when the child already exited: the event stream can
+        // still be wedged by a grandchild holding the stdout write handle.
+        await killProcessTree(child.pid, 'force-kill');
       },
       waitForExit(timeoutMs: number): Promise<boolean> {
         if (child.exitCode !== null || child.signalCode !== null) {
@@ -250,13 +260,24 @@ async function* createEventStream(
   let lastUsageFetchAt = 0;
   let threadId: string | undefined;
   let lastKnownUsage: { inputTokens?: number; outputTokens?: number; cachedInputTokens?: number } | undefined;
-  let silentExitTimer: ReturnType<typeof setTimeout> | undefined;
-  const closeSilentStdout = (): void => {
-    silentExitTimer = setTimeout(() => {
-      if (!sawStdout && !child.stdout.readableEnded) child.stdout.destroy();
-    }, 50);
+  // issue #9 (P0): stdout EOF is not a reliable end-of-stream — same failure
+  // mode as the claude adapter. When the child exits, give any final lines 2s
+  // to flush, then destroy stdout so readline ends regardless of who still
+  // holds the write handle (a grandchild can keep it open indefinitely).
+  const EXIT_FLUSH_GRACE_MS = 2_000;
+  const closeStdoutAfterExit = (sawStdout: boolean): void => {
+    setTimeout(() => {
+      if (!child.stdout.readableEnded) {
+        log.info('agent', 'stdout-force-close-after-exit', {
+          pid: child.pid ?? null,
+          sawStdout,
+          graceMs: EXIT_FLUSH_GRACE_MS,
+        });
+        child.stdout.destroy();
+      }
+    }, EXIT_FLUSH_GRACE_MS).unref();
   };
-  child.once('exit', closeSilentStdout);
+  child.once('exit', () => closeStdoutAfterExit(sawStdout));
   try {
     for await (const line of rl) {
       sawStdout = true;
@@ -306,8 +327,6 @@ async function* createEventStream(
       yield* translator.translate(parsed);
     }
   } finally {
-    if (silentExitTimer) clearTimeout(silentExitTimer);
-    child.removeListener('exit', closeSilentStdout);
     rl.close();
     // aiduCAT: final guaranteed refresh — run-state keeps whichever usage
     // snapshot arrives last before/carrying the terminal event.

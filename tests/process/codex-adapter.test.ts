@@ -426,6 +426,28 @@ describe('CodexAdapter process contract', () => {
       }),
     ).toThrow(/cwd is required/);
   });
+
+  // issue #9 (P0): codex.exe exits quickly without a terminal event while a
+  // grandchild keeps the stdout write handle open — the event stream must
+  // still produce a terminal error within the exit-flush grace.
+  it('ends the stream with an error when codex exits early and a grandchild holds stdout', async () => {
+    const fake = await createQuickExitWithGrandchildCodex({ holdStdoutMs: 8_000 });
+    cleanup.push(fake.dir);
+
+    const run = new CodexAdapter({ binary: fake.path, profileStateDir: fake.dir }).run({
+      runId: 'run-hang',
+      prompt: 'hang',
+      cwd: await realpath(fake.dir),
+    });
+
+    const startedAt = Date.now();
+    const events = await collect(run.events);
+    const elapsed = Date.now() - startedAt;
+
+    expect(elapsed).toBeLessThan(7_000);
+    expect(events.some((e) => e.type === 'error')).toBe(true);
+    await run.forceKillTree();
+  }, 20_000);
 });
 
 async function collect(events: AsyncIterable<AgentEvent>): Promise<AgentEvent[]> {
@@ -476,6 +498,43 @@ async function createFakeCodex(options: {
     'utf8',
   );
   await chmod(path, 0o755);
+  return { path, dir, recordPath };
+}
+
+async function createQuickExitWithGrandchildCodex(options: {
+  holdStdoutMs: number;
+}): Promise<FakeBinary> {
+  const dir = await mkdtemp(join(tmpdir(), 'codex-adapter-test-'));
+  const path = join(dir, 'fake-codex.mjs');
+  const holderPath = join(dir, 'stdout-holder.mjs');
+  const recordPath = join(dir, 'argv.json');
+  await writeFile(
+    holderPath,
+    [
+      '#!/usr/bin/env node',
+      `const holdMs = ${options.holdStdoutMs};`,
+      'process.stdout.write("");',
+      'setTimeout(() => process.exit(0), holdMs).unref();',
+      'setInterval(() => {}, 10_000).unref();',
+    ].join('\n'),
+    'utf8',
+  );
+  await writeFile(
+    path,
+    [
+      '#!/usr/bin/env node',
+      'import { spawn } from "node:child_process";',
+      'import { writeFileSync } from "node:fs";',
+      `writeFileSync(${JSON.stringify(recordPath)}, JSON.stringify({ argv: process.argv.slice(2) }));`,
+      'console.log(JSON.stringify({ type: "thread.started", thread_id: "thread-hang" }));',
+      `const holder = spawn(process.execPath, [${JSON.stringify(holderPath)}], { stdio: ["ignore", "inherit", "ignore"], detached: false });`,
+      'holder.unref();',
+      'setTimeout(() => process.exit(0), 30);',
+    ].join('\n'),
+    'utf8',
+  );
+  await chmod(path, 0o755);
+  await chmod(holderPath, 0o755);
   return { path, dir, recordPath };
 }
 

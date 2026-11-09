@@ -771,12 +771,14 @@ describe('f04-bwrap: agent start failure never shows the raw error to the group'
       const n = ++call;
       const run = {
         runId: opts.runId,
+        pid: undefined,
         events: (async function* () {
           if (n === 1) await gate.promise;
           yield { type: 'final_text', content: `ANSWER_${n}` } as AgentEvent;
           yield { type: 'done', terminationReason: 'normal' } as AgentEvent;
         })(),
         async stop() {},
+        async forceKillTree() {},
         async waitForExit() {
           return true;
         },
