@@ -278,6 +278,50 @@ describe('ClaudeAdapter process contract', () => {
       new ClaudeAdapter({ binary: 'unused' }).run({ runId: 'run-no-cwd', prompt: 'hi' }),
     ).toThrow(/cwd is required/);
   });
+
+  // issue #9 (P0): claude.exe exits quickly without a terminal event while a
+  // grandchild keeps the stdout write handle open — the event stream must
+  // still produce a terminal error within the exit-flush grace, instead of
+  // hanging until the grandchild dies (which can be hours).
+  it('ends the stream with an error when claude exits early and a grandchild holds stdout', async () => {
+    const fake = await createQuickExitWithGrandchildClaude({ holdStdoutMs: 8_000 });
+    cleanup.push(fake.dir);
+
+    const run = new ClaudeAdapter({ binary: fake.path }).run({
+      runId: 'run-hang',
+      prompt: 'hang',
+      cwd: fake.dir,
+    });
+
+    const startedAt = Date.now();
+    const events = await collect(run.events);
+    const elapsed = Date.now() - startedAt;
+
+    expect(elapsed).toBeLessThan(7_000);
+    expect(events.some((e) => e.type === 'error')).toBe(true);
+    const error = events.find((e) => e.type === 'error') as { message?: string };
+    expect(error.message).toMatch(/exited with code|without emitting a result/);
+    // A grandchild that outlived the run must not keep the test alive.
+    await run.forceKillTree();
+  }, 20_000);
+
+  it('surfaces an error when claude exits 0 without ever emitting a result event', async () => {
+    const fake = await createFakeClaude({
+      lines: [{ type: 'system', subtype: 'init', session_id: 'sess-silent' }],
+    });
+    cleanup.push(fake.dir);
+
+    const run = new ClaudeAdapter({ binary: fake.path }).run({
+      runId: 'run-silent-exit',
+      prompt: 'silent',
+      cwd: fake.dir,
+    });
+
+    const events = await collect(run.events);
+    const last = events[events.length - 1];
+    expect(last?.type).toBe('error');
+    expect((last as { message?: string }).message).toMatch(/without emitting a result/);
+  });
 });
 
 async function collect(events: AsyncIterable<AgentEvent>): Promise<AgentEvent[]> {
@@ -322,6 +366,53 @@ async function createFakeClaude(options: {
     'utf8',
   );
   await chmod(path, 0o755);
+  return { path, dir, recordPath };
+}
+
+// issue #9 (P0): a fake claude that prints one line, exits immediately, and
+// leaves a grandchild process holding the stdout write handle for a while —
+// reproducing the 2026-11-08 hang without waiting that long in the test.
+async function createQuickExitWithGrandchildClaude(options: {
+  holdStdoutMs: number;
+}): Promise<FakeBinary> {
+  const dir = await mkdtemp(join(tmpdir(), 'claude-adapter-test-'));
+  const path = join(dir, 'fake-claude.mjs');
+  const holderPath = join(dir, 'stdout-holder.mjs');
+  const recordPath = join(dir, 'argv.json');
+  await writeFile(
+    holderPath,
+    [
+      '#!/usr/bin/env node',
+      `const holdMs = ${options.holdStdoutMs};`,
+      // Keep the inherited stdout open without writing; exit later. On exit
+      // the handle closes on its own, which is what the old code waited for.
+      'const start = Date.now();',
+      'process.stdout.write("");',
+      'setTimeout(() => process.exit(0), holdMs).unref();',
+      'setInterval(() => {}, 10_000).unref();',
+      'process.on("disconnect", () => {});',
+    ].join('\n'),
+    'utf8',
+  );
+  await writeFile(
+    path,
+    [
+      '#!/usr/bin/env node',
+      'import { spawn } from "node:child_process";',
+      'import { writeFileSync } from "node:fs";',
+      `writeFileSync(${JSON.stringify(recordPath)}, JSON.stringify({ argv: process.argv.slice(2) }));`,
+      // One stdout line (so sawStdout=true, like the real init event) — the
+      // bug shipped exactly here: the old guard only closed stdout when
+      // nothing had been printed.
+      'console.log(JSON.stringify({ type: "system", subtype: "init", session_id: "sess-hang" }));',
+      `const holder = spawn(process.execPath, [${JSON.stringify(holderPath)}], { stdio: ["ignore", "inherit", "ignore"], detached: false });`,
+      'holder.unref();',
+      'setTimeout(() => process.exit(0), 30);',
+    ].join('\n'),
+    'utf8',
+  );
+  await chmod(path, 0o755);
+  await chmod(holderPath, 0o755);
   return { path, dir, recordPath };
 }
 

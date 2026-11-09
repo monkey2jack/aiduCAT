@@ -2,6 +2,7 @@ import { createInterface } from 'node:readline';
 import type { Readable, Writable } from 'node:stream';
 import { log } from '../../core/logger';
 import { buildAgentEnv } from '../../platform/agent-env';
+import { killProcessTree } from '../../platform/kill-tree';
 import { spawnProcess, type SpawnedProcessByStdio } from '../../platform/spawn';
 import { SpawnFailed } from '../../runtime/errors';
 import { prefixBridgeSystemPrompt } from '../bridge-system-prompt';
@@ -161,6 +162,9 @@ export class HermesAdapter implements AgentAdapter {
 
     return {
       runId: opts.runId,
+      get pid() {
+        return current?.pid;
+      },
       events,
       async stop() {
         stopped = true;
@@ -197,6 +201,9 @@ export class HermesAdapter implements AgentAdapter {
           }, timeoutMs);
           child.once('exit', onExit);
         });
+      },
+      async forceKillTree() {
+        await killProcessTree(current?.pid, 'force-kill');
       },
     };
   }

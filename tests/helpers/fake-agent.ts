@@ -17,6 +17,7 @@ class FakeRun implements FakeAgentRun {
   readonly opts: AgentRunOptions;
   readonly events: AsyncIterable<AgentEvent>;
   readonly waitForExitResult: boolean;
+  readonly pid = undefined;
   #stopped = false;
   #waitForExitCalls = 0;
 
@@ -40,6 +41,10 @@ class FakeRun implements FakeAgentRun {
   }
 
   async stop(): Promise<void> {
+    this.#stopped = true;
+  }
+
+  async forceKillTree(): Promise<void> {
     this.#stopped = true;
   }
 

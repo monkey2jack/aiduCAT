@@ -78,6 +78,8 @@ export interface AgentRunOptions {
 
 export interface AgentRun {
   readonly runId: string;
+  /** OS pid of the agent process, once spawned; undefined until/unless it is. */
+  readonly pid: number | undefined;
   readonly events: AsyncIterable<AgentEvent>;
   stop(): Promise<void>;
   /**
@@ -92,6 +94,14 @@ export interface AgentRun {
    * 143 instead of 0; waiting it out lets it exit cleanly.
    */
   waitForExit(timeoutMs: number): Promise<boolean>;
+  /**
+   * issue #9 (P1): the watchdog's last-resort exit. Kills the agent process
+   * tree (Windows: `taskkill /T /F`, so grandchilds holding the stdout write
+   * handle die too) and must not throw even if the process is already gone.
+   * Unlike stop() this works after the child exited — the event stream can
+   * still be wedged on a grandchild-inherited stdout handle.
+   */
+  forceKillTree(): Promise<void>;
 }
 
 /**

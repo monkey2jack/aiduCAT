@@ -13,6 +13,7 @@ import {
 } from './owner-only-settings';
 import { cleanupSandboxPlaceholders, snapshotPlaceholders } from './sandbox-placeholders';
 import { planRuntimeDirMask, wrapWithRuntimeDirMask } from './runtime-dir-mask';
+import { killProcessTree } from '../../platform/kill-tree';
 import { spawnProcess, type SpawnedProcessByStdio } from '../../platform/spawn';
 import { buildBridgeSystemPrompt } from '../bridge-system-prompt';
 import { buildLarkChannelEnv, type LarkChannelEnvContext } from '../lark-channel-env';
@@ -250,6 +251,7 @@ export class ClaudeAdapter implements AgentAdapter {
 
     return {
       runId: opts.runId,
+      pid: child.pid,
       events: holdEmptyDone(createEventStream(child, stderrChunks, () => runtimeError), {
         holdMs: this.emptyResultHoldMs,
       }),
@@ -265,7 +267,10 @@ export class ClaudeAdapter implements AgentAdapter {
                 graceMs: stopGraceMs,
                 reason: 'grace-period-expired',
               });
-              child.kill('SIGKILL');
+              // issue #9 (P2): child.kill() cannot reach past a .cmd shim to
+              // the real claude.exe or its grandchilds — the orphan that held
+              // a session file open for two hours was exactly that survivor.
+              void killProcessTree(child.pid, 'stop-grace-expired');
             }
             resolve();
           }, stopGraceMs);
@@ -274,6 +279,11 @@ export class ClaudeAdapter implements AgentAdapter {
             resolve();
           });
         });
+      },
+      async forceKillTree() {
+        // Works even when the child already exited: the event stream can
+        // still be wedged by a grandchild holding the stdout write handle.
+        await killProcessTree(child.pid, 'force-kill');
       },
       waitForExit(timeoutMs: number): Promise<boolean> {
         if (child.exitCode !== null || child.signalCode !== null) {
@@ -314,13 +324,30 @@ async function* createEventStream(
 
   const rl = createInterface({ input: child.stdout, crlfDelay: Infinity });
   let sawStdout = false;
-  let silentExitTimer: ReturnType<typeof setTimeout> | undefined;
-  const closeSilentStdout = (): void => {
-    silentExitTimer = setTimeout(() => {
-      if (!sawStdout && !child.stdout.readableEnded) child.stdout.destroy();
-    }, 50);
+  // issue #9: did the CLI emit its terminal `result` event? An exit without
+  // one means the run never finished — the caller must get an error, not
+  // silence.
+  let sawResultEvent = false;
+  // issue #9 (P0): stdout EOF is not a reliable end-of-stream. claude.exe can
+  // exit before emitting any terminal event while a grandchild that inherited
+  // the stdout write handle keeps it open — the for-await below then hangs
+  // forever (the 2026-11-08 two-hour freeze). When the child exits, give any
+  // final lines 2s to flush, then destroy stdout so readline ends regardless
+  // of who still holds the write handle.
+  const EXIT_FLUSH_GRACE_MS = 2_000;
+  const closeStdoutAfterExit = (sawStdout: boolean): void => {
+    setTimeout(() => {
+      if (!child.stdout.readableEnded) {
+        log.info('agent', 'stdout-force-close-after-exit', {
+          pid: child.pid ?? null,
+          sawStdout,
+          graceMs: EXIT_FLUSH_GRACE_MS,
+        });
+        child.stdout.destroy();
+      }
+    }, EXIT_FLUSH_GRACE_MS).unref();
   };
-  child.once('exit', closeSilentStdout);
+  child.once('exit', () => closeStdoutAfterExit(sawStdout));
   try {
     for await (const line of rl) {
       sawStdout = true;
@@ -333,10 +360,9 @@ async function* createEventStream(
         continue;
       }
       yield* translateEvent(parsed);
+      if (parsedType(parsed) === 'result') sawResultEvent = true;
     }
   } finally {
-    if (silentExitTimer) clearTimeout(silentExitTimer);
-    child.removeListener('exit', closeSilentStdout);
     rl.close();
   }
 
@@ -376,6 +402,15 @@ async function* createEventStream(
       message: `claude runtime error: ${runtimeError.message}`,
       terminationReason: 'failed',
     };
+  } else if (!sawResultEvent) {
+    // issue #9: a claude.exe that exits 0 without ever emitting its `result`
+    // event used to end the stream silently — no terminal for the caller, the
+    // run state stayed "running" and the slot froze. Synthesize the error.
+    yield {
+      type: 'error',
+      message: 'claude exited without emitting a result event',
+      terminationReason: 'failed',
+    };
   }
 }
 
@@ -407,6 +442,10 @@ function writeSystemPromptFile(
       }
     },
   };
+}
+
+function parsedType(parsed: unknown): string | undefined {
+  return typeof parsed === 'object' && parsed !== null ? (parsed as { type?: string }).type : undefined;
 }
 
 function isWindowsCommandNotFoundLine(line: string): boolean {

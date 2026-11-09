@@ -1611,7 +1611,7 @@ async function runAgentBatch(deps: RunBatchDeps): Promise<void> {
           recordSession,
           async () => {},
           sessions,
-        capability.agentId);
+        capability.agentId, execution.forceClose);
         await cotDone;
         if (cotPublisher.degradedReason) {
           await sendCotDegradedNotice({
@@ -1724,7 +1724,7 @@ async function runAgentBatch(deps: RunBatchDeps): Promise<void> {
         },
         sessions,
         // (diagnostics)
-        capability.agentId);
+        capability.agentId, execution.forceClose);
       // f0.3.4: claude runs open the card right away — the initial render is
       // the "☤Thinking…" placeholder with the model logo in the panel header —
       // instead of waiting for the first tool call / text (10–200s). Later
@@ -1851,7 +1851,7 @@ async function runAgentBatch(deps: RunBatchDeps): Promise<void> {
           }
         },
         sessions,
-      capability.agentId);
+      capability.agentId, execution.forceClose);
       let mdDelivered = false;
       try {
         await awaitRenderAwareStream({
@@ -1907,7 +1907,7 @@ async function runAgentBatch(deps: RunBatchDeps): Promise<void> {
         recordSession,
         async () => {},
         sessions,
-      capability.agentId);
+      capability.agentId, execution.forceClose);
       await sendFinalReply({
         channel,
         chatId,
@@ -2201,12 +2201,19 @@ async function processAgentStream(
   flush: (state: RunState) => Promise<void>,
   stats: Pick<SessionStore, 'recordUsage' | 'recordMessage' | 'recordModel' | 'recordTurnTps'>,
   agentId: string,
+  // issue #9 (P1): the executor's hard exit, used when stop() cannot end the
+  // run (child already dead, event stream wedged on a grandchild stdout
+  // handle). Undefined in callers without an execution (tests).
+  forceClose: (reason: string) => Promise<void> | undefined,
 ): Promise<RunState> {
   const runStart = Date.now();
   let state: RunState = initialState;
   // f0.3.5: this turn's TPS, timed here (model generation only, tool windows
   // removed) — never from the CLI's session-cumulative duration fields.
   const tpsMeter = new TurnTpsMeter();
+  // issue #9 (P1): true once this function reached a terminal state — the
+  // watchdog's delayed force-close must not fire after a normal end.
+  let settled = false;
 
   // Idle watchdog: claude going silent for `idleTimeoutMs` is treated as
   // "presumed hung", we stop() and surface a timeout marker on the card.
@@ -2235,6 +2242,26 @@ async function processAgentStream(
       void handle.run.stop().catch(() => {
         /* stop errors are non-fatal */
       });
+      // issue #9 (P1): stop() is a no-op once the child already exited, and
+      // then nothing ever ends the event stream — the slot froze for two
+      // hours on 2026-11-08. Give the stream a short window to end on its
+      // own; if this function is still running (no terminal state reached),
+      // force-close: synthetic terminal + process-tree kill.
+      const FORCE_CLOSE_AFTER_MS = 10_000;
+      setTimeout(() => {
+        if (settled) return;
+        log.fail(
+          'agent',
+          new Error(`watchdog ${fire.kind} fire did not end the run`),
+          { scope, action: 'force-close', afterMs: FORCE_CLOSE_AFTER_MS },
+        );
+        const close = forceClose(`watchdog-${fire.kind}-timeout`);
+        if (close) {
+          close.catch((err) => {
+            log.fail('agent', err, { scope, event: 'watchdog-force-close-failed' });
+          });
+        }
+      }, FORCE_CLOSE_AFTER_MS).unref();
     },
   });
   watchdog.start();
@@ -2395,6 +2422,7 @@ async function processAgentStream(
   log.info('card', 'final', { scope, terminal: state.terminal, interrupted: handle.interrupted });
   reportMetric('run_e2e_ms', Date.now() - runStart, { terminal: state.terminal });
   await flush(state);
+  settled = true;
   if (handle.interrupted) {
     await handle.run.stop();
   }
