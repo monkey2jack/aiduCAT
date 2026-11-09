@@ -22,6 +22,7 @@ aiduCAT 的版本号用 `f` 前缀（f0.1、f0.2+ …），`package.json` 里是
 ### f0.5 之后的修复
 
 - **嘟嘟不再「响应后撤回」**（11-08 生产一天 4 次）：上一轮用了后台 Bash，轮次结束关掉 Claude Code 时后台任务被停，Claude Code 在会话里排了一条「后台命令已停止」通知；下一轮它先对这条通知出一个空结果，再去回答真问题。aiduCAT 以前把第一个结果当本轮结束：卡片空了被撤回，15 秒后还把正在回答的进程杀掉。现在空结果先扣住：Claude Code 接着出内容就继续等真正的回答，进程退出或 2 分钟没动静才收尾；有内容的轮次照旧立即结束。日志 `empty-result-skipped` / `empty-result-released`。
+- **进行中的状态词去掉 ☤**（Wei 11-09 品牌更新）：aiduCATing / Thinking / Running 前面不再带符号，卡片和聊天列表预览都一样，后面的加载动效不变；结束的 ✅Completed、⭕️Stopped、❌Failed、⚠️Timed out 不变。
 
 ## f0.4++ — 2026-11-04（package 0.4.2）
 

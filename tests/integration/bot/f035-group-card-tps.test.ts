@@ -16,7 +16,7 @@ import { longChinese } from '../../helpers/long-answers.js';
 
 // f0.3.5: groups get the same streaming card (with its panel) as DMs —
 // upstream forced groups to markdown (post), so no card / panel / early
-// ☤Thinking… (winter 2026-11-02 01:44). Plus the turn TPS on the card and in
+// Thinking… (winter 2026-11-02 01:44). Plus the turn TPS on the card and in
 // /status. Harness copied from f034-latency.
 
 const sdkMock = vi.hoisted(() => ({
@@ -288,13 +288,13 @@ const workEvents = (answerText: string): AgentEvent[] =>
   ] as AgentEvent[];
 
 describe('f0.3.5 group chats get the same panel card as DMs', () => {
-  it('f035-group a group @mention streams a card (☤aiduCATing… first, panel, ✅Completed) — no markdown/post', async () => {
+  it('f035-group a group @mention streams a card (aiduCATing… first, panel, ✅Completed) — no markdown/post', async () => {
     const g = gate();
     const h = await setup({ events: workEvents('GROUP_ANSWER'), gate: g.promise, model: 'aiduPARK' });
     const info = vi.spyOn(log, 'info');
     await h.handlers.message?.(message('om_g1', '@Bridge hi', 'group'));
     await waitFor(() => h.order.includes('card-open'));
-    expect(summaryOf(h.updates[0])).toBe('☤aiduCATing…');
+    expect(summaryOf(h.updates[0])).toBe('aiduCATing…');
     g.open();
     await waitFor(() => summaryOf(h.updates.at(-1)) === '✅Completed');
     await settle();

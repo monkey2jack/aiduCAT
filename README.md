@@ -35,7 +35,7 @@ aiduCAT 起源并致敬上游 [zarazhangrui/lark-coding-agent-bridge](https://gi
 |------|------|
 | 🤖 **三种 agent 三选一**（f0.4+） | 每个 profile 选 Claude Code、Codex CLI 或 Hermes Agent，同一套卡片、命令和白名单；见下方「Hermes Agent 接入」 |
 | 🫧 **单面板泡波样式** | 答案流式显示在上方；思考与全部工具调用收进一只折叠面板（aiduPOP 布局） |
-| 💭 **计数头** | 面板头：`模型 · 💭 思考段数 · 🛠️ 工具数 · ⏱️ 用时`；运行中面板正上方顶格多一行状态词（☤aiduCATing / ☤Thinking / ☤Running，后跟加载动效），结束即消失 |
+| 💭 **计数头** | 面板头：`模型 · 💭 思考段数 · 🛠️ 工具数 · ⏱️ 用时`；运行中面板正上方顶格多一行状态词（aiduCATing / Thinking / Running，后跟加载动效），结束即消失 |
 | 🏷 **工具图标** | 面板头左侧显示当前 profile 用的编程工具图标（Claude Code / Codex / Hermes Agent），不看模型；模型名照常写在图标后面 |
 | 🔌 **多 Provider** | /model 卡三级下拉（Provider→Model→Effort）；provider 密钥走环境变量链不入配置明文；切换下一轮即生效，无需重启；10router 系网关自动识别并只拉 curated combo |
 | 🗜️ **按窗口自动压缩** | 上下文到模型窗口的 60%（`AIDUCAT_COMPACT_PCT`）自动压缩；窗口来自 10router combo（`/api/combos` 带窗口字段时）或 provider 的 `contextWindow`，都没有时 aiduCAT 不覆盖，沿用 Claude Code 自己 `settings.json` 的 `CLAUDE_CODE_MAX_CONTEXT_TOKENS` / `CLAUDE_CODE_AUTO_COMPACT_WINDOW`（f0.3.4 起不再拉 10router 的 `/v1/models` 全量模型表） |

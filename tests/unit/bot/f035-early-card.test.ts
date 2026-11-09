@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { EarlyCard, EarlyCards, earlySendOpts } from '../../../src/bot/early-card.js';
 
-// f0.3.5: the「☤aiduCATing…」placeholder card — adopt / discard / failure.
+// f0.3.5: the「aiduCATing…」placeholder card — adopt / discard / failure.
 
 type Ctrl = { messageId?: string; update?: (c: unknown) => Promise<void> };
 

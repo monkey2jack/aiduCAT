@@ -16,7 +16,7 @@ import { translateEvent } from '../../../src/agent/claude/stream-json.js';
 import { longChinese } from '../../helpers/long-answers.js';
 
 // f0.3.4 (飞书响应慢): the reaction goes on at flush start and the card opens
-// at run start (☤Thinking… + model logo) — without breaking 续卡, degrade,
+// at run start (Thinking… + model logo) — without breaking 续卡, degrade,
 // /stop or the empty-run guard. Harness copied from card-stream-failure.
 
 const sdkMock = vi.hoisted(() => ({
@@ -257,7 +257,7 @@ const answer = (text: string): AgentEvent[] =>
   [{ type: 'text', delta: text }, { type: 'done', terminationReason: 'normal' }] as AgentEvent[];
 
 describe('f0.3.4 latency: early reaction + early card', () => {
-  it('f034-#3/#4 (f0.3.5: card replaces the reaction) the ☤aiduCATing… card goes out before the agent says anything (f0.3.6: one line, panel+logo join with the first agent output)', async () => {
+  it('f034-#3/#4 (f0.3.5: card replaces the reaction) the aiduCATing… card goes out before the agent says anything (f0.3.6: one line, panel+logo join with the first agent output)', async () => {
     const g = gate();
     const h = await setup({ events: answer('FINAL_SENTINEL'), gate: g.promise, model: 'Gemini-3.8-Flash' });
     await h.handlers.message?.(message('om_a', 'hi'));
@@ -267,10 +267,10 @@ describe('f0.3.4 latency: early reaction + early card', () => {
     expect(h.order.indexOf('card-open')).toBe(0);
     expect(h.reactions.added).toEqual([]);
     const first = h.updates[0];
-    expect(summaryOf(first)).toBe('☤aiduCATing…');
+    expect(summaryOf(first)).toBe('aiduCATing…');
     const firstJson = JSON.stringify(first);
     // f0.4++ (Wei 2026-11-06): the placeholder is「aiduCATing [loading dots]」, no panel
-    expect(firstJson).toContain('"content":"☤aiduCATing"');
+    expect(firstJson).toContain('"content":"aiduCATing"');
     expect(firstJson).not.toContain('collapsible_panel');
     expect(firstJson).toContain(LOADING_IMG_KEY);
     expect(firstJson).not.toContain('💭');
@@ -315,7 +315,7 @@ describe('f0.3.4 latency: early reaction + early card', () => {
       events: [{ type: 'done', terminationReason: 'interrupted' }] as AgentEvent[],
     });
     await h.handlers.message?.(message('om_d', 'hi'));
-    await waitFor(() => summaryOf(h.updates.at(-1)) !== '☤Thinking…' && h.updates.length >= 2);
+    await waitFor(() => summaryOf(h.updates.at(-1)) !== 'Thinking…' && h.updates.length >= 2);
     await settle();
     expect(summaryOf(h.updates.at(-1))).toBe('⭕️Stopped');
     expect(h.order.filter((o) => o === 'card-open')).toHaveLength(1);

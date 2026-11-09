@@ -14,7 +14,7 @@ import { CLAUDE_USAGE_FIXTURE as F } from '../../helpers/claude-usage-fixture.js
 import { translateEvent } from '../../../src/agent/claude/stream-json.js';
 import { longChinese } from '../../helpers/long-answers.js';
 
-// f0.3.5 (Wei 02:03): the「☤aiduCATing…」card goes out the moment a message is
+// f0.3.5 (Wei 02:03): the「aiduCATing…」card goes out the moment a message is
 // accepted — before debounce, queueing behind a running round, agent spawn —
 // and replaces the working reaction in card mode. Harness from f034-latency.
 
@@ -273,21 +273,21 @@ function gate() {
 const answer = (text: string): AgentEvent[] =>
   [{ type: 'text', delta: text }, { type: 'done', terminationReason: 'normal' }] as AgentEvent[];
 
-describe('f0.3.5 ☤aiduCATing… card at intake (no reaction)', () => {
+describe('f0.3.5 aiduCATing… card at intake (no reaction)', () => {
   it('f035-early the card opens at intake, before the debounce and the agent; no reaction; same card ends ✅Completed', async () => {
     const g = gate();
     const h = await setup({ events: answer('EARLY_ANSWER'), gate: g.promise, model: 'aiduPARK' });
     await h.handlers.message?.(message('om_e1', 'hi'));
     // synchronously after intake: card already requested, agent not yet spawned
     expect(h.order).toEqual(['card-open']);
-    expect(summaryOf(h.updates[0])).toBe('☤aiduCATing…');
-    expect(JSON.stringify(h.updates[0])).toContain('"content":"☤aiduCATing…"');
+    expect(summaryOf(h.updates[0])).toBe('aiduCATing…');
+    expect(JSON.stringify(h.updates[0])).toContain('"content":"aiduCATing…"');
     await waitFor(() => h.order.includes('agent-run'));
     // the run adopted the same card: still the placeholder word; f0.3.6: no
     // panel (and so no model logo) until the agent shows something
     expect(h.order.filter((o) => o === 'card-open')).toHaveLength(1);
     // f0.4+: placeholder is a one-line panel — no counters until the agent shows work
-    expect(summaryOf(h.updates.at(-1))).toBe('☤aiduCATing…');
+    expect(summaryOf(h.updates.at(-1))).toBe('aiduCATing…');
     expect(JSON.stringify(h.updates.at(-1))).not.toContain('💭');
     g.open();
     await waitFor(() => JSON.stringify(h.updates.at(-1)).includes('💭'));

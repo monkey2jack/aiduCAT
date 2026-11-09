@@ -211,10 +211,10 @@ function buildCard(
   const statusWord =
     state.terminal === 'running'
       ? state.footer === 'tool_running'
-        ? '☤Running'
+        ? 'Running'
         : state.footer === 'streaming' || state.footer === 'received'
-          ? '☤aiduCATing'
-          : '☤Thinking'
+          ? 'aiduCATing'
+          : 'Thinking'
       : '';
 
   // aiduCAT: one collapsed panel carrying reasoning + every tool call + the
@@ -547,11 +547,12 @@ function summaryText(state: RunState): string {
   if (state.terminal === 'idle_timeout') return '⚠️Timed out';
   if (state.terminal === 'error') return '❌Failed';
   if (state.terminal === 'done') return '✅Completed';
-  // f0.4++ (Wei 2026-11-06): ☤ back as the brand mark — status words and chat-list preview.
-  if (state.footer === 'tool_running') return '☤Running…';
+  // f0.5 之后 (Wei 2026-11-09「品牌更新」): no mark before the in-progress words —
+  // status row and chat-list preview read aiduCATing / Thinking / Running.
+  if (state.footer === 'tool_running') return 'Running…';
   // f0.3.5: the placeholder card (received) reads the same as streaming.
-  if (state.footer === 'streaming' || state.footer === 'received') return '☤aiduCATing…';
-  return '☤Thinking…';
+  if (state.footer === 'streaming' || state.footer === 'received') return 'aiduCATing…';
+  return 'Thinking…';
 }
 
 function truncate(s: string, max: number): string {

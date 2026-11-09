@@ -35,7 +35,7 @@ aiduCAT originates from and credits the upstream [zarazhangrui/lark-coding-agent
 |------|------|
 | 🤖 **Three agents, pick one** (f0.4+) | Each profile runs Claude Code, Codex CLI or Hermes Agent with the same cards, commands and allowlists; see "Hermes Agent" below |
 | 🫧 **Single Bubble-Wave panel** | The answer streams on top; thinking and every tool call fold into one collapsible panel (aiduPOP layout) |
-| 💭 **Counter header** | Panel header: `model · 💭 thinking segments · 🛠️ tools · ⏱️ elapsed`; while running a status line sits flush-left right above the panel (☤aiduCATing / ☤Thinking / ☤Running, followed by loading dots), gone on completion |
+| 💭 **Counter header** | Panel header: `model · 💭 thinking segments · 🛠️ tools · ⏱️ elapsed`; while running a status line sits flush-left right above the panel (aiduCATing / Thinking / Running, followed by loading dots), gone on completion |
 | 🏷 **Agent icon** | The panel header shows the profile's coding agent (Claude Code / Codex / Hermes Agent), not the model vendor; the model id follows the icon |
 | 🔌 **Multi-provider** | `/model` card with Provider → Model → Effort dropdowns; provider keys resolve from env/secret refs, never plaintext; takes effect next turn without restart; 10router gateways only offer curated combos |
 | 🗜️ **Window-based auto-compact** | Compacts at 60% of the model window (`AIDUCAT_COMPACT_PCT`); the window comes from the 10router combo (when `/api/combos` carries a window field) or the provider's `contextWindow`; when neither has one aiduCAT sets nothing and Claude Code keeps `CLAUDE_CODE_MAX_CONTEXT_TOKENS` / `CLAUDE_CODE_AUTO_COMPACT_WINDOW` from its own `settings.json` (since f0.3.4 the full 10router `/v1/models` list is never pulled) |

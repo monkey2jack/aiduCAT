@@ -14,7 +14,7 @@ import { CLAUDE_USAGE_FIXTURE as F } from '../../helpers/claude-usage-fixture.js
 import { translateEvent } from '../../../src/agent/claude/stream-json.js';
 import { longChinese } from '../../helpers/long-answers.js';
 
-// f0.3.5 (Wei 02:03): the「☤aiduCATing…」card goes out the moment a message is
+// f0.3.5 (Wei 02:03): the「aiduCATing…」card goes out the moment a message is
 // accepted — before debounce, queueing behind a running round, agent spawn —
 // and replaces the working reaction in card mode. Harness from f034-latency.
 
@@ -273,7 +273,7 @@ function gate() {
 const answer = (text: string): AgentEvent[] =>
   [{ type: 'text', delta: text }, { type: 'done', terminationReason: 'normal' }] as AgentEvent[];
 
-// f0.3.6 (Wei 2026-11-02): the placeholder card is one line「☤aiduCATing…」;
+// f0.3.6 (Wei 2026-11-02): the placeholder card is one line「aiduCATing…」;
 // the panel joins the SAME card (next full-card update) at the agent's first
 // thinking / tool call / answer text. TPS only in /status.
 // f0.4+ (Wei 2026-11-04): the placeholder is already a one-line panel
@@ -298,7 +298,7 @@ describe('f0.3.6 two-stage card (line first, panel on first agent output)', () =
     });
     await h.handlers.message?.(message('om_s1', 'hi'));
     expect(hasPanel(h.updates[0])).toBe(false);
-    expect(JSON.stringify(h.updates[0])).toContain('"content":"☤aiduCATing…"');
+    expect(JSON.stringify(h.updates[0])).toContain('"content":"aiduCATing…"');
     await waitFor(() => h.order.includes('agent-run'));
     await settle();
     // adopted, agent still silent → still just the line
@@ -309,7 +309,7 @@ describe('f0.3.6 two-stage card (line first, panel on first agent output)', () =
     const firstWithPanel = h.updates.findIndex(hasPanel);
     expect(firstWithPanel).toBeGreaterThan(0);
     // the first frame with a panel is the thinking frame
-    expect(JSON.stringify(h.updates[firstWithPanel])).toContain('"content":"☤Thinking…"');
+    expect(JSON.stringify(h.updates[firstWithPanel])).toContain('"content":"Thinking…"');
     // once the panel is there it stays
     expect(h.updates.slice(firstWithPanel).every(hasPanel)).toBe(true);
     const last = JSON.stringify(h.updates.at(-1));
@@ -346,7 +346,7 @@ describe('f0.3.6 two-stage card (line first, panel on first agent output)', () =
     await h.handlers.message?.(message('om_s3', '@Bridge hi', 'group'));
     await waitFor(() => summaryOf(h.updates.at(-1)) === '✅Completed');
     const firstWithPanel = h.updates.findIndex(hasPanel);
-    expect(JSON.stringify(h.updates[firstWithPanel])).toContain('"content":"☤Running…"');
+    expect(JSON.stringify(h.updates[firstWithPanel])).toContain('"content":"Running…"');
     expect(JSON.stringify(h.updates.at(-1))).not.toContain('Bash');
   });
 

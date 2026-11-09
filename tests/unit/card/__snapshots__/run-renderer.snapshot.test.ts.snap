@@ -9,7 +9,7 @@ exports[`run card renderer snapshots > collapses consecutive tools while preserv
           {
             "elements": [
               {
-                "content": "☤Running",
+                "content": "Running",
                 "tag": "markdown",
                 "text_size": "notation",
               },
@@ -81,7 +81,7 @@ exports[`run card renderer snapshots > collapses consecutive tools while preserv
   "config": {
     "streaming_mode": true,
     "summary": {
-      "content": "☤Running…",
+      "content": "Running…",
     },
   },
   "schema": "2.0",
@@ -147,7 +147,7 @@ exports[`run card renderer snapshots > renders active and completed thinking 1`]
           {
             "elements": [
               {
-                "content": "☤Thinking",
+                "content": "Thinking",
                 "tag": "markdown",
                 "text_size": "notation",
               },
@@ -217,7 +217,7 @@ exports[`run card renderer snapshots > renders active and completed thinking 1`]
   "config": {
     "streaming_mode": true,
     "summary": {
-      "content": "☤Thinking…",
+      "content": "Thinking…",
     },
   },
   "schema": "2.0",
@@ -495,7 +495,7 @@ exports[`run card renderer snapshots > renders initial running state 1`] = `
           {
             "elements": [
               {
-                "content": "☤aiduCATing",
+                "content": "aiduCATing",
                 "tag": "markdown",
                 "text_size": "notation",
               },
@@ -533,7 +533,7 @@ exports[`run card renderer snapshots > renders initial running state 1`] = `
   "config": {
     "streaming_mode": true,
     "summary": {
-      "content": "☤aiduCATing…",
+      "content": "aiduCATing…",
     },
   },
   "schema": "2.0",
@@ -581,7 +581,7 @@ exports[`run card renderer snapshots > renders tool running, done, and error sta
           {
             "elements": [
               {
-                "content": "☤Running",
+                "content": "Running",
                 "tag": "markdown",
                 "text_size": "notation",
               },
@@ -651,7 +651,7 @@ exports[`run card renderer snapshots > renders tool running, done, and error sta
   "config": {
     "streaming_mode": true,
     "summary": {
-      "content": "☤Running…",
+      "content": "Running…",
     },
   },
   "schema": "2.0",
