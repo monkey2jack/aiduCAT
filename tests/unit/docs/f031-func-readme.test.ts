@@ -8,10 +8,10 @@ const READMES = ['README.md', 'README.zh.md', 'README.en.md'];
 
 describe('f031-func-#5 READMEs + CHANGELOG match the code', () => {
   it('f031-func-#5 all three READMEs carry the current badge (f0.5, package 0.5.0)', async () => {
-    expect(pkg.version).toBe('0.5.0');
+    expect(pkg.version).toBe('0.5.1');
     for (const f of READMES) {
       const md = await read(f);
-      expect(md, f).toContain('badge/version-f0.5-blue');
+      expect(md, f).toContain('badge/version-f0.5%2B-blue');
       expect(md, f).not.toMatch(/badge\/version-f0\.(1|2)/);
     }
   });

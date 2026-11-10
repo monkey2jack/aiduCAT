@@ -7,7 +7,7 @@ const READMES = ['README.md', 'README.zh.md', 'README.en.md'];
 
 describe('f035 version f0.3.5 (package 0.3.5) docs', () => {
   it('f035 package moved past 0.3.5 (now 0.5.0) and no README still carries the f0.3.5 badge', async () => {
-    expect(pkg.version).toBe('0.5.0');
+    expect(pkg.version).toBe('0.5.1');
     for (const f of READMES) expect(await read(f), f).not.toContain('badge/version-f0.3.5-blue');
   });
 

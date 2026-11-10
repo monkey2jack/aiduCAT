@@ -4,6 +4,14 @@ aiduCAT 的版本号用 `f` 前缀（f0.1、f0.2+ …），`package.json` 里是
 
 > **tag 说明**：`f0.2++` 原先误指 `6fa62f8`（package 0.2.1），**已于 2026-10-31 修正**为真实发布提交 `c7ff90d`（0.2.2）。`f0.2+`、`v0.2.1` 核实后保持 `6fa62f8`：f0.2+ 的 GitHub Release 于 2026-10-20 01:17 从 main 发布，当时 main 的头部就是 `6fa62f8`（package 0.2.1）；版本号提交 `f01fcd2` 与它只差文档和一个测试，没有代码差别。
 
+## f0.5+ — 2026-11-10（package 0.5.1）
+
+基于 f0.5（`cf48c4c`）。主题：**插话**——Claude Code 干活时可以接着跟它说话，不用等它跑完，这是 aiduCAT 第一次让飞书对话像终端里一样随时插话（猴哥：「里程碑式的进步」）。f0.5 之后的修复一起收进这个版本。
+
+- **插话：Claude Code 干活时再发消息，不用等它跑完**（Wei 11-10「类似 /steer」）：以前运行中再来的消息只能排队，等这一轮全部结束才作为下一轮。现在 Claude Code 卡片模式下，同一个人运行中发来的消息直接塞进正在跑的 Claude Code：它在下一步（当前命令跑完、下次调工具之前）读到，接着手上的活往下干，不重来、不打断正在跑的命令。原来那张卡收尾显示「↪️Steered」，之后的进展和回答写进新消息那张卡。消息落在轮次快结束时，Claude Code 在同一进程里接着回答它。原理：`claude -p --input-format stream-json --replay-user-messages`，stdin 保持打开，回显对上了就换卡；没有待读消息时，结果一出就关 stdin，进程照常退出。别人的消息、Codex / Hermes、markdown/text 模式、Claude Code 已不再收输入时，照旧排队。日志 `steer-written` / `steer-taken` / `steer.segment` / `steer.queued-instead`。`80a5c06` `b51f888`（旧卡正文显示「↪️Steered」：结束的卡没有状态行，只靠边框色，插话那张原来看不出来）
+- **嘟嘟不再「响应后撤回」**（11-08 生产一天 4 次）：上一轮用了后台 Bash，轮次结束关掉 Claude Code 时后台任务被停，Claude Code 在会话里排了一条「后台命令已停止」通知；下一轮它先对这条通知出一个空结果，再去回答真问题。aiduCAT 以前把第一个结果当本轮结束：卡片空了被撤回，15 秒后还把正在回答的进程杀掉。现在空结果先扣住：Claude Code 接着出内容就继续等真正的回答，进程退出或 2 分钟没动静才收尾；有内容的轮次照旧立即结束。日志 `empty-result-skipped` / `empty-result-released`。
+- **进行中的状态词去掉 ☤**（Wei 11-09 品牌更新）：aiduCATing / Thinking / Running 前面不再带符号，卡片和聊天列表预览都一样，后面的加载动效不变；结束的 ✅Completed、⭕️Stopped、❌Failed、⚠️Timed out 不变。
+
 ## f0.5 — 2026-11-06（package 0.5.0）
 
 基于 f0.4++（`dbe3dd8`）。主题：**卡片状态更专业、更有生气，社区第一次参与**——☤ 带着飞书加载动效回来，状态词统一成 aiduCATing / Thinking / Running → Completed / Stopped / Failed / Timed out；两位社区贡献者（@alone-lon、@iMissNan）的 issue 和 PR 进了主线；Windows 后台服务、多 bot 自动上线、强杀后重启等一批修复。猴哥的「IT 代码觉醒」纪念版。
@@ -18,12 +26,6 @@ aiduCAT 的版本号用 `f` 前缀（f0.1、f0.2+ …），`package.json` 里是
 - **状态词后面换成飞书加载动效，☤ 回来了**（Wei 11-06）：收到消息只显示一行「☤aiduCATing ⋯」（三点动效，不再先出面板）；开工后面板照旧，面板上方是「☤Thinking ⋯」/「☤Processing ⋯」；结束后状态行消失。动效是飞书现成的加载图标（与 aiduPOP 同一个 img_key），文字后面用两列排版。会话列表预览是纯文字，显示静态「☤aiduCATing…」。飞书拒卡时重试卡退回纯文字「☤Thinking…」。`044b8ba` `622bd1e`
 - **状态词改成统一的专业写法**（Wei 11-06）：进行中一律 -ing，结束一律过去分词。Processing → **Running**（这一步实际是 agent 在调工具）；结束状态 Done → **Completed**、Stop → **Stopped**（Stop 是动词）、Error → **Failed**、Timeout → **Timed out**（后两个原来是名词）。aiduCATing、Thinking 不变。只改显示文字，飞书会话列表预览同步。`ed23e05`
 - CI：重启恢复测试改为轮询日志文件，不再固定等 200 毫秒（f0.4++ 那次 ubuntu CI 偶发失败）。`921c9b9`
-
-### f0.5 之后的修复
-
-- **嘟嘟不再「响应后撤回」**（11-08 生产一天 4 次）：上一轮用了后台 Bash，轮次结束关掉 Claude Code 时后台任务被停，Claude Code 在会话里排了一条「后台命令已停止」通知；下一轮它先对这条通知出一个空结果，再去回答真问题。aiduCAT 以前把第一个结果当本轮结束：卡片空了被撤回，15 秒后还把正在回答的进程杀掉。现在空结果先扣住：Claude Code 接着出内容就继续等真正的回答，进程退出或 2 分钟没动静才收尾；有内容的轮次照旧立即结束。日志 `empty-result-skipped` / `empty-result-released`。
-- **插话：Claude Code 干活时再发消息，不用等它跑完**（Wei 11-10「类似 /steer」）：以前运行中再来的消息只能排队，等这一轮全部结束才作为下一轮。现在 Claude Code 卡片模式下，同一个人运行中发来的消息直接塞进正在跑的 Claude Code：它在下一步（当前命令跑完、下次调工具之前）读到，接着手上的活往下干，不重来、不打断正在跑的命令。原来那张卡收尾显示「↪️Steered」，之后的进展和回答写进新消息那张卡。消息落在轮次快结束时，Claude Code 在同一进程里接着回答它。原理：`claude -p --input-format stream-json --replay-user-messages`，stdin 保持打开，回显对上了就换卡；没有待读消息时，结果一出就关 stdin，进程照常退出。别人的消息、Codex / Hermes、markdown/text 模式、Claude Code 已不再收输入时，照旧排队。日志 `steer-written` / `steer-taken` / `steer.segment` / `steer.queued-instead`。
-- **进行中的状态词去掉 ☤**（Wei 11-09 品牌更新）：aiduCATing / Thinking / Running 前面不再带符号，卡片和聊天列表预览都一样，后面的加载动效不变；结束的 ✅Completed、⭕️Stopped、❌Failed、⚠️Timed out 不变。
 
 ## f0.4++ — 2026-11-04（package 0.4.2）
 

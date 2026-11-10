@@ -12,7 +12,7 @@
 >
 > Dress your Claude Code / Codex CLI / Hermes Agent in a Bubble-Wave Feishu card: deep-blue veins on paper white, one cat, zero noise.
 
-[![Version](https://img.shields.io/badge/version-f0.5-blue.svg)](https://github.com/monkey2jack/aiduCAT)
+[![Version](https://img.shields.io/badge/version-f0.5%2B-blue.svg)](https://github.com/monkey2jack/aiduCAT)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Node 20+](https://img.shields.io/badge/node-20.12%2B-brightgreen.svg)](https://nodejs.org/)
 [![Claude Code](https://img.shields.io/badge/agent-Claude%20Code%20%7C%20Codex%20%7C%20Hermes-orange.svg)](https://docs.anthropic.com/en/docs/claude-code/quickstart)
@@ -207,7 +207,12 @@ Thinking…                                            ← flush-left above the 
 - **Empty run** (the agent exits without output): a red error card with the reason, asking you to resend
 - **Too long / rejected**: an answer over 25KB fills card 1 up to the budget (cut at a paragraph, code-block or table boundary, ending in "…（未完，见下一张卡）"), then continues on ordered "续 2/N", "续 3/N" cards — rendered markdown, each <30KB, nothing repeated; an oversized code block is split between lines with the fence reopened, an oversized table between rows with the header repeated; only if Feishu rejects a continuation card does the rest from that card on go out once as plain text. if Feishu rejects the card, a strict card (no image links, 12KB answer) is retried, then plain text, then a one-line "card failed" notice
 
-## Changelog (f0.5)
+## Changelog (f0.5+)
+
+- **Steer**: message Claude Code again while it works, no waiting for it to finish — it reads the message at its next step and carries on without restarting; the card so far ends as「↪️Steered」and the rest goes into the new message's card
+- No more "reply then recall" (an empty result from a background-task notice no longer ends the turn); no ☤ before the in-progress status words
+
+### f0.5
 
 - **Status words with motion, more professional**: ☤ is back, followed by Feishu's loading dots; in progress aiduCATing / Thinking / Running, finished Completed / Stopped / Failed / Timed out
 - **Community contributions**: Windows background service without a console window, every bot comes online at boot, no lock stall after a forced kill, the "interactive card" setting no longer silently downgraded (@alone-lon); "No response requested." no longer shown (@iMissNan)
