@@ -1,4 +1,4 @@
-# aiduCAT☤爱嘟妙咪飞 — Coding Agent Texting · 绝妙设计的迷人简洁飞书卡片
+# <b style="color:#000000">ai</b><b style="color:#525252">du</b><b style="color:#1F4E79">CAT</b>·<b style="color:#000000">爱</b><b style="color:#525252">嘟</b><b style="color:#1F4E79">妙咪飞</b> — Coding Agent Texting · 绝妙设计的迷人简洁飞书卡片
 
 <p align="center">
   <img src="docs/images/aidububble-banner.webp" alt="aiduCAT 爱嘟妙咪飞 · 泡波横幅（aidu 家族同款）" width="100%">
@@ -27,7 +27,7 @@
 
 ## aiduCAT 是什么？
 
-**aiduCAT☤爱嘟妙咪飞**，全称 **Coding Agent Texting**（编程代理短信/消息化），是给 **Claude Code / Codex CLI / Hermes Agent** 装上的一只飞书猫（按 profile 三选一，f0.4+ 起支持 Hermes） —— 把本地编程 agent 的思考、工具调用和最终答案，实时装进一张仿 [aiduPOP](https://github.com/monkey2jack/aiduPOP) 泡波样式的飞书流式卡片。
+**<b style="color:#000000">ai</b><b style="color:#525252">du</b><b style="color:#1F4E79">CAT</b>·<b style="color:#000000">爱</b><b style="color:#525252">嘟</b><b style="color:#1F4E79">妙咪飞</b>**，全称 **Coding Agent Texting**（编程代理短信/消息化），是给 **Claude Code / Codex CLI / Hermes Agent** 装上的一只飞书猫（按 profile 三选一，f0.4+ 起支持 Hermes） —— 把本地编程 agent 的思考、工具调用和最终答案，实时装进一张仿 [aiduPOP](https://github.com/monkey2jack/aiduPOP) 泡波样式的飞书流式卡片。
 
 aiduCAT 起源并致敬上游 [zarazhangrui/lark-coding-agent-bridge](https://github.com/zarazhangrui/lark-coding-agent-bridge)（npm 包 `lark-channel-bridge`），在 MIT 协议的代码基础之上，做了一套完整的**泡波化改造**：
 
@@ -210,17 +210,17 @@ Thinking…                                            ← 运行中面板正上
 ## 更新日志（f0.5+）
 
 - **插话**：Claude Code 干活时同一个人再发消息，不用等它跑完——它在下一步读到，接着手上的活往下干，不重来；原卡收尾「↪️Steered」，后面的进展写进新消息的卡片
-- 嘟嘟不再「响应后撤回」（后台任务通知产生的空结果不再当成本轮结束）；进行中的状态词去掉 ☤
+- 嘟嘟不再「响应后撤回」（后台任务通知产生的空结果不再当成本轮结束）；进行中的状态词前面不再带符号
 
 ### f0.5
 
-- **状态词带动效、更专业**：☤ 回来了，后面是飞书加载动效；进行中 aiduCATing / Thinking / Running，结束 Completed / Stopped / Failed / Timed out
+- **状态词带动效、更专业**：· 回来了，后面是飞书加载动效；进行中 aiduCATing / Thinking / Running，结束 Completed / Stopped / Failed / Timed out
 - **社区贡献**：Windows 后台服务不再挂黑窗、多个 bot 开机全部自动上线、强杀后重启不再卡锁、「交互卡片」设置不再被静默降级（@alone-lon）；不再显示「No response requested.」（@iMissNan）
 - 一张卡最多 5 个表格，多的进「续」卡
 
 ### f0.4++
 
-- **卡片更简约**：面板图标按编程工具（Claude Code / Codex / Hermes Agent）显示，不再按模型猜厂商 logo（旧厂商 logo 全部删除）；☤ 去掉；Thinking… / Processing… 在面板正上方顶格
+- **卡片更简约**：面板图标按编程工具（Claude Code / Codex / Hermes Agent）显示，不再按模型猜厂商 logo（旧厂商 logo 全部删除）；· 去掉；Thinking… / Processing… 在面板正上方顶格
 - 中文名「爱嘟妙咪飞」，英文全称 Coding Agent Texting
 
 ### f0.4+
