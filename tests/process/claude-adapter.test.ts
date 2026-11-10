@@ -45,9 +45,14 @@ describe('ClaudeAdapter process contract', () => {
     expect(record.env.LARK_CHANNEL).toBe('1');
     // The prompt goes via stdin, and the bridge system prompt via a temp file,
     // so neither ever touches argv (which cmd.exe would mangle on Windows).
-    expect(record.stdin).toBe('hello');
-    expect(record.argv.slice(0, 8)).toEqual([
+    expect(record.stdin).toBe(
+      `${JSON.stringify({ type: 'user', message: { role: 'user', content: [{ type: 'text', text: 'hello' }] } })}\n`,
+    );
+    expect(record.argv.slice(0, 11)).toEqual([
       '-p',
+      '--input-format',
+      'stream-json',
+      '--replay-user-messages',
       '--output-format',
       'stream-json',
       '--include-partial-messages',
@@ -88,6 +93,53 @@ describe('ClaudeAdapter process contract', () => {
       { type: 'text', delta: 'real answer' },
       { type: 'done', sessionId: 'sess-n', terminationReason: 'normal' },
     ]);
+  });
+
+  it('f0.5 之后 steer: a message written mid-turn is taken in and the same turn goes on', async () => {
+    const fake = await createInteractiveFake('mid');
+    cleanup.push(fake.dir);
+    const run = new ClaudeAdapter({ binary: fake.path }).run({ runId: 'run-steer', prompt: 'first', cwd: fake.dir });
+    const seen: AgentEvent[] = [];
+    for await (const evt of run.events) {
+      seen.push(evt);
+      if (evt.type === 'tool_use') expect(run.steer?.('second')).toBe(true);
+    }
+    expect(seen).toEqual([
+      { type: 'tool_use', id: 't1', name: 'Bash', input: { command: 'sleep 1' } },
+      { type: 'tool_result', id: 't1', output: 'ok', isError: false },
+      { type: 'steer' },
+      { type: 'text', delta: 'got: second' },
+      { type: 'done', sessionId: 's-mid', terminationReason: 'normal' },
+    ]);
+    expect(run.steer?.('too late')).toBe(false);
+  });
+
+  it('f0.5 之后 steer: a message that misses the turn becomes the next turn in the same process (no early done)', async () => {
+    const fake = await createInteractiveFake('late');
+    cleanup.push(fake.dir);
+    const run = new ClaudeAdapter({ binary: fake.path }).run({ runId: 'run-late', prompt: 'first', cwd: fake.dir });
+    const seen: AgentEvent[] = [];
+    for await (const evt of run.events) {
+      seen.push(evt);
+      if (evt.type === 'text' && evt.delta === 'answer 1') expect(run.steer?.('second')).toBe(true);
+    }
+    expect(seen).toEqual([
+      { type: 'text', delta: 'answer 1' },
+      { type: 'steer' },
+      { type: 'text', delta: 'answer 2' },
+      { type: 'done', sessionId: 's-late', terminationReason: 'normal' },
+    ]);
+  });
+
+  it('f0.5 之后 steer: with nothing written, stdin closes at the result and the run ends as before', async () => {
+    const fake = await createInteractiveFake('late');
+    cleanup.push(fake.dir);
+    const run = new ClaudeAdapter({ binary: fake.path }).run({ runId: 'run-plain', prompt: 'first', cwd: fake.dir });
+    expect(await collect(run.events)).toEqual([
+      { type: 'text', delta: 'answer 1' },
+      { type: 'done', sessionId: 's-late', terminationReason: 'normal' },
+    ]);
+    expect(await run.waitForExit(2000)).toBe(true);
   });
 
   it('injects the active bridge profile env into spawned runs', async () => {
@@ -186,7 +238,7 @@ describe('ClaudeAdapter process contract', () => {
 
     expect(record.argv.slice(-4)).toEqual(['--resume', 'sess-old', '--model', 'sonnet']);
     // f031-sec-#1: no policy → fail closed (the CLI's own prompting mode), never bypass.
-    expect(record.argv[6]).toBe('default');
+    expect(record.argv[9]).toBe('default');
   });
 
   it('includes stderr when the process exits non-zero', async () => {
@@ -304,8 +356,10 @@ async function createFakeClaude(options: {
       'const spIdx = argv.indexOf("--append-system-prompt-file");',
       'const systemPrompt = spIdx !== -1 ? readFileSync(argv[spIdx + 1], "utf8") : null;',
       'let stdin = "";',
-      'process.stdin.on("data", (c) => { stdin += c; });',
-      'process.stdin.on("end", () => {',
+      'let started = false;',
+      // f0.5 之后 (steer): stdin stays open — answer on the first stream-json line.
+      'process.stdin.on("data", (c) => { stdin += c; if (started || !stdin.includes("\\n")) return; started = true; go(); });',
+      'function go() {',
       `  writeFileSync(${JSON.stringify(recordPath)}, JSON.stringify({`,
       '    argv,',
       '    stdin,',
@@ -317,12 +371,58 @@ async function createFakeClaude(options: {
       '  for (const line of lines) console.log(JSON.stringify(line));',
       options.stderr ? `  process.stderr.write(${JSON.stringify(options.stderr)});` : '',
       `  setTimeout(() => process.exit(${options.exitCode ?? 0}), ${options.exitDelayMs ?? 0});`,
-      '});',
+      '}',
     ].filter(Boolean).join('\n'),
     'utf8',
   );
   await chmod(path, 0o755);
   return { path, dir, recordPath };
+}
+
+/**
+ * f0.5 之后 (steer): a fake claude that reads stream-json user lines, echoes
+ * each (isReplay, like --replay-user-messages) and answers like CC 2.1.319:
+ * `mid` — the second line is taken in after the tool call, same turn;
+ * `late` — the turn ends first, the second line becomes the next turn.
+ */
+async function createInteractiveFake(kind: 'mid' | 'late'): Promise<FakeBinary> {
+  const dir = await mkdtemp(join(tmpdir(), 'claude-steer-test-'));
+  const path = join(dir, 'fake-claude.mjs');
+  const src = [
+    '#!/usr/bin/env node',
+    'import { createInterface } from "node:readline";',
+    `const kind = ${JSON.stringify(kind)};`,
+    'const out = (o) => console.log(JSON.stringify(o));',
+    'const lines = [];',
+    'let wake;',
+    'const next = () => new Promise((r) => { if (lines.length) r(lines.shift()); else wake = r; });',
+    'const rl = createInterface({ input: process.stdin });',
+    'rl.on("line", (l) => { if (wake) { const w = wake; wake = undefined; w(l); } else lines.push(l); });',
+    'rl.on("close", () => { if (wake) wake(null); else lines.push(null); });',
+    'const echo = (l) => { const m = JSON.parse(l); out({ type: "user", isReplay: true, message: m.message }); return m.message.content[0].text; };',
+    'const sid = "s-" + kind;',
+    '(async () => {',
+    '  echo(await next());',
+    '  if (kind === "mid") {',
+    '    out({ type: "assistant", message: { content: [{ type: "tool_use", id: "t1", name: "Bash", input: { command: "sleep 1" } }] } });',
+    '    const l2 = await Promise.race([next(), new Promise((r) => setTimeout(() => r(undefined), 3000))]);',
+    '    out({ type: "user", message: { content: [{ type: "tool_result", tool_use_id: "t1", content: "ok" }] } });',
+    '    if (l2) { const t = echo(l2); out({ type: "assistant", message: { content: [{ type: "text", text: "got: " + t }] } }); }',
+    '    out({ type: "result", session_id: sid });',
+    '  } else {',
+    '    out({ type: "assistant", message: { content: [{ type: "text", text: "answer 1" }] } });',
+    '    await new Promise((r) => setTimeout(r, 200));',
+    '    out({ type: "result", session_id: sid });',
+    '    const l2 = await next();',
+    '    if (l2) { echo(l2); out({ type: "assistant", message: { content: [{ type: "text", text: "answer 2" }] } }); out({ type: "result", session_id: sid }); }',
+    '  }',
+    '  const rest = await next();',
+    '  process.exit(rest === null ? 0 : 3);',
+    '})();',
+  ].join('\n');
+  await writeFile(path, src, 'utf8');
+  await chmod(path, 0o755);
+  return { path, dir, recordPath: join(dir, 'unused.json') };
 }
 
 async function readRecord(path: string): Promise<{

@@ -29,6 +29,7 @@ import {
   markIdleTimeout,
   finalAnswerOnlyState,
   markInterrupted,
+  markSteered,
   reduce,
   type RunState,
 } from '../card/run-state';
@@ -51,7 +52,7 @@ import {
   getShowToolCalls,
 } from '../config/schema';
 import type { KeystorePaths } from '../config/keystore';
-import { featureEnabled } from '../config/profile-schema';
+import { featureEnabled, type AgentKind } from '../config/profile-schema';
 import { resolveAppSecret } from '../config/secret-resolver';
 import { log, reportMetric, withTrace } from '../core/logger';
 import { DOWNLOAD_FAILED, MediaCache, type LocalAttachment } from '../media/cache';
@@ -79,7 +80,7 @@ import type { MeetingManager } from '../meeting/manager';
 import type { VcRequestClient } from '../meeting/api';
 import type { ScopeContext } from '../policy/run-policy';
 import { createOwnerRefreshController } from '../policy/owner';
-import { RunExecutor } from '../runtime/run-executor';
+import { RunExecutor, type RunExecution } from '../runtime/run-executor';
 import { RunWatchdog, type RunTimeouts } from './run-watchdog';
 import { RunJournal, type JournalSnapshot } from './run-journal';
 import type { SessionCatalog } from '../session/catalog';
@@ -383,6 +384,54 @@ export async function startChannel(deps: StartChannelDeps): Promise<BridgeChanne
       scope,
     );
   });
+  // f0.5 之后 (steer, Wei 2026-11-10「插话」): runs that can take the user's
+  // next message while they work. A batch flushed for such a scope goes into
+  // the run (onSteer) instead of waiting for it to end.
+  const liveRuns = new Map<string, LiveRun>();
+  const steerChains = new Map<string, Promise<void>>();
+  const requeueUntaken = (scope: string, live: LiveRun): void => {
+    const untaken = live.queue.splice(0);
+    if (untaken.length === 0) return;
+    log.info('steer', 'requeue-untaken', { scope, batches: untaken.length });
+    for (const b of [...untaken].reverse()) {
+      for (const m of b.batch) journal.queue(scope, m);
+      pending.restore(scope, b.batch);
+      earlyCards.restore(scope, b.earlyCard);
+    }
+  };
+  const steerInto = (scope: string, batch: NormalizedMessage[]): void => {
+    const live = liveRuns.get(scope);
+    const card = earlyCards.take(scope);
+    const queueInstead = (why: string): void => {
+      log.info('steer', 'queued-instead', { scope, why, batchSize: batch.length });
+      pending.restore(scope, batch);
+      earlyCards.restore(scope, card);
+    };
+    if (!live) return queueInstead('no-run');
+    // Same person only: the run carries its starter's rights (owner tools,
+    // sandbox); anyone else waits for their own round as before.
+    if (batch.some((m) => m.senderId !== live.actorId || senderTypeOf(m) === 'bot')) {
+      return queueInstead('other-sender');
+    }
+    const prev = steerChains.get(scope) ?? Promise.resolve();
+    const step = prev.then(async () => {
+      try {
+        const prompt = await buildSteerPrompt(channel, media, controls, chatModeCache, batch);
+        if (liveRuns.get(scope) !== live) return queueInstead('run-ended');
+        if (!live.steer(prompt)) return queueInstead('input-closed');
+        live.queue.push({ batch, ...(card ? { earlyCard: card } : {}) });
+        journal.dequeue(scope, batch.map((m) => m.messageId));
+        log.info('steer', 'written', { scope, batchSize: batch.length, promptChars: prompt.length });
+      } catch (err) {
+        log.fail('steer', err, { scope });
+        queueInstead('prompt-failed');
+      }
+    });
+    steerChains.set(scope, step);
+    void step.finally(() => {
+      if (steerChains.get(scope) === step) steerChains.delete(scope);
+    });
+  };
   const pending = new PendingQueue(DEBOUNCE_MS, (scope, batch) => {
     // f0.3.5: taken synchronously, so a message arriving after this flush
     // gets its own card for the next batch.
@@ -396,7 +445,7 @@ export async function startChannel(deps: StartChannelDeps): Promise<BridgeChanne
     sessions.recordMessage(scope, 'user');
     pending.block(scope);
     const lastMsg = batch[batch.length - 1]!;
-    const runKey = randomUUID();
+    let runKey = randomUUID();
     // f03p-infra-#6: this batch carries the automatic post-restart continuation.
     const autoResume = batch.some((m) => autoResumeIds.delete(m.messageId));
     journal.dequeue(scope, batch.map((m) => m.messageId));
@@ -443,14 +492,13 @@ export async function startChannel(deps: StartChannelDeps): Promise<BridgeChanne
             threadId: firstMsg.threadId,
           });
         }
-        await runAgentBatch({
+        const baseDeps = {
           channel,
           executor,
           sessions,
           sessionCatalog,
           workspaces,
           media,
-          batch,
           controls,
           cotClient,
           callbackAuth,
@@ -458,13 +506,48 @@ export async function startChannel(deps: StartChannelDeps): Promise<BridgeChanne
           lastRunModelByScope,
           scope,
           mode,
-          workingReaction,
-          ...(earlyCard ? { earlyCard } : {}),
-          onCardOpened: (messageId) => journal.setCard(scope, runKey, messageId),
-          onTerminal: (t) => {
+          onCardOpened: (messageId: string) => journal.setCard(scope, runKey, messageId),
+          onTerminal: (t: string) => {
             terminal = t;
           },
+        };
+        let segEnd = await runAgentBatch({
+          ...baseDeps,
+          batch,
+          workingReaction,
+          ...(earlyCard ? { earlyCard } : {}),
+          steer: {
+            register: (live) => {
+              liveRuns.set(scope, live);
+              log.info('steer', 'ready', { scope });
+              pending.poke(scope);
+            },
+          },
         });
+        // f0.5 之后 (steer): the user cut in — the same run goes on, now
+        // answering the new message in its own card.
+        while (segEnd?.steeredTo) {
+          const { live, steeredTo: next } = segEnd;
+          const nextLast = next.batch[next.batch.length - 1]!;
+          journal.endRun(scope, runKey);
+          runKey = randomUUID();
+          journal.startRun(scope, {
+            runKey,
+            chatId: nextLast.chatId,
+            replyTo: nextLast.messageId,
+            ...(nextLast.threadId ? { replyInThread: true } : {}),
+            resumeMsg: nextLast,
+          });
+          sessions.recordMessage(scope, 'user');
+          log.info('steer', 'segment', { scope, batchSize: next.batch.length, ...latencyFields(nextLast.createTime) });
+          segEnd = await runAgentBatch({
+            ...baseDeps,
+            batch: next.batch,
+            workingReaction: NO_REACTION,
+            ...(next.earlyCard ? { earlyCard: next.earlyCard } : {}),
+            steer: { live, register: () => {} },
+          });
+        }
         if (autoResume && !draining && (terminal === undefined || terminal === 'error' || terminal === 'idle_timeout')) {
           await notifyAutoResumeFailed(channel, lastMsg);
         }
@@ -485,6 +568,11 @@ export async function startChannel(deps: StartChannelDeps): Promise<BridgeChanne
         // was killed by the stop itself (e.g. systemd signalled the whole
         // cgroup) — keep it in the journal so the next start continues it.
         // Unless someone stopped it on purpose (/stop, /cd, /new …).
+        // f0.5 之后 (steer): messages written into the run that it never took
+        // in (it stopped, failed, or ended first) run next, as before.
+        const endedLive = liveRuns.get(scope);
+        liveRuns.delete(scope);
+        if (endedLive) requeueUntaken(scope, endedLive);
         const stoppedOnPurpose = activeRuns.consumeStoppedOnPurpose(scope);
         if (!(draining && terminal === 'interrupted' && !stoppedOnPurpose)) journal.endRun(scope, runKey);
         // f0.3.4: idempotent — covers rounds that ended before the run took
@@ -508,6 +596,8 @@ export async function startChannel(deps: StartChannelDeps): Promise<BridgeChanne
       journal.dequeue(scope, msgs.map((m) => m.messageId));
       earlyCards.take(scope)?.discard('dropped');
     },
+    canSteer: (scope) => !draining && liveRuns.has(scope),
+    onSteer: (scope, batch) => steerInto(scope, batch),
   });
 
   // Counter for stdout reconnect escalation; reset on `reconnected`.
@@ -1200,6 +1290,93 @@ interface RunBatchDeps {
   workingReaction?: WorkingReaction;
   /** f0.3.5: the「☤aiduCATing…」card opened at intake; the run adopts it. */
   earlyCard?: EarlyCard;
+  /**
+   * f0.5 之后 (steer): `live` set → this batch was already written into that
+   * running claude (the user cut in); render the rest of the run for it
+   * instead of starting a new one. `register` is told once a fresh run can
+   * take messages mid-run.
+   */
+  steer?: {
+    live?: LiveRun;
+    register(live: LiveRun): void;
+  };
+}
+
+/** f0.5 之后 (steer): a batch written into a live run, waiting to be taken in. */
+export interface SteerBatch {
+  batch: NormalizedMessage[];
+  earlyCard?: EarlyCard;
+}
+
+/**
+ * f0.5 之后 (steer): one running agent process, shown as one card per user
+ * message: when the user cuts in, the card so far closes (↪️Steered) and the
+ * same run goes on in a new card for the new message.
+ */
+export interface LiveRun {
+  /** Who started it — only their messages may go into it (same rights). */
+  readonly actorId: string;
+  /** Written in, not yet taken in (oldest first). */
+  readonly queue: SteerBatch[];
+  steer(prompt: string): boolean;
+  /** Everything a later segment needs to keep rendering this run. */
+  readonly core: RunCore;
+}
+
+interface RunCore {
+  firstMsg: NormalizedMessage;
+  chatId: string;
+  execution: RunExecution;
+  handle: RunHandle;
+  events: AsyncIterator<AgentEvent>;
+  policyFingerprint: string;
+  capabilityAgentId: string;
+  runTimeouts: RunTimeouts;
+  recordSession: (evt: AgentEvent) => void;
+  agentKind: AgentKind;
+  modelSelection: string;
+  effort: string | undefined;
+}
+
+/**
+ * f0.5 之后 (steer): one segment of a run's shared event stream — up to and
+ * including a `steer` event. Ending at a steer leaves the shared stream open
+ * for the next segment; any other end closes it as before.
+ */
+function segmentOf(it: AsyncIterator<AgentEvent>): AsyncIterable<AgentEvent> {
+  let steered = false;
+  let finished = false;
+  return {
+    [Symbol.asyncIterator]() {
+      return {
+        async next(): Promise<IteratorResult<AgentEvent>> {
+          if (finished) return { done: true, value: undefined };
+          const r = await it.next();
+          if (r.done) {
+            finished = true;
+            return r;
+          }
+          if (r.value.type === 'steer') {
+            steered = true;
+            finished = true;
+          }
+          return r;
+        },
+        async return(): Promise<IteratorResult<AgentEvent>> {
+          finished = true;
+          if (!steered) await it.return?.(undefined);
+          return { done: true, value: undefined };
+        },
+      };
+    },
+  };
+}
+
+/** f0.5 之后 (steer): what a segment hands back to the flush loop. */
+interface SegmentEnd {
+  live: LiveRun;
+  /** Set when the card closed because the user cut in. */
+  steeredTo?: SteerBatch;
 }
 
 /**
@@ -1262,7 +1439,7 @@ async function sendPreRunFailure(
   }
 }
 
-async function runAgentBatch(deps: RunBatchDeps): Promise<void> {
+async function runAgentBatch(deps: RunBatchDeps): Promise<SegmentEnd | undefined> {
   const {
     channel,
     executor,
@@ -1280,12 +1457,8 @@ async function runAgentBatch(deps: RunBatchDeps): Promise<void> {
     mode,
   } = deps;
   if (batch.length === 0) return;
-  // f03p-infra-#6: report how the turn ended, whichever reply path runs.
-  const trackedAgentStream = async (...args: Parameters<typeof processAgentStream>): Promise<RunState> => {
-    const state = await processAgentStream(...args);
-    deps.onTerminal?.(state.terminal);
-    return state;
-  };
+  // f0.5 之后 (steer): this batch already went into a running claude.
+  if (deps.steer?.live) return renderSegment(deps, deps.steer.live.core, deps.steer.live);
   const firstMsg = batch[0];
   const lastMsg = batch[batch.length - 1];
   if (!firstMsg || !lastMsg) return;
@@ -1521,6 +1694,56 @@ async function runAgentBatch(deps: RunBatchDeps): Promise<void> {
   if (idleTimeoutMs || runTimeouts.toolMs) {
     log.info('flush', 'idle-watchdog', { idleTimeoutMs, toolTimeoutMs: runTimeouts.toolMs });
   }
+
+  const core: RunCore = {
+    firstMsg,
+    chatId,
+    execution,
+    handle,
+    events: eventStream[Symbol.asyncIterator](),
+    policyFingerprint: flow.policy.policyFingerprint,
+    capabilityAgentId: capability.agentId,
+    runTimeouts,
+    recordSession,
+    agentKind,
+    modelSelection,
+    effort: runProfile.preferences.effort,
+  };
+  // f0.5 之后 (steer): claude in card mode can take the user's next messages
+  // while it works (see steer-input.ts); the flush loop renders each one.
+  const steerFn = execution.run.steer?.bind(execution.run);
+  let live: LiveRun | undefined;
+  if (deps.steer && steerFn && agentKind === 'claude' && getMessageReplyMode(controls.cfg) === 'card') {
+    live = { actorId: firstMsg.senderId, queue: [], steer: steerFn, core };
+    deps.steer.register(live);
+  }
+  return renderSegment(deps, core, live);
+}
+
+/**
+ * The reply side of a run: from the agent's events to the card (or message).
+ * f0.5 之后 (steer): one call per segment — a live run that the user cut into
+ * comes back here for the new message, with that message's batch and card.
+ */
+async function renderSegment(deps: RunBatchDeps, core: RunCore, live: LiveRun | undefined): Promise<SegmentEnd | undefined> {
+  const { channel, sessions, batch, controls, cotClient, callbackAuth, activePolicyFingerprints, scope, mode } = deps;
+  const { firstMsg, chatId, execution, handle, runTimeouts, recordSession, agentKind, modelSelection } = core;
+  const lastMsg = batch[batch.length - 1]!;
+  const threadId = lastMsg.threadId;
+  const sendOpts: { replyTo?: string; replyInThread?: boolean } =
+    mode === 'topic' && threadId ? { replyTo: lastMsg.messageId, replyInThread: true } : {};
+  const capability = { agentId: core.capabilityAgentId };
+  const flow = { policy: { policyFingerprint: core.policyFingerprint } };
+  const runProfile = { preferences: { effort: core.effort } };
+  const eventStream = segmentOf(core.events);
+  let segTerminal: string | undefined;
+  // f03p-infra-#6: report how the turn ended, whichever reply path runs.
+  const trackedAgentStream = async (...args: Parameters<typeof processAgentStream>): Promise<RunState> => {
+    const state = await processAgentStream(...args);
+    segTerminal = state.terminal;
+    deps.onTerminal?.(state.terminal);
+    return state;
+  };
 
   // f0.3.5: groups get the same reply mode as DMs (the streaming card with
   // its panel). Upstream forced groups to rich text (post) "so <at user_id>
@@ -1924,9 +2147,14 @@ async function runAgentBatch(deps: RunBatchDeps): Promise<void> {
   } catch (err) {
     log.fail('stream', err);
   } finally {
-    activePolicyFingerprints.delete(scope);
+    if (segTerminal !== 'steered') activePolicyFingerprints.delete(scope);
     workingReaction.release();
   }
+  if (!live) return undefined;
+  // f0.5 之后 (steer): the card closed because the user cut in — the run goes
+  // on for the message it took in (or, should none be queued, for this one).
+  if (segTerminal === 'steered') return { live, steeredTo: live.queue.shift() ?? { batch } };
+  return { live };
 }
 
 interface LazyProgressStream {
@@ -2268,6 +2496,14 @@ async function processAgentStream(
         watchdog.activity();
       }
 
+      // f0.5 之后 (steer): the user cut in and the agent took it in — this
+      // card ends here; the run itself goes on in the next segment's card.
+      if (evt.type === 'steer') {
+        state = markSteered(state);
+        log.info('card', 'transition', { footer: state.footer, terminal: state.terminal });
+        await flush(state);
+        break;
+      }
       if (evt.type === 'system') {
         recordSession(evt);
         // f031-#12: /status shows the model the CLI really ran.
@@ -2588,6 +2824,42 @@ function scheduleWorkingReactionCleanup(
 
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * f0.5 之后 (steer): the prompt for a message the user sends while the agent
+ * works — same shape as a normal batch (attachments, quotes), plus a note so
+ * the agent folds it into the task at hand instead of starting over.
+ */
+export const STEER_NOTE =
+  '这条消息是用户在你执行上一条任务的过程中插话发来的：请结合它调整并继续手上的工作，不要从头重来；' +
+  '接下来的进展和最终回答都针对这条新消息。';
+
+async function buildSteerPrompt(
+  channel: LarkChannel,
+  media: MediaCache,
+  controls: Controls,
+  chatModeCache: ChatModeCache,
+  batch: NormalizedMessage[],
+): Promise<string> {
+  const firstMsg = batch[0]!;
+  const mode: ChatMode = firstMsg.threadId ? 'topic' : await chatModeCache.resolve(channel, firstMsg.chatId);
+  const resourceItems = batch.flatMap((m) => m.resources.map((r) => ({ messageId: m.messageId, resource: r })));
+  const attachments = resourceItems.length > 0 ? await media.resolve(resourceItems, controls.profileConfig.attachments) : [];
+  const batchIds = new Set(batch.map((m) => m.messageId));
+  const quoteTargets = [
+    ...new Set(
+      batch
+        .map((m) => replyQuoteTargetForMessage(m, mode))
+        .filter((id): id is string => Boolean(id) && !batchIds.has(id!)),
+    ),
+  ];
+  const quotes: QuotedContext[] = [];
+  for (const targetId of quoteTargets) {
+    const q = await fetchQuotedContext(channel, targetId);
+    if (q) quotes.push(q);
+  }
+  return buildPrompt(batch, attachments, quotes, [], channel.botIdentity, [STEER_NOTE]);
 }
 
 function buildPrompt(

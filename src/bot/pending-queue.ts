@@ -12,6 +12,13 @@ export type FlushHandler = (scope: string, batch: NormalizedMessage[]) => void;
 export interface PendingQueueHooks {
   onPush?(scope: string, msg: NormalizedMessage): void;
   onDrop?(scope: string, msgs: readonly NormalizedMessage[]): void;
+  /**
+   * f0.5 之后 (steer): true while the scope's run can take a message mid-run.
+   * Then a blocked scope still debounces, and the batch goes to onSteer
+   * instead of waiting for the run to end.
+   */
+  canSteer?(scope: string): boolean;
+  onSteer?(scope: string, batch: NormalizedMessage[]): void;
 }
 
 /**
@@ -47,14 +54,49 @@ export class PendingQueue {
     if (existing) {
       if (existing.timer) clearTimeout(existing.timer);
       existing.messages.push(msg);
-      existing.timer = this.blocked.has(scope) ? undefined : this.armTimer(scope);
+      existing.timer = this.waits(scope) ? undefined : this.armTimer(scope);
       return existing.messages.length;
     }
     this.map.set(scope, {
       messages: [msg],
-      timer: this.blocked.has(scope) ? undefined : this.armTimer(scope),
+      timer: this.waits(scope) ? undefined : this.armTimer(scope),
     });
     return 1;
+  }
+
+  /** Blocked, and the run cannot take messages mid-run: just accumulate. */
+  private waits(scope: string): boolean {
+    return this.blocked.has(scope) && !this.hooks.canSteer?.(scope);
+  }
+
+  /**
+   * f0.5 之后 (steer): the scope's run just became steerable — messages that
+   * arrived before that get their quiet window now.
+   */
+  poke(scope: string): void {
+    const entry = this.map.get(scope);
+    if (!entry || entry.messages.length === 0 || entry.timer || this.waits(scope)) return;
+    entry.timer = this.armTimer(scope);
+  }
+
+  /**
+   * f0.5 之后 (steer): a batch handed to onSteer could not go into the run —
+   * put it back in front, as if it had never left (no onPush: the journal
+   * still has it), to run as the next batch.
+   */
+  restore(scope: string, msgs: readonly NormalizedMessage[]): void {
+    if (msgs.length === 0) return;
+    const entry = this.map.get(scope);
+    if (entry) {
+      entry.messages.unshift(...msgs);
+      if (entry.timer) clearTimeout(entry.timer);
+      entry.timer = this.blocked.has(scope) ? undefined : this.armTimer(scope);
+    } else {
+      this.map.set(scope, {
+        messages: [...msgs],
+        timer: this.blocked.has(scope) ? undefined : this.armTimer(scope),
+      });
+    }
   }
 
   cancel(scope: string): NormalizedMessage[] {
@@ -124,6 +166,18 @@ export class PendingQueue {
     if (this.frozen) return;
     const entry = this.map.get(scope);
     if (!entry) return;
+    if (this.blocked.has(scope)) {
+      // f0.5 之后 (steer): a run is on — hand the batch to it, or keep waiting.
+      entry.timer = undefined;
+      if (!this.hooks.canSteer?.(scope) || !this.hooks.onSteer) return;
+      this.map.delete(scope);
+      try {
+        this.hooks.onSteer(scope, entry.messages);
+      } catch (err) {
+        log.fail('queue', err, { scope, batchSize: entry.messages.length, step: 'steer' });
+      }
+      return;
+    }
     this.map.delete(scope);
     try {
       this.onFlush(scope, entry.messages);

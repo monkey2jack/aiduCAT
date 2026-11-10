@@ -63,6 +63,8 @@ export async function* holdEmptyDone(
         yield evt;
         continue;
       }
+      // f0.5 之后 (steer): a message taken in mid-run starts a new segment.
+      if (evt.type === 'steer') visible = false;
       if (evt.type === 'text' || evt.type === 'thinking' || evt.type === 'tool_use') visible = true;
       yield evt;
     }

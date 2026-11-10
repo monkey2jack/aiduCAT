@@ -24,6 +24,8 @@ export function renderText(state: RunState): string {
 
   if (state.terminal === 'interrupted') {
     parts.push('_⏹ 已被中断_');
+  } else if (state.terminal === 'steered') {
+    parts.push('_↪ 已插话，接着在新消息下继续_');
   } else if (state.terminal === 'idle_timeout') {
     parts.push(`_${timeoutNotice(state)}_`);
   } else if (state.terminal === 'error' && state.errorMsg) {

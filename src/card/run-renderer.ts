@@ -544,6 +544,8 @@ function summaryText(state: RunState): string {
   // Wei 2026-11-06: in-progress words are -ing, end states are past participles
   // (Thinking / Running → Completed / Stopped / Failed / Timed out).
   if (state.terminal === 'interrupted') return '⭕️Stopped';
+  // f0.5 之后 (steer): the user cut in; the answer goes on in the next card.
+  if (state.terminal === 'steered') return '↪️Steered';
   if (state.terminal === 'idle_timeout') return '⚠️Timed out';
   if (state.terminal === 'error') return '❌Failed';
   if (state.terminal === 'done') return '✅Completed';

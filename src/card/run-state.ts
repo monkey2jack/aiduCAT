@@ -20,7 +20,8 @@ export type Block =
 
 /** f0.3.5: 'received' = placeholder before the agent shows anything (☤aiduCATing…). */
 export type FooterStatus = 'received' | 'thinking' | 'tool_running' | 'streaming' | null;
-export type Terminal = 'running' | 'done' | 'interrupted' | 'error' | 'idle_timeout';
+/** f0.5 之后: 'steered' — the user cut in; the answer goes on under the new message. */
+export type Terminal = 'running' | 'done' | 'interrupted' | 'error' | 'idle_timeout' | 'steered';
 
 /** aiduCAT clarify: one parsed [CLARIFY]{...} marker emitted by the agent. */
 export interface ClarifyQuestion {
@@ -286,6 +287,21 @@ export function markInterrupted(state: RunState): RunState {
     blocks: stopRunningTools(closeStreamingText(state.blocks)),
     reasoning: { ...state.reasoning, active: false },
     terminal: 'interrupted',
+    footer: null,
+  };
+}
+
+/**
+ * f0.5 之后 (steer): the user sent a new message mid-run and the agent took
+ * it in. This card closes here; the same run carries on in a new card that
+ * replies to the new message.
+ */
+export function markSteered(state: RunState): RunState {
+  return {
+    ...state,
+    blocks: stopRunningTools(closeStreamingText(state.blocks)),
+    reasoning: { ...state.reasoning, active: false },
+    terminal: 'steered',
     footer: null,
   };
 }

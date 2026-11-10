@@ -128,6 +128,16 @@ export class EarlyCards<C extends EarlyCardCtrl = EarlyCardCtrl> {
     return card;
   }
 
+  /** f0.5 之后 (steer): a batch went back to the queue — give its card back. */
+  restore(scope: string, card: EarlyCard<C> | undefined): void {
+    if (!card) return;
+    if (this.byScope.has(scope)) {
+      card.discard('steer-restore-duplicate');
+      return;
+    }
+    this.byScope.set(scope, card);
+  }
+
   discardAll(reason: string): void {
     for (const [scope, card] of this.byScope) {
       this.byScope.delete(scope);

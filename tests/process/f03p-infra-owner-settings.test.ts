@@ -47,7 +47,8 @@ async function setup(): Promise<{ dir: string; bin: string; record: string; conf
       'const argv = process.argv.slice(2);',
       'const i = argv.indexOf("--settings");',
       'const settings = i !== -1 ? readFileSync(argv[i + 1], "utf8") : null;',
-      'process.stdin.resume(); process.stdin.on("end", () => {',
+      // f0.5 之后 (steer): stdin stays open — answer on the first stream-json line.
+      'process.stdin.once("data", () => {',
       `  writeFileSync(${JSON.stringify(record)}, JSON.stringify({ argv, settings, env: { ...process.env } }));`,
       '  console.log(JSON.stringify({ type: "result", session_id: "s1" }));',
       '  setTimeout(() => process.exit(0), 0);',

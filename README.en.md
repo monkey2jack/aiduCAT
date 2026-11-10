@@ -248,6 +248,7 @@ Full details in [CHANGELOG.md](./CHANGELOG.md).
 
 - Each DM / group / topic / doc-comment thread keeps its own session
 - Messages sent in quick succession merge into one batch; messages sent during a run queue up as the next turn
+- **Steer** (Claude Code, card mode): a message from the same person during a run goes straight into the running Claude Code, which reads it at its next step and carries on without restarting; the card so far ends as「↪️Steered」and the rest goes into the new message's card. Other people's messages, Codex and Hermes still queue
 - Session history persists locally; `/resume` restores it
 
 ## Runtime notes

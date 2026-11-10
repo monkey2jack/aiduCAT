@@ -37,7 +37,13 @@ export type AgentEvent =
       threadId?: string;
       terminationReason: 'normal' | 'interrupted' | 'timeout';
     }
-  | { type: 'error'; message: string; terminationReason: 'failed' | 'interrupted' | 'timeout' };
+  | { type: 'error'; message: string; terminationReason: 'failed' | 'interrupted' | 'timeout' }
+  /**
+   * f0.5 之后 (steer): the agent has taken in a message written into the live
+   * run with `AgentRun.steer` (claude echoes it back with
+   * `--replay-user-messages`). Everything after this belongs to that message.
+   */
+  | { type: 'steer' };
 
 /** f031-sec-#1: fail closed — every real run passes the policy's mode; a caller that forgets gets no bypass. */
 export const CLAUDE_DEFAULT_PERMISSION_MODE: ClaudePermissionMode = 'default';
@@ -92,6 +98,14 @@ export interface AgentRun {
    * 143 instead of 0; waiting it out lets it exit cleanly.
    */
   waitForExit(timeoutMs: number): Promise<boolean>;
+  /**
+   * f0.5 之后 (steer): hand a new user message to the run while it works —
+   * the agent reads it at its next step and carries on (no restart). A
+   * `steer` event marks the moment it was taken in. False when the run no
+   * longer takes input (its turn ended); the caller queues it as before.
+   * Only adapters that can do this define it (claude).
+   */
+  steer?(prompt: string): boolean;
 }
 
 /**

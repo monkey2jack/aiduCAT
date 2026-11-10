@@ -35,7 +35,8 @@ async function setup(opts: { exitCode?: number; stderr?: string } = {}) {
     [
       '#!/usr/bin/env node',
       'import { writeFileSync, mkdirSync } from "node:fs";',
-      'process.stdin.resume(); process.stdin.on("end", () => {',
+      // f0.5 之后 (steer): stdin stays open — answer on the first stream-json line.
+      'process.stdin.once("data", () => {',
       `  writeFileSync(${JSON.stringify(record)}, JSON.stringify({ scrub: process.env.CLAUDE_CODE_SUBPROCESS_ENV_SCRUB ?? null }));`,
       '  for (const f of [".env", ".env.local", ".npmrc", "package.json", "yarn.lock", "bunfig.toml"]) { try { writeFileSync(f, "", { flag: "wx" }); } catch {} }',
       '  mkdirSync("node_modules/.bin", { recursive: true });',

@@ -26,6 +26,7 @@ import {
   type AgentRunOptions,
 } from '../types';
 import { holdEmptyDone } from './hold-empty-done';
+import { SteerInput } from './steer-input';
 import { translateEvent } from './stream-json';
 
 export interface ClaudeAdapterOptions {
@@ -127,6 +128,10 @@ export class ClaudeAdapter implements AgentAdapter {
 
     const args = [
       '-p',
+      // f0.5 之后 (steer): stdin is a live stream-json input — see steer-input.ts.
+      '--input-format',
+      'stream-json',
+      '--replay-user-messages',
       '--output-format',
       'stream-json',
       // aiduCAT: partial messages carry `message_delta.usage` — the only
@@ -239,7 +244,10 @@ export class ClaudeAdapter implements AgentAdapter {
     child.stdin.on('error', (err) => {
       log.warn('agent', 'stdin-error', { message: err.message });
     });
-    child.stdin.end(opts.prompt, 'utf8');
+    // f0.5 之后 (steer): the prompt is the first stream-json user line; stdin
+    // stays open for messages the user adds while claude works.
+    const input = new SteerInput(child.stdin, opts.prompt);
+    child.once('exit', () => input.close());
 
     // Default 5s if caller didn't specify — claude often has live
     // subprocesses (lark-cli waiting for OAuth, long Bash, etc.) and the
@@ -250,10 +258,15 @@ export class ClaudeAdapter implements AgentAdapter {
 
     return {
       runId: opts.runId,
-      events: holdEmptyDone(createEventStream(child, stderrChunks, () => runtimeError), {
+      events: holdEmptyDone(createEventStream(child, stderrChunks, () => runtimeError, input), {
         holdMs: this.emptyResultHoldMs,
       }),
+      steer(prompt: string): boolean {
+        if (child.exitCode !== null || child.signalCode !== null) return false;
+        return input.steer(prompt);
+      },
       async stop() {
+        input.close();
         if (child.exitCode !== null || child.signalCode !== null) return;
         log.info('agent', 'stop-sigterm', { pid: child.pid ?? null, graceMs: stopGraceMs });
         child.kill('SIGTERM');
@@ -299,6 +312,7 @@ async function* createEventStream(
   child: ClaudeChild,
   stderrChunks: Buffer[],
   getError: () => Error | null,
+  input?: SteerInput,
 ): AsyncGenerator<AgentEvent> {
   // If fork itself failed synchronously, child.pid is undefined. The 'error'
   // event (ENOENT etc.) fires in the next tick, so also check getError().
@@ -331,6 +345,20 @@ async function* createEventStream(
         parsed = JSON.parse(trimmed);
       } catch {
         continue;
+      }
+      if (input) {
+        const kind = input.classify(parsed);
+        if (kind === 'steer') {
+          yield { type: 'steer' };
+          continue;
+        }
+        if (kind === 'skip') continue;
+        if ((parsed as { type?: unknown } | null)?.type === 'result' && input.onResult()) {
+          // A message written mid-turn did not make it into this turn; claude
+          // answers it next in this same process — the run goes on.
+          for (const evt of translateEvent(parsed)) if (evt.type !== 'done') yield evt;
+          continue;
+        }
       }
       yield* translateEvent(parsed);
     }
