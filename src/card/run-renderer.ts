@@ -235,6 +235,10 @@ function buildCard(
   // strict retry (any rejected patch) falls back to plain text「Thinking…」,
   // so a refused img_key can never freeze the card.
   if (statusWord) elements.push(options.strict ? noteMd(`${statusWord}…`) : statusRow(statusWord));
+  // f0.5 之后 (steer, Wei 2026-11-10「↪️Steered 没有显示」): an ended card
+  // shows no status row and steered has no border colour of its own, so the
+  // hand-off would be invisible — keep one plain row where the status sat.
+  if (state.terminal === 'steered') elements.push(noteMd('↪️Steered'));
   const popPanel = waiting ? null : aiduPopPanel(state, options, budget);
   if (popPanel) elements.push(popPanel);
 
