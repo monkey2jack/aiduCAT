@@ -330,6 +330,74 @@ describe('ClaudeAdapter process contract', () => {
       new ClaudeAdapter({ binary: 'unused' }).run({ runId: 'run-no-cwd', prompt: 'hi' }),
     ).toThrow(/cwd is required/);
   });
+
+  it('finishes after the CLI exits even if a descendant holds stdout open', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'claude-exit-holder-'));
+    cleanup.push(dir);
+    const bin = join(dir, 'fake-claude.mjs');
+    await writeFile(bin, [
+      '#!/usr/bin/env node',
+      'import { spawn } from "node:child_process";',
+      'console.log(JSON.stringify({ type: "system", subtype: "init" }));',
+      'const holder = spawn(process.execPath, ["-e", "setTimeout(() => {}, 6500)"], { stdio: ["ignore", "inherit", "ignore"] });',
+      'holder.unref();',
+      'setTimeout(() => process.exit(1), 150);',
+    ].join('\n'));
+    await chmod(bin, 0o755);
+    const run = new ClaudeAdapter({ binary: bin }).run({ runId: 'exit-holder', prompt: 'hello', cwd: dir });
+    const events = collect(run.events);
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+    try {
+      const result = await Promise.race([
+        events,
+        new Promise<'timed-out'>((resolve) => { timeout = setTimeout(() => resolve('timed-out'), 4000); }),
+      ]);
+      expect(result).not.toBe('timed-out');
+      if (result !== 'timed-out') expect(result.some((event) => event.type === 'error')).toBe(true);
+    } finally {
+      if (timeout) clearTimeout(timeout);
+      await events;
+    }
+  }, 12_000);
+
+  it('reports an error when the CLI exits successfully without a result', async () => {
+    const fake = await createFakeClaude({ lines: [{ type: 'system', subtype: 'init' }] });
+    cleanup.push(fake.dir);
+    const run = new ClaudeAdapter({ binary: fake.path }).run({ runId: 'no-result', prompt: 'hello', cwd: fake.dir });
+    expect(await collect(run.events)).toContainEqual({
+      type: 'error', message: 'claude exited without a result event', terminationReason: 'failed',
+    });
+  });
+
+  it('keeps buffered answer events when the consumer is slow after CLI exit', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'claude-buffered-exit-'));
+    cleanup.push(dir);
+    const bin = join(dir, 'fake-claude.mjs');
+    await writeFile(bin, [
+      '#!/usr/bin/env node',
+      'import { spawn } from "node:child_process";',
+      'const out = (event) => console.log(JSON.stringify(event));',
+      'out({ type: "system", subtype: "init", session_id: "slow" });',
+      'out({ type: "assistant", message: { content: [{ type: "text", text: "complete answer" }] } });',
+      'out({ type: "result", session_id: "slow" });',
+      'const holder = spawn(process.execPath, ["-e", "setTimeout(() => {}, 6500)"], { stdio: ["ignore", "inherit", "ignore"] });',
+      'holder.unref();',
+      'setTimeout(() => process.exit(0), 150);',
+    ].join('\n'));
+    await chmod(bin, 0o755);
+    const run = new ClaudeAdapter({ binary: bin }).run({ runId: 'slow-consumer', prompt: 'hello', cwd: dir });
+    const iterator = run.events[Symbol.asyncIterator]();
+    const first = await iterator.next();
+    await new Promise((resolve) => setTimeout(resolve, 2600));
+    const out: AgentEvent[] = first.done ? [] : [first.value];
+    for (;;) {
+      const next = await iterator.next();
+      if (next.done) break;
+      out.push(next.value);
+    }
+    expect(out).toContainEqual({ type: 'text', delta: 'complete answer' });
+    expect(out.some((event) => event.type === 'done')).toBe(true);
+  }, 12_000);
 });
 
 async function collect(events: AsyncIterable<AgentEvent>): Promise<AgentEvent[]> {

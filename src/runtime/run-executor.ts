@@ -45,6 +45,8 @@ export interface RunExecution {
   handle: RunHandle;
   subscribe(): AsyncIterable<AgentEvent>;
   stop(): Promise<void>;
+  /** Unblock a wedged stream only after confirming its process exited. */
+  closeExitedStream(): Promise<boolean>;
 }
 
 // fix(2026-10-30): 2s was too tight - claude often needs >2s to flush the
@@ -250,6 +252,10 @@ export class RunExecutor {
       run,
       handle,
       subscribe: () => fanout.subscribe(),
+      closeExitedStream: async () => {
+        if (terminalSeen || !(await run.waitForExit(1))) return false;
+        return fanout.abort({ type: 'error', message: 'agent stream did not close after exit', terminationReason: 'timeout' });
+      },
       stop: async () => {
         handle.interrupted = true;
         await run.stop();
@@ -326,6 +332,8 @@ class EventFanout {
   private started = false;
   private done = false;
   private error: unknown;
+  private aborted: AgentEvent | undefined;
+  private wakeAbort: (() => void) | undefined;
 
   constructor(source: AsyncIterable<AgentEvent>, onDone: () => Promise<void>, onTerminal: () => void = () => {}) {
     this.source = source;
@@ -369,9 +377,28 @@ class EventFanout {
     void this.pump();
   }
 
+  abort(terminal: AgentEvent): boolean {
+    if (this.done || this.aborted || (this.buffer.length && isTerminalEvent(this.buffer[this.buffer.length - 1]!))) return false;
+    this.aborted = terminal;
+    this.wakeAbort?.();
+    this.start();
+    return true;
+  }
+
   private async pump(): Promise<void> {
+    const iterator = this.source[Symbol.asyncIterator]();
     try {
-      for await (const event of this.source) {
+      while (!this.aborted) {
+        const next = iterator.next();
+        const interrupted = new Promise<'aborted'>((resolve) => { this.wakeAbort = () => resolve('aborted'); });
+        const value = await Promise.race([next, interrupted]);
+        this.wakeAbort = undefined;
+        if (value === 'aborted') {
+          void next.catch(() => {});
+          break;
+        }
+        if (value.done) break;
+        const event = value.value;
         this.buffer.push(event);
         if (isTerminalEvent(event)) {
           this.onTerminal();
@@ -380,9 +407,24 @@ class EventFanout {
         }
         this.wakeAll();
       }
+      if (this.aborted && !(this.buffer.length && isTerminalEvent(this.buffer[this.buffer.length - 1]!))) {
+        this.buffer.push(this.aborted);
+        this.onTerminal();
+        this.wakeAll();
+      }
     } catch (err) {
       this.error = err;
     } finally {
+      this.wakeAbort = undefined;
+      try {
+        if (iterator.return) {
+          const closing = iterator.return();
+          if (this.aborted) void closing.catch(() => {});
+          else await closing;
+        }
+      } catch (err) {
+        this.error ??= err;
+      }
       await this.onDone();
       this.done = true;
       this.wakeAll();

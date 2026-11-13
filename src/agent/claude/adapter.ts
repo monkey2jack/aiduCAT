@@ -327,17 +327,24 @@ async function* createEventStream(
   }
 
   const rl = createInterface({ input: child.stdout, crlfDelay: Infinity });
-  let sawStdout = false;
+  let sawResult = false;
   let silentExitTimer: ReturnType<typeof setTimeout> | undefined;
   const closeSilentStdout = (): void => {
+    if (silentExitTimer) return;
     silentExitTimer = setTimeout(() => {
-      if (!sawStdout && !child.stdout.readableEnded) child.stdout.destroy();
-    }, 50);
+      // A descendant can inherit the pipe after the CLI has exited. Closing
+      // readline is necessary as destroying the stream alone may leave its
+      // async iterator pending indefinitely.
+      if (!child.stdout.readableEnded) {
+        rl.close();
+        child.stdout.destroy();
+      }
+    }, 2000);
   };
   child.once('exit', closeSilentStdout);
+  if (child.exitCode !== null || child.signalCode !== null) closeSilentStdout();
   try {
     for await (const line of rl) {
-      sawStdout = true;
       const trimmed = line.trim();
       if (!trimmed) continue;
       let parsed: unknown;
@@ -360,6 +367,7 @@ async function* createEventStream(
           continue;
         }
       }
+      if ((parsed as { type?: unknown } | null)?.type === 'result') sawResult = true;
       yield* translateEvent(parsed);
     }
   } finally {
@@ -404,6 +412,8 @@ async function* createEventStream(
       message: `claude runtime error: ${runtimeError.message}`,
       terminationReason: 'failed',
     };
+  } else if (exitCode === 0 && !sawResult) {
+    yield { type: 'error', message: 'claude exited without a result event', terminationReason: 'failed' };
   }
 }
 

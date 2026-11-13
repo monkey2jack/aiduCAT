@@ -43,6 +43,35 @@ describe('CodexAdapter process contract', () => {
     ]);
   });
 
+  it('finishes after the CLI exits even if a descendant holds stdout open', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'codex-exit-holder-'));
+    cleanup.push(dir);
+    const bin = join(dir, 'fake-codex.mjs');
+    await writeFile(bin, [
+      '#!/usr/bin/env node',
+      'import { spawn } from "node:child_process";',
+      'console.log(JSON.stringify({ type: "thread.started", thread_id: "holder" }));',
+      'const holder = spawn(process.execPath, ["-e", "setTimeout(() => {}, 6500)"], { stdio: ["ignore", "inherit", "ignore"] });',
+      'holder.unref();',
+      'setTimeout(() => process.exit(1), 150);',
+    ].join('\n'));
+    await chmod(bin, 0o755);
+    const run = new CodexAdapter({ binary: bin, profileStateDir: dir }).run({ runId: 'exit-holder', prompt: 'hello', cwd: dir });
+    const events = collect(run.events);
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+    try {
+      const result = await Promise.race([
+        events,
+        new Promise<'timed-out'>((resolve) => { timeout = setTimeout(() => resolve('timed-out'), 4000); }),
+      ]);
+      expect(result).not.toBe('timed-out');
+      if (result !== 'timed-out') expect(result.some((event) => event.type === 'error')).toBe(true);
+    } finally {
+      if (timeout) clearTimeout(timeout);
+      await events;
+    }
+  }, 12_000);
+
   it('spawns a fresh JSON run with prompt on stdin and inherits the user Codex home by default', async () => {
     process.env.CODEX_HOME = '/outer/codex-home';
     process.env.APP_SECRET = 'inherited-secret';

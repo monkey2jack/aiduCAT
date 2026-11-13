@@ -1,7 +1,7 @@
 # <b style="color:#000000">ai</b><b style="color:#525252">du</b><b style="color:#1F4E79">CAT</b>·<b style="color:#000000">爱</b><b style="color:#525252">嘟</b><b style="color:#1F4E79">妙咪飞</b> — Coding Agent Texting · 绝妙设计的迷人简洁飞书卡片
 
 <p align="center">
-  <img src="docs/images/aidububble-banner.webp" alt="aiduCAT 爱嘟妙咪飞 · 泡波横幅（aidu 家族同款）" width="100%">
+  <img src="https://raw.githubusercontent.com/monkey2jack/monkey2jack/main/assets/aidu-human-connection-20261113.png" alt="aidu 人机连接" width="100%">
 </p>
 
 > **爱嘟妙咪飞：妙（喵）+ 咪（猫）+ 飞（飞书）——绝妙设计的迷人简洁飞书卡片**

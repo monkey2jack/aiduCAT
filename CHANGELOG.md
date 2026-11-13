@@ -6,6 +6,10 @@ aiduCAT 的版本号用 `f` 前缀（f0.1、f0.2+ …），`package.json` 里是
 
 ## f0.5+ — 2026-11-10（package 0.5.1）
 
+### f0.5+ 之后的修复
+
+- **已退出的 agent 不再因输出管道被占住而无限卡住**：Claude / Codex 进程退出后，给尾部输出短暂时间，再关闭残留的读取流；看门狗在确认进程已退出后也能结束卡住的事件流。旧进程仍在运行时不会通过此兜底提前释放任务槽。感谢 @alone-lon 在 #9 / #10 中报告问题并提出修复思路；Windows 后代进程清理仍需单独验证。
+
 基于 f0.5（`cf48c4c`）。主题：**插话**——Claude Code 干活时可以接着跟它说话，不用等它跑完，这是 aiduCAT 第一次让飞书对话像终端里一样随时插话（猴哥：「里程碑式的进步」）。f0.5 之后的修复一起收进这个版本。
 
 - **插话：Claude Code 干活时再发消息，不用等它跑完**（Wei 11-10「类似 /steer」）：以前运行中再来的消息只能排队，等这一轮全部结束才作为下一轮。现在 Claude Code 卡片模式下，同一个人运行中发来的消息直接塞进正在跑的 Claude Code：它在下一步（当前命令跑完、下次调工具之前）读到，接着手上的活往下干，不重来、不打断正在跑的命令。原来那张卡收尾显示「↪️Steered」，之后的进展和回答写进新消息那张卡。消息落在轮次快结束时，Claude Code 在同一进程里接着回答它。原理：`claude -p --input-format stream-json --replay-user-messages`，stdin 保持打开，回显对上了就换卡；没有待读消息时，结果一出就关 stdin，进程照常退出。别人的消息、Codex / Hermes、markdown/text 模式、Claude Code 已不再收输入时，照旧排队。日志 `steer-written` / `steer-taken` / `steer.segment` / `steer.queued-instead`。`80a5c06` `b51f888`（旧卡正文显示「↪️Steered」：结束的卡没有状态行，只靠边框色，插话那张原来看不出来）

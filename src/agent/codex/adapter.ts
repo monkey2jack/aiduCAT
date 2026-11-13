@@ -246,20 +246,23 @@ async function* createEventStream(
   }
 
   const rl = createInterface({ input: child.stdout, crlfDelay: Infinity });
-  let sawStdout = false;
   let lastUsageFetchAt = 0;
   let threadId: string | undefined;
   let lastKnownUsage: { inputTokens?: number; outputTokens?: number; cachedInputTokens?: number } | undefined;
   let silentExitTimer: ReturnType<typeof setTimeout> | undefined;
   const closeSilentStdout = (): void => {
+    if (silentExitTimer) return;
     silentExitTimer = setTimeout(() => {
-      if (!sawStdout && !child.stdout.readableEnded) child.stdout.destroy();
-    }, 50);
+      if (!child.stdout.readableEnded) {
+        rl.close();
+        child.stdout.destroy();
+      }
+    }, 2000);
   };
   child.once('exit', closeSilentStdout);
+  if (child.exitCode !== null || child.signalCode !== null) closeSilentStdout();
   try {
     for await (const line of rl) {
-      sawStdout = true;
       const trimmed = line.trim();
       if (!trimmed) continue;
       let parsed: unknown;

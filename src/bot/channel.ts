@@ -1738,8 +1738,8 @@ async function renderSegment(deps: RunBatchDeps, core: RunCore, live: LiveRun | 
   const eventStream = segmentOf(core.events);
   let segTerminal: string | undefined;
   // f03p-infra-#6: report how the turn ended, whichever reply path runs.
-  const trackedAgentStream = async (...args: Parameters<typeof processAgentStream>): Promise<RunState> => {
-    const state = await processAgentStream(...args);
+  const trackedAgentStream = async (...args: Tail<Parameters<typeof processAgentStream>>): Promise<RunState> => {
+    const state = await processAgentStream(execution.closeExitedStream, ...args);
     segTerminal = state.terminal;
     deps.onTerminal?.(state.terminal);
     return state;
@@ -2420,7 +2420,10 @@ function outboundLogFields(
  * on every state transition. Used by both card and markdown reply modes —
  * the only difference between the two is what `flush` does with the state.
  */
-async function processAgentStream(
+type Tail<T extends unknown[]> = T extends [unknown, ...infer Rest] ? Rest : never;
+
+export async function processAgentStream(
+  closeExitedStream: () => Promise<boolean>,
   handle: RunHandle,
   events: AsyncIterable<AgentEvent>,
   scope: string,
@@ -2435,6 +2438,9 @@ async function processAgentStream(
   // f0.3.5: this turn's TPS, timed here (model generation only, tool windows
   // removed) — never from the CLI's session-cumulative duration fields.
   const tpsMeter = new TurnTpsMeter();
+  let forcedCloseTimer: ReturnType<typeof setInterval> | undefined;
+  let closeCheckRunning = false;
+  let loggedActiveProcess = false;
 
   // Idle watchdog: claude going silent for `idleTimeoutMs` is treated as
   // "presumed hung", we stop() and surface a timeout marker on the card.
@@ -2463,6 +2469,21 @@ async function processAgentStream(
       void handle.run.stop().catch(() => {
         /* stop errors are non-fatal */
       });
+      forcedCloseTimer = setInterval(() => {
+        if (closeCheckRunning) return;
+        closeCheckRunning = true;
+        void closeExitedStream().then((closed) => {
+          if (closed) {
+            if (forcedCloseTimer) clearInterval(forcedCloseTimer);
+            log.warn('agent', 'watchdog-closed-exited-stream', { scope, kind: fire.kind });
+          } else if (!loggedActiveProcess) {
+            loggedActiveProcess = true;
+            log.warn('agent', 'watchdog-stream-still-active', { scope, kind: fire.kind });
+          }
+        }).catch((err) => log.fail('agent', err, { scope, action: 'watchdog-close-exited-stream' }))
+          .finally(() => { closeCheckRunning = false; });
+      }, 10_000);
+      forcedCloseTimer.unref();
     },
   });
   watchdog.start();
@@ -2608,6 +2629,7 @@ async function processAgentStream(
     }
   } finally {
     watchdog.dispose();
+    if (forcedCloseTimer) clearInterval(forcedCloseTimer);
   }
 
   // If state already reached a terminal event (done/error/etc.) before the
