@@ -13,6 +13,7 @@ import {
 } from './owner-only-settings';
 import { cleanupSandboxPlaceholders, snapshotPlaceholders } from './sandbox-placeholders';
 import { planRuntimeDirMask, wrapWithRuntimeDirMask } from './runtime-dir-mask';
+import { killProcessTree } from '../../platform/kill-tree';
 import { spawnProcess, type SpawnedProcessByStdio } from '../../platform/spawn';
 import { buildBridgeSystemPrompt } from '../bridge-system-prompt';
 import { buildLarkChannelEnv, type LarkChannelEnvContext } from '../lark-channel-env';
@@ -278,7 +279,7 @@ export class ClaudeAdapter implements AgentAdapter {
                 graceMs: stopGraceMs,
                 reason: 'grace-period-expired',
               });
-              child.kill('SIGKILL');
+              void killProcessTree(child.pid, 'stop-grace-expired');
             }
             resolve();
           }, stopGraceMs);
@@ -287,6 +288,11 @@ export class ClaudeAdapter implements AgentAdapter {
             resolve();
           });
         });
+      },
+      async forceKillTree() {
+        if (child.exitCode === null && child.signalCode === null) {
+          await killProcessTree(child.pid, 'force-kill');
+        }
       },
       waitForExit(timeoutMs: number): Promise<boolean> {
         if (child.exitCode !== null || child.signalCode !== null) {

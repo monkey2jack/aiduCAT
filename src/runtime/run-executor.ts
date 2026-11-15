@@ -63,6 +63,7 @@ interface ScopeProcess {
   finished: () => boolean;
   /** Resolves once the process exited (or was killed). */
   exited: Promise<void>;
+  forceKillTree?: () => Promise<void>;
 }
 
 export class RunExecutor {
@@ -203,6 +204,7 @@ export class RunExecutor {
       exited: new Promise<void>((resolve) => {
         drained = resolve;
       }),
+      forceKillTree: run.forceKillTree?.bind(run),
     };
     this.scopeProcs.set(input.scopeId, proc);
     let cleaning: Promise<void> | undefined;
@@ -223,6 +225,14 @@ export class RunExecutor {
                   err: err instanceof Error ? err.message : String(err),
                 });
               });
+              if (run.forceKillTree) {
+                await run.forceKillTree().catch((err) => {
+                  log.warn('run', 'post-done-tree-kill-failed', {
+                    ...dimensions,
+                    err: err instanceof Error ? err.message : String(err),
+                  });
+                });
+              }
             }
           }
         } finally {
@@ -259,7 +269,10 @@ export class RunExecutor {
       stop: async () => {
         handle.interrupted = true;
         await run.stop();
-        await run.waitForExit(this.postDoneExitGraceMs);
+        const exited = await run.waitForExit(this.postDoneExitGraceMs);
+        if (!exited && run.forceKillTree) {
+          await run.forceKillTree();
+        }
         await cleanup(true);
       },
     };
@@ -280,6 +293,7 @@ export class RunExecutor {
     if (timer) clearTimeout(timer);
     if (outcome === 'timeout') {
       log.warn('run', 'previous-exit-timeout', { scope: scopeId, capMs });
+      if (prev.forceKillTree) await prev.forceKillTree().catch(() => {});
       if (this.scopeProcs.get(scopeId) === prev) this.scopeProcs.delete(scopeId);
     } else {
       log.info('run', 'previous-exited', { scope: scopeId, waitedMs: this.now() - startedAt });

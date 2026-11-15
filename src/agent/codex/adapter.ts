@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import type { SandboxMode } from '../../config/profile-schema';
 import { log } from '../../core/logger';
 import { buildAgentEnv } from '../../platform/agent-env';
+import { killProcessTree } from '../../platform/kill-tree';
 import { spawnProcess, type SpawnedProcessByStdio } from '../../platform/spawn';
 import { SpawnFailed } from '../../runtime/errors';
 import { prefixBridgeSystemPrompt } from '../bridge-system-prompt';
@@ -197,7 +198,7 @@ export class CodexAdapter implements AgentAdapter {
                 graceMs: stopGraceMs,
                 reason: 'grace-period-expired',
               });
-              child.kill('SIGKILL');
+              void killProcessTree(child.pid, 'stop-grace-expired');
             }
             resolve();
           }, stopGraceMs);
@@ -206,6 +207,11 @@ export class CodexAdapter implements AgentAdapter {
             resolve();
           });
         });
+      },
+      async forceKillTree() {
+        if (child.exitCode === null && child.signalCode === null) {
+          await killProcessTree(child.pid, 'force-kill');
+        }
       },
       waitForExit(timeoutMs: number): Promise<boolean> {
         if (child.exitCode !== null || child.signalCode !== null) {

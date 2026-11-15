@@ -98,6 +98,8 @@ export interface AgentRun {
    * 143 instead of 0; waiting it out lets it exit cleanly.
    */
   waitForExit(timeoutMs: number): Promise<boolean>;
+  /** Kill the live agent process tree when a stop grace period expires. */
+  forceKillTree?(): Promise<void>;
   /**
    * f0.5 之后 (steer): hand a new user message to the run while it works —
    * the agent reads it at its next step and carries on (no restart). A
