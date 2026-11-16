@@ -47,9 +47,12 @@ const CODEX_MODELS: ModelOption[] = [
  * (e.g. 10router combos via /model); only the default is fixed here. */
 const HERMES_MODELS: ModelOption[] = [{ value: DEFAULT_MODEL, label: '跟随 Hermes 配置（不指定）' }];
 
+const DSH_MODELS: ModelOption[] = [{ value: DEFAULT_MODEL, label: '跟随 DSH profile 配置（不指定）' }];
+
 /** The model picker options for a profile's agent kind. */
 export function supportedModels(agentKind: AgentKind): ModelOption[] {
   if (agentKind === 'hermes') return HERMES_MODELS;
+  if (agentKind === 'dsh') return DSH_MODELS;
   return agentKind === 'codex' ? CODEX_MODELS : CLAUDE_MODELS;
 }
 

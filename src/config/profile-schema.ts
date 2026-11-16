@@ -16,7 +16,7 @@ import {
   type PermissionSource,
 } from './permissions';
 
-export type AgentKind = 'claude' | 'codex' | 'hermes';
+export type AgentKind = 'claude' | 'codex' | 'hermes' | 'dsh';
 export type SandboxMode = CodexSandboxMode;
 export type { AccessMode, PermissionConfig, PermissionSource };
 
@@ -73,6 +73,16 @@ export interface HermesConfig {
   binaryPath: string;
   profile?: string;
   outsiderToolsets?: string[];
+}
+
+/**
+ * f0.6+: DSH (DeepSeek Harness) profile settings (`agentKind: 'dsh'`).
+ *  - binaryPath: `dsh` launcher (Windows: the runtime cli bin dsh.cmd)
+ *  - profile: `dsh --profile <name>`; default `headless`
+ */
+export interface DshConfig {
+  binaryPath: string;
+  profile?: string;
 }
 
 export interface CodexConfig {
@@ -263,6 +273,8 @@ export interface ProfileConfig {
   codex?: CodexConfig;
   /** f0.4+: Hermes Agent settings, required when agentKind is 'hermes'. */
   hermes?: HermesConfig;
+  /** f0.6+: DSH settings, required when agentKind is 'dsh'. */
+  dsh?: DshConfig;
   attachments: AttachmentConfig;
   comments: CommentConfig;
   /** In-meeting agent settings. See {@link MeetingConfig}. */
@@ -346,6 +358,7 @@ export interface CreateDefaultProfileConfigInput {
   permissions?: Partial<PermissionConfig>;
   codex?: CodexConfig;
   hermes?: HermesConfig;
+  dsh?: DshConfig;
   secrets?: SecretsConfig;
   features?: Partial<ProfileFeatures>;
 }
@@ -386,6 +399,7 @@ export function normalizeProfileConfig(input: unknown): ProfileConfig {
     permissions?: Partial<PermissionConfig>;
     codex?: CodexConfig & { flags?: unknown };
     hermes?: unknown;
+    dsh?: unknown;
     attachments?: Partial<AttachmentConfig>;
     comments?: unknown;
     meeting?: unknown;
@@ -398,8 +412,8 @@ export function normalizeProfileConfig(input: unknown): ProfileConfig {
   if (raw.schemaVersion !== 2) {
     throw new Error('profile schemaVersion must be 2');
   }
-  if (raw.agentKind !== 'claude' && raw.agentKind !== 'codex' && raw.agentKind !== 'hermes') {
-    throw new Error('agentKind must be claude, codex or hermes');
+  if (raw.agentKind !== 'claude' && raw.agentKind !== 'codex' && raw.agentKind !== 'hermes' && raw.agentKind !== 'dsh') {
+    throw new Error('agentKind must be claude, codex, hermes or dsh');
   }
   const accounts = normalizeAccounts(raw.accounts);
   if (raw.agentKind === 'codex' && !raw.codex) {
@@ -443,6 +457,7 @@ export function normalizeProfileConfig(input: unknown): ProfileConfig {
       : {}),
     ...(raw.codex ? { codex: normalizeCodex(raw.codex) } : {}),
     ...(raw.hermes || raw.agentKind === 'hermes' ? { hermes: normalizeHermes(raw.hermes) } : {}),
+    ...(raw.dsh || raw.agentKind === 'dsh' ? { dsh: normalizeDsh(raw.dsh) } : {}),
     ...normalizeAgentEnv(raw.agentEnv),
     attachments: {
       maxCount: numberOr(raw.attachments?.maxCount, 10),
@@ -599,6 +614,21 @@ function normalizeHermes(input: unknown): HermesConfig {
     binaryPath,
     ...(profile ? { profile } : {}),
     ...(toolsets && toolsets.length > 0 ? { outsiderToolsets: toolsets } : {}),
+  };
+}
+
+/** f0.6+: a dsh profile without a `dsh` block runs the `dsh` on PATH (headless profile). */
+function normalizeDsh(input: unknown): DshConfig {
+  const raw = (input && typeof input === 'object' ? input : {}) as Record<string, unknown>;
+  const binaryPath =
+    typeof raw.binaryPath === 'string' && raw.binaryPath.trim() ? raw.binaryPath.trim() : 'dsh';
+  const profile =
+    typeof raw.profile === 'string' && /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(raw.profile.trim())
+      ? raw.profile.trim()
+      : undefined;
+  return {
+    binaryPath,
+    ...(profile ? { profile } : {}),
   };
 }
 

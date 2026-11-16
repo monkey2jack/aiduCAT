@@ -2,8 +2,8 @@ import type { AccessMode } from '../config/permissions';
 import type { ProfileConfig } from '../config/profile-schema';
 import { BRIDGE_SYSTEM_PROMPT } from './bridge-system-prompt';
 
-export type AgentCapabilityId = 'claude' | 'codex' | 'hermes';
-export type AgentSessionKind = 'claude-session' | 'codex-thread' | 'hermes-session';
+export type AgentCapabilityId = 'claude' | 'codex' | 'hermes' | 'dsh';
+export type AgentSessionKind = 'claude-session' | 'codex-thread' | 'hermes-session' | 'dsh-session';
 export type PromptInjectionMode = 'append-system-prompt' | 'stdin-prefix';
 
 export interface AgentCapability {
@@ -78,12 +78,34 @@ export function hermesCapability(profile: Pick<ProfileConfig, 'permissions'>): A
   };
 }
 
+/**
+ * DSH (DeepSeek Harness). One headless process per turn, resumed by session
+ * id like Claude Code / Hermes; the bridge prompt rides on stdin (`-`).
+ */
+export function dshCapability(profile: Pick<ProfileConfig, 'permissions'>): AgentCapability {
+  return {
+    agentId: 'dsh',
+    sessionKind: 'dsh-session',
+    promptInjection: 'stdin-prefix',
+    systemPrompt: BRIDGE_SYSTEM_PROMPT,
+    supportsNativeHistory: false,
+    callback: {
+      marker: '__bridge_cb',
+      legacyMarkers: [],
+    },
+    permissions: {
+      maxAccess: profile.permissions.maxAccess,
+    },
+  };
+}
+
 /** f0.4+: the capability for a profile's agent kind. */
 export function capabilityFor(
   profile: Pick<ProfileConfig, 'permissions' | 'agentKind'>,
 ): AgentCapability {
   if (profile.agentKind === 'codex') return codexCapability(profile);
   if (profile.agentKind === 'hermes') return hermesCapability(profile);
+  if (profile.agentKind === 'dsh') return dshCapability(profile);
   return claudeCapability(profile);
 }
 

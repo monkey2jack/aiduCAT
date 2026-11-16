@@ -179,7 +179,7 @@ type Handler = (args: string, ctx: CommandContext) => Promise<void>;
 
 interface ResumeCandidate {
   scopeId: string;
-  agentId: 'claude' | 'codex' | 'hermes';
+  agentId: 'claude' | 'codex' | 'hermes' | 'dsh';
   cwdRealpath: string;
   policyFingerprint: string;
   sessionId?: string;
@@ -670,6 +670,10 @@ const HERMES_RESUME_REPLY =
 async function handleResume(args: string, ctx: CommandContext): Promise<void> {
   if (ctx.controls.profileConfig.agentKind === 'hermes') {
     await reply(ctx, HERMES_RESUME_REPLY);
+    return;
+  }
+  if (ctx.controls.profileConfig.agentKind === 'dsh') {
+    await reply(ctx, 'DSH 会话由系统自动接管（--session-id），无需手动 resume。');
     return;
   }
   const parts = args.trim().split(/\s+/).filter(Boolean);

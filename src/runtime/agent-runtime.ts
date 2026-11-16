@@ -56,6 +56,16 @@ export async function createRuntimeAgent(
       envPassthrough: profileConfig.agentEnv?.passthrough ?? [],
     });
   }
+  if (profileConfig.agentKind === 'dsh') {
+    const { DshAdapter } = await import('../agent/dsh/adapter');
+    const dsh = profileConfig.dsh;
+    return new DshAdapter({
+      binary: dsh?.binaryPath ?? process.env.LARK_CHANNEL_DSH_BIN ?? 'dsh',
+      ...(dsh?.profile ? { dshProfile: dsh.profile } : {}),
+      larkChannel,
+      envPassthrough: profileConfig.agentEnv?.passthrough ?? [],
+    });
+  }
   if (profileConfig.agentKind === 'hermes') {
     if (!featureEnabled(profileConfig, 'hermes')) {
       throw new Error(`${FEATURE_OFF_REPLY}：hermes（profile features.hermes=false）`);

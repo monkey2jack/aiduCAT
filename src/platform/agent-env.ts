@@ -31,7 +31,7 @@ const AGENT_PREFIXES: Record<string, string[]> = {
 };
 
 export function buildAgentEnv(input: {
-  agent: 'claude' | 'codex' | 'hermes';
+  agent: 'claude' | 'codex' | 'hermes' | 'dsh';
   base?: NodeJS.ProcessEnv;
   overrides?: NodeJS.ProcessEnv;
   /** Extra daemon env names the owner explicitly passes through (profile agentEnv.passthrough). */

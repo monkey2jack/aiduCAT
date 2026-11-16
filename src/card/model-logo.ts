@@ -21,14 +21,15 @@ import { log } from '../core/logger';
  * No sensitive data here: img_key values are opaque Feishu references.
  */
 
-export type AgentLogoKind = 'claude' | 'codex' | 'hermes';
+export type AgentLogoKind = 'claude' | 'codex' | 'hermes' | 'dsh';
 
-type LogoKey = 'claudecode' | 'codex' | 'hermes';
+type LogoKey = 'claudecode' | 'codex' | 'hermes' | 'dsh';
 
 const AGENT_LOGO: Record<AgentLogoKind, LogoKey> = {
   claude: 'claudecode',
   codex: 'codex',
   hermes: 'hermes',
+  dsh: 'dsh',
 };
 
 let cachedKeys: Partial<Record<LogoKey, string>> | undefined;

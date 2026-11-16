@@ -43,7 +43,7 @@ export interface ModelCardOpts {
   /** Currently stored effort, if any. */
   currentEffort?: string;
   /** Agent runtime kind (claude or codex), used for dynamic effort hints and options. */
-  agentKind?: 'claude' | 'codex' | 'hermes';
+  agentKind?: 'claude' | 'codex' | 'hermes' | 'dsh';
   /**
    * f04-group-cmd-model: set when /model was opened in a group — the card
    * then only changes this group. `own` = the group already has its own
@@ -156,15 +156,21 @@ export function modelCard(opts: ModelCardOpts): object {
           modelSelect,
         ],
       },
-      {
-        tag: 'column',
-        width: 'weighted',
-        weight: 1,
-        elements: [
-          { tag: 'markdown', content: '**Effort**' },
-          effortSelect,
-        ],
-      },
+      // f0.6 (dsh): the model comes from the DSH profile's own config, so the
+      // Effort column is meaningless there — spread becomes a no-op column.
+      ...(opts.agentKind === 'dsh'
+        ? []
+        : [
+            {
+              tag: 'column',
+              width: 'weighted',
+              weight: 1,
+              elements: [
+                { tag: 'markdown', content: '**Effort**' },
+                effortSelect,
+              ],
+            },
+          ]),
     ],
   });
 
@@ -266,7 +272,7 @@ export function modelSavedCard(
   effort: string,
   provider?: string,
   defaultProviderName?: string,
-  agentKind?: 'claude' | 'codex' | 'hermes',
+  agentKind?: 'claude' | 'codex' | 'hermes' | 'dsh',
   /** f04-group-cmd-model: 'chat' = saved for this group only. */
   scope?: 'chat' | 'default',
 ): object {

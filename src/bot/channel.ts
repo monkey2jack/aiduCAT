@@ -2606,7 +2606,7 @@ export async function processAgentStream(
       // f0.3.1 #4: must run AFTER reduce — reduce('done') unconditionally sets
       // terminal='done' and used to wipe the guard's error (f0.3 bug).
       if (
-        (agentId === 'claude' || agentId === 'hermes') &&
+        (agentId === 'claude' || agentId === 'hermes' || agentId === 'dsh') &&
         (state.terminal === 'done' || state.terminal === 'error') &&
         (evt.type === 'done' || evt.type === 'error') &&
         substantiveEvents === 0 &&
