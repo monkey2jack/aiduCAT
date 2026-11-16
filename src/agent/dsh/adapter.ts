@@ -100,6 +100,9 @@ export class DshAdapter implements AgentAdapter {
       overrides: {
         ...larkEnv,
         ...(process.env.DSH_HOME ? { DSH_HOME: process.env.DSH_HOME } : {}),
+        // The aidu provider route in the DSH profile reads this by name;
+        // buildAgentEnv does not forward it on its own.
+        ...(process.env.AIDU_API_KEY ? { AIDU_API_KEY: process.env.AIDU_API_KEY } : {}),
         ...dshSafeOverrides(opts.envOverrides),
       },
       passthrough: this.envPassthrough,
