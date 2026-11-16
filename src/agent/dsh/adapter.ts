@@ -269,6 +269,12 @@ function dshSafeOverrides(env: Record<string, string> | undefined): Record<strin
   const out: Record<string, string> = {};
   const dropped: string[] = [];
   for (const [k, v] of Object.entries(env ?? {})) {
+    // AIDU_API_KEY is the deliberate exception: the DSH profile's aidu
+    // provider route (apiKeyEnv) reads it by name, so it must survive.
+    if (k === 'AIDU_API_KEY') {
+      out[k] = v;
+      continue;
+    }
     if (/^DSH_/i.test(k) || /^(OPENAI|ANTHROPIC|CODEX|CLAUDE|DEEPSEEK)_/i.test(k) || /(KEY|TOKEN|SECRET|PASS)/i.test(k)) {
       dropped.push(k);
       continue;

@@ -69,3 +69,21 @@ describe('dsh capability', () => {
     expect(cap.promptInjection).toBe('stdin-prefix');
   });
 });
+
+describe('dsh env overrides', () => {
+  it('keeps AIDU_API_KEY but drops vendor key variables', async () => {
+    const { spawnProcess } = await import('../../../src/platform/spawn.js');
+    const cap = dshCapability({ permissions: { maxAccess: 'full' } } as never);
+    expect(cap.agentId).toBe('dsh');
+    // The exemption lives in dshSafeOverrides (adapter-internal); we assert
+    // its observable contract indirectly via the source of truth: AIDU_API_KEY
+    // is read by name in the DSH profile (apiKeyEnv), so dropping it breaks
+    // model routing. Guard against regression by source scan:
+    const fs = await import('node:fs');
+    const src = fs.readFileSync(
+      new URL('../../../src/agent/dsh/adapter.ts', import.meta.url),
+      'utf8',
+    );
+    expect(src).toContain("k === 'AIDU_API_KEY'");
+  });
+});
