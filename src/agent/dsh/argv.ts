@@ -32,7 +32,10 @@ export interface BuildDshArgsInput {
 export function buildDshArgs(input: BuildDshArgsInput): string[] {
   const profile = input.profile ?? 'headless';
   if (!SAFE_ID.test(profile)) throw new Error('invalid dsh profile name');
-  const args = ['--profile', profile, 'headless', '--json'];
+  // The profile IS the headless app here; a bare `headless` word after the
+  // flags would join the task argv and DSH rejects "`-` must be the only
+  // task argument".
+  const args = ['--profile', profile, '--json'];
   if (input.resume) {
     if (!isSafeDshSessionId(input.resume)) throw new Error('invalid dsh session id');
     args.push('--session-id', input.resume);

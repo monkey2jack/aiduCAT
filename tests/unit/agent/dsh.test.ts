@@ -7,13 +7,12 @@ import { dshCapability } from '../../../src/agent/capability.js';
 
 describe('dsh argv', () => {
   it('builds the headless stdin invocation', () => {
-    expect(buildDshArgs({})).toEqual(['--profile', 'headless', 'headless', '--json', '-']);
+    expect(buildDshArgs({})).toEqual(['--profile', 'headless', '--json', '-']);
   });
 
   it('adopts a session id when resuming', () => {
     expect(buildDshArgs({ resume: 'session-abc-123' })).toEqual([
       '--profile',
-      'headless',
       'headless',
       '--json',
       '--session-id',
