@@ -36,7 +36,10 @@ export function briefAgentError(raw: string): string {
   if (/bubblewrap is required/i.test(text)) {
     return '本机缺少 bubblewrap（非 owner 轮次的隔离要用它），Claude Code 没能启动';
   }
-  const exit = /^(claude|codex|hermes) exited with code (\d+)(?::\s*)?(.*)$/i.exec(text);
+  // Keep this list in step with the adapters that report
+  // `<agent> exited with code N`: DSH does, so a missing entry here would leak
+  // the raw English line instead of the Chinese owner-facing reason.
+  const exit = /^(claude|codex|hermes|dsh) exited with code (\d+)(?::\s*)?(.*)$/i.exec(text);
   if (exit) {
     const detail = (exit[3] ?? '').trim();
     text = `${exit[1]} 进程异常退出（code ${exit[2]}）${detail ? `：${detail}` : ''}`;

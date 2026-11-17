@@ -3,7 +3,7 @@ import { open, readFile, rename, mkdir } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import { paths } from '../config/paths';
 import { log } from '../core/logger';
-import type { AgentCapabilityId } from '../agent/capability';
+import { usesSessionId, type AgentCapabilityId } from '../agent/capability';
 
 export type CatalogAgentId = AgentCapabilityId;
 export type SessionCatalogStatus = 'active' | 'archived';
@@ -246,15 +246,19 @@ function matchesIdentity(entry: SessionCatalogEntry, input: SessionCatalogIdenti
   );
 }
 
+// Both checks below delegate to `usesSessionId`, the single source of truth for
+// "resumed by a session id, not a Codex thread". Before f0.6 they each listed
+// the agents inline; that is exactly how DSH was dropped from the write path
+// while the read path was fixed, so keep them derived rather than enumerated.
 function isValidAgentEntry(entry: SessionCatalogEntry): boolean {
-  if (entry.agentId === 'claude' || entry.agentId === 'hermes') return Boolean(entry.sessionId) && !entry.threadId;
+  if (usesSessionId(entry.agentId)) return Boolean(entry.sessionId) && !entry.threadId;
   return Boolean(entry.threadId) && !entry.sessionId;
 }
 
 function assertAgentIdentity(input: UpsertSessionCatalogInput): void {
-  if (input.agentId === 'claude' || input.agentId === 'hermes') {
+  if (usesSessionId(input.agentId)) {
     if (!input.sessionId || input.threadId) {
-      throw new Error('Claude catalog entries require sessionId and must not include threadId');
+      throw new Error(`${input.agentId} catalog entries require sessionId and must not include threadId`);
     }
     return;
   }

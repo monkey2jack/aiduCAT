@@ -134,7 +134,16 @@ function rawAnswerBlocks(state: RunState): string[] {
   // the exact same unified single-card layout.
   if (state.finalText && state.finalText.trim()) {
     const stripped = (state.finalText.split('[CLARIFY]')[0] ?? '').replace(/\n+$/, '');
-    if (!answerBlocks.some((b) => b.includes(stripped) || stripped.includes(b))) {
+    const alreadyCovered = answerBlocks.some((b) => b.includes(stripped));
+    // A streamed block can be a strict PREFIX of the lossless terminal answer:
+    // DSH caps every non-terminal projected string at 8 KiB, so a long answer
+    // arrives streamed only in part. Treating that prefix as "already covered"
+    // would leave the truncated fragment on the card, so the terminal answer
+    // replaces the fragments it fully contains.
+    const streamedIsPartial =
+      answerBlocks.length > 0 && answerBlocks.every((b) => stripped.includes(b));
+    if (!alreadyCovered && stripped) {
+      if (streamedIsPartial) return [stripped];
       answerBlocks.push(stripped);
     }
   }

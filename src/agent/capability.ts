@@ -87,7 +87,12 @@ export function capabilityFor(
   return claudeCapability(profile);
 }
 
-/** f0.4+: agents whose conversation is resumed by a session id (not a Codex thread). */
+/**
+ * f0.4+: agents whose conversation is resumed by a session id (not a Codex
+ * thread). f0.6+: DSH (DeepSeek Harness) adopts a persisted Session through
+ * `--session-id`, so it belongs here — this function is the single source of
+ * truth every session save/resume path consults.
+ */
 export function usesSessionId(agentId: string | undefined): boolean {
-  return agentId === 'claude' || agentId === 'hermes';
+  return agentId === 'claude' || agentId === 'hermes' || agentId === 'dsh';
 }

@@ -64,6 +64,46 @@ describe('agent-aware session catalog', () => {
     await catalog.flush();
   });
 
+  it('stores a DSH session by sessionId, like Claude and Hermes', async () => {
+    // DSH adopts a persisted Session through `--session-id`, so its entry must
+    // carry sessionId and no threadId. This is the write-path regression guard:
+    // before f0.6 the guard listed only claude/hermes, so a DSH save fell into
+    // the Codex branch and threw, even though the read path already knew dsh.
+    const catalog = new SessionCatalog(await path());
+    expect(() =>
+      catalog.upsertActive({
+        scopeId: 'chat-1',
+        agentId: 'dsh',
+        cwdRealpath: '/repo',
+        policyFingerprint: 'fp-1',
+        sessionId: 'session-dsh-1',
+        now: 1000,
+      }),
+    ).not.toThrow();
+    expect(
+      catalog.activeFor({
+        scopeId: 'chat-1',
+        agentId: 'dsh',
+        cwdRealpath: '/repo',
+        policyFingerprint: 'fp-1',
+      }),
+    ).toMatchObject({ sessionId: 'session-dsh-1', agentId: 'dsh' });
+    await catalog.flush();
+  });
+
+  it('rejects a DSH entry that carries a Codex threadId', async () => {
+    const catalog = new SessionCatalog(await path());
+    expect(() =>
+      catalog.upsertActive({
+        scopeId: 'chat-1',
+        agentId: 'dsh',
+        cwdRealpath: '/repo',
+        policyFingerprint: 'fp-1',
+        threadId: 'thread-wrong',
+      }),
+    ).toThrow(/dsh.*sessionId/i);
+  });
+
   it('rejects mismatched Claude/Codex identity fields and does not auto-resume damaged entries', async () => {
     const catalog = new SessionCatalog(await path());
 

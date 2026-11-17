@@ -1,5 +1,5 @@
 import { ClaudeAdapter } from '../agent/claude/adapter';
-import { AgentPreflightError, type AgentAvailability } from '../agent/preflight';
+import { AgentPreflightError, type AgentAvailability, type LocalAgentId } from '../agent/preflight';
 import type { AgentAdapter } from '../agent/types';
 import type { AppPaths } from '../config/app-paths';
 import { FEATURE_OFF_REPLY, featureEnabled, type AgentKind, type ProfileConfig } from '../config/profile-schema';
@@ -82,12 +82,15 @@ export async function checkRuntimeAgentAvailability(agent: AgentAdapter): Promis
   if (agent.checkAvailability) return agent.checkAvailability();
   const ok = await agent.isAvailable();
   if (ok) return { ok: true };
+  // The binary named in the diagnostic must match the reported agent id, or a
+  // DSH profile with a missing launcher is misdiagnosed as `claude`.
+  const agentId: LocalAgentId =
+    agent.id === 'codex' || agent.id === 'hermes' || agent.id === 'dsh' ? agent.id : 'claude';
   const diagnostic = {
     code: 'agent-binary-not-found' as const,
-    agentId:
-      agent.id === 'codex' ? ('codex' as const) : agent.id === 'hermes' ? ('hermes' as const) : ('claude' as const),
+    agentId,
     agentName: agent.displayName,
-    command: agent.id === 'codex' ? 'codex' : agent.id === 'hermes' ? 'hermes' : 'claude',
+    command: agentId,
   };
   return { ok: false, diagnostic, error: new AgentPreflightError(diagnostic) };
 }
