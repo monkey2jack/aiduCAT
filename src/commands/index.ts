@@ -6,9 +6,18 @@ import { homedir } from 'node:os';
 import { dirname, isAbsolute } from 'node:path';
 import type { LarkChannel, NormalizedMessage } from '@larksuite/channel';
 import { capabilityFor } from '../agent/capability';
+import { syncModelRoutingFromDesktop } from '../agent/dsh/profile-sync';
+import { describeDshRuntime } from '../agent/dsh/doctor';
 import { outsiderToolsets } from '../agent/hermes/argv';
 import { hermesSessionDisplay } from '../agent/hermes/session-key';
-import { DEFAULT_MODEL, normalizeModelSelection, resolveModelArg, supportedModels } from '../agent/models';
+import {
+  DEFAULT_MODEL,
+  displayModelName,
+  dshModelCatalog,
+  normalizeModelSelection,
+  resolveModelArg,
+  supportedModels,
+} from '../agent/models';
 import type { AgentAdapter } from '../agent/types';
 import type { ActiveRuns } from '../bot/active-runs';
 import {
@@ -179,7 +188,7 @@ type Handler = (args: string, ctx: CommandContext) => Promise<void>;
 
 interface ResumeCandidate {
   scopeId: string;
-  agentId: 'claude' | 'codex' | 'hermes';
+  agentId: 'claude' | 'codex' | 'hermes' | 'dsh';
   cwdRealpath: string;
   policyFingerprint: string;
   sessionId?: string;
@@ -456,7 +465,13 @@ async function handleNew(args: string, ctx: CommandContext): Promise<void> {
   const modelPref = eff.model;
   const effortPref = eff.effort;
   const snapshot = [
-    modelPref ? `模型 ${resolveModelArg(agentKind, modelPref) ?? modelPref}` : '模型 跟随默认',
+    modelPref
+      ? `模型 ${displayModelName(
+          agentKind,
+          ctx.controls.profileConfig,
+          resolveModelArg(agentKind, modelPref) ?? modelPref,
+        )}`
+      : '模型 跟随默认',
     effortPref ? `effort ${effortPref}` : 'effort 默认',
     ...(inGroup(ctx) ? [chatModelSourceLabel(eff.source, true)] : []),
   ].join(' · ');
@@ -670,6 +685,10 @@ const HERMES_RESUME_REPLY =
 async function handleResume(args: string, ctx: CommandContext): Promise<void> {
   if (ctx.controls.profileConfig.agentKind === 'hermes') {
     await reply(ctx, HERMES_RESUME_REPLY);
+    return;
+  }
+  if (ctx.controls.profileConfig.agentKind === 'dsh') {
+    await reply(ctx, 'DSH 会话由系统自动接管（--session-id），无需手动 resume。');
     return;
   }
   const parts = args.trim().split(/\s+/).filter(Boolean);
@@ -1302,6 +1321,22 @@ async function handleDoctor(args: string, ctx: CommandContext): Promise<void> {
 
   const requestedCwd = effectiveWorkspaceCwd(ctx);
   const scopeCwdSet = Boolean(ctx.workspaces.cwdFor(ctx.scope));
+  // f0.5++: a dsh profile reports how its agent binary was found and where its
+  // model routing comes from. Cheap variant here (no --version spawn); the full
+  // report below probes the version too.
+  const dshDoctor = async (skipVersion: boolean): Promise<string[]> =>
+    ctx.controls.profileConfig.agentKind === 'dsh'
+      ? describeDshRuntime({
+          ...(ctx.controls.profileConfig.dsh?.binaryPath
+            ? { configuredBinary: ctx.controls.profileConfig.dsh.binaryPath }
+            : {}),
+          ...(ctx.controls.profileConfig.dsh?.profile
+            ? { configuredProfile: ctx.controls.profileConfig.dsh.profile }
+            : {}),
+          skipVersion,
+        })
+      : [];
+  const dshCheck = await dshDoctor(true);
   if (!requestedCwd) {
     await reply(
       ctx,
@@ -1309,6 +1344,7 @@ async function handleDoctor(args: string, ctx: CommandContext): Promise<void> {
         workspaceCheck:
           '未设置工作目录。先用 `/cd <path>` 或 `/ws use <name>` 选择工作目录后再运行 agent echo check。',
         echoCheck: 'skipped',
+        dshCheck,
       }),
     );
     return;
@@ -1324,6 +1360,7 @@ async function handleDoctor(args: string, ctx: CommandContext): Promise<void> {
       buildDoctorReport(ctx, {
         workspaceCheck: `${workspace.userVisible} 工作目录不可用时只执行 self-check，不启动 agent。`,
         echoCheck: 'skipped',
+        dshCheck,
       }),
     );
     return;
@@ -1335,6 +1372,7 @@ async function handleDoctor(args: string, ctx: CommandContext): Promise<void> {
       buildDoctorReport(ctx, {
         workspaceCheck: `ok (${workspace.cwdRealpath})`,
         echoCheck: 'run executor unavailable',
+        dshCheck,
       }),
     );
     return;
@@ -1378,6 +1416,8 @@ async function handleDoctor(args: string, ctx: CommandContext): Promise<void> {
     return;
   }
   const runtimeAccess = runtimeAccessStatus(ctx.controls.profileConfig);
+  // Full variant: the version probe is worth its cost on the real report.
+  const dshCheckFull = await dshDoctor(false);
   const doctorReport = (echoCheck: string): string =>
     buildDoctorReport(ctx, {
       workspaceCheck: `ok (${workspace.cwdRealpath})`,
@@ -1386,6 +1426,7 @@ async function handleDoctor(args: string, ctx: CommandContext): Promise<void> {
           ? `ok sandbox=${policy.sandbox}`
           : `ok ${runtimeAccess.label}=${policy.permissionMode}`,
       echoCheck,
+      dshCheck: dshCheckFull,
     });
 
   // In group / topic chats other members would see the result card. Ack
@@ -1503,6 +1544,8 @@ function buildDoctorReport(
     workspaceCheck?: string;
     policyCheck?: string;
     echoCheck?: string;
+    /** f0.5++: DSH-specific lines (binary discovery, profile, model mirror). */
+    dshCheck?: readonly string[];
   } = {},
 ): string {
   const queue = ctx.processPool?.snapshot();
@@ -1532,6 +1575,7 @@ function buildDoctorReport(
     `owner API: ${formatOwnerState(ctx)}`,
     `queue: ${queueLine}`,
     `run executor: ${ctx.runExecutor ? 'available' : 'unavailable'}`,
+    ...(opts.dshCheck ?? []),
     ...(opts.workspaceCheck ? [`workspace check: ${opts.workspaceCheck}`] : []),
     ...(opts.policyCheck ? [`policy check: ${opts.policyCheck}`] : []),
     ...(opts.echoCheck ? [`agent echo check: ${opts.echoCheck}`] : []),
@@ -1623,7 +1667,76 @@ async function saveModelChoice(
 }
 
 /** aiduCAT f0.1: interactive /model card (10router combos + effort). f0.2: + provider dropdown. */
+/**
+ * f0.5++: /model for a dsh profile.
+ *
+ * DSH owns its model in the profile's own patch layer and exposes no
+ * per-run `--model`; the bridge switches it by writing a `--patch` overlay.
+ * The picker therefore lists the ids that layer actually declares, and never
+ * consults the 10router combo list (which is empty for DSH).
+ */
+async function showDshModelCard(ctx: CommandContext): Promise<void> {
+  // f0.5++: pull the desktop profile's current model list first, so a model the
+  // owner just added in the GUI shows up here without waiting for a turn (the
+  // DSH counterpart of cc's combo refresh).
+  syncModelRoutingFromDesktop(ctx.controls.profileConfig.dsh?.profile);
+  const catalog = dshModelCatalog(ctx.controls.profileConfig.dsh?.profile);
+  const eff = effectiveModelPrefs(ctx.controls.profileConfig, chatModelKey(ctx));
+  const card = modelCard({
+    combos: catalog.map((m) => ({ id: m.value, name: m.value, label: m.label })),
+    currentModel: eff.model,
+    currentEffort: eff.effort,
+    source: 'live',
+    agentKind: 'dsh',
+    ...(inGroup(ctx) ? { chatScope: { own: eff.source === 'chat' } } : {}),
+  });
+  if (ctx.fromCardAction) await recallMessage(ctx, ctx.msg.messageId);
+  await sendManagedCard(ctx.channel, ctx.msg.chatId, card, commandReplyOptions(ctx));
+}
+
+/** f0.5++: persist a DSH model pick; the adapter turns it into a --patch overlay. */
+async function submitDshModelCard(ctx: CommandContext): Promise<void> {
+  const raw = String((ctx.formValue ?? {}).combo ?? '').trim();
+  const catalog = dshModelCatalog(ctx.controls.profileConfig.dsh?.profile);
+  if (!raw || raw === '__none__') {
+    await reply(ctx, '⚠️ 请先选择一个模型;');
+    return;
+  }
+  if (!catalog.some((m) => m.value === raw)) {
+    await reply(ctx, '⚠️ 这个模型不在当前 DSH profile 的列表里,请重新打开 /model 选择。');
+    return;
+  }
+  const eff = effectiveModelPrefs(ctx.controls.profileConfig, chatModelKey(ctx));
+  try {
+    await saveModelChoice(ctx, {
+      model: raw,
+      ...(eff.effort ? { effort: eff.effort } : {}),
+    });
+  } catch (err) {
+    log.fail('command', err, { cmd: '/model submit (dsh)' });
+    await reply(ctx, '❌ 模型保存失败,详情见日志。');
+    return;
+  }
+  log.info('command', 'model-set', {
+    model: raw,
+    agent: 'dsh',
+    effort: eff.effort ?? 'default',
+    via: 'card',
+    scope: inGroup(ctx) ? 'chat' : 'default',
+  });
+  const label = catalog.find((m) => m.value === raw)?.label ?? raw;
+  await reply(ctx, `✅ 已保存模型：\`${label}\`（下一轮生效;DSH 模型由 profile 覆盖，会写入 --patch 临时层）`);
+}
+
 async function showModelCard(ctx: CommandContext): Promise<void> {
+  // f0.5++: a dsh profile owns its model in the profile's own config and has no
+  // per-run --model flag, so its choices come from that patch layer. Asking the
+  // gateway for combos always comes back empty for DSH, which is why the card
+  // used to say「暂时取不到模型列表」.
+  if (ctx.controls.profileConfig.agentKind === 'dsh') {
+    await showDshModelCard(ctx);
+    return;
+  }
   const tr = await resolveTenRouterConfig(ctx.controls.cfg);
   // f04-group-cmd-model: preselect what THIS chat runs (group's own or default).
   const eff = effectiveModelPrefs(ctx.controls.profileConfig, chatModelKey(ctx));
@@ -1674,6 +1787,12 @@ async function showModelCard(ctx: CommandContext): Promise<void> {
 }
 
 async function submitModelCard(ctx: CommandContext): Promise<void> {
+  // f0.5++: a dsh pick is validated against the profile's own model list, never
+  // against gateway combos (which are always empty for DSH).
+  if (ctx.controls.profileConfig.agentKind === 'dsh') {
+    await submitDshModelCard(ctx);
+    return;
+  }
   let fv = ctx.formValue ?? {};
   const cfg = ctx.controls.cfg;
   const providers = ctx.controls.profileConfig.modelProviders ?? {};
@@ -1829,6 +1948,17 @@ async function setModelDirect(value: string, ctx: CommandContext): Promise<void>
   }
 
   const next = value.toLowerCase() === 'default' ? undefined : value;
+  // f0.5++: a dsh turn can only run a model its profile declares — an id outside
+  // that catalog 406s at the gateway (seen live 2026-11-17), so reject it here
+  // instead of saving a preference that breaks the next turn.
+  if (
+    ctx.controls.profileConfig.agentKind === 'dsh' &&
+    next !== undefined &&
+    !dshModelCatalog(ctx.controls.profileConfig.dsh?.profile).some((m) => m.value === next)
+  ) {
+    await reply(ctx, '⚠️ 这个模型不在当前 DSH profile 的列表里,请用 /model 卡片选择可用模型。');
+    return;
+  }
   // A typed name found in a provider's static list also selects that provider.
   const hit = next
     ? unionProviderModels(ctx.controls.profileConfig.modelProviders ?? {}).find((c) => c.name === next)
@@ -1852,11 +1982,14 @@ async function setModelDirect(value: string, ctx: CommandContext): Promise<void>
     scope: inGroup(ctx) ? 'chat' : 'default',
   });
   const where = inGroup(ctx) ? '（只改本群）' : '';
+  const isDsh = ctx.controls.profileConfig.agentKind === 'dsh';
   await reply(
     ctx,
     next === undefined
-      ? `✅ 已恢复默认模型${where}(下次会话不传 --model)。`
-      : `✅ 模型已切换为 \`${next}\`${where}(下次会话生效)。${
+      ? `✅ 已恢复默认模型${where}${isDsh ? '(恢复跟随 DSH profile)。' : '(下次会话不传 --model)。'}`
+      : `✅ 模型已切换为 \`${next}\`${where}(${
+          isDsh ? '下一轮生效,写入 --patch 临时层' : '下次会话生效'
+        })。${
           ctx.controls.profileConfig.agentKind === 'claude' && !isClaudeModelId(next)
             ? `\n_非 Claude 模型：${GATEWAY_TRANSLATED}，effort 不生效_`
             : ''

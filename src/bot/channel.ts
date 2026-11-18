@@ -7,7 +7,7 @@ import { createLarkChannel } from '@larksuite/channel';
 import { dirname, join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { capabilityFor } from '../agent/capability';
-import { modelLabel, normalizeModelSelection, resolveModelArg } from '../agent/models';
+import { displayModelName, modelLabel, normalizeModelSelection, resolveModelArg } from '../agent/models';
 import {
   buildAgentPrompt,
   untrustedText,
@@ -93,6 +93,7 @@ import { ChatModeCache, type ChatMode } from './chat-mode-cache';
 import { handleCommentMention } from './comments';
 import { recordRunSessionEvent, startRunFlow } from './run-flow';
 import { commandSessionCatalogIdentity } from './session-catalog-identity';
+import { RunHealthMonitor } from './run-health';
 import { startKeepalive } from './keepalive';
 import { PendingQueue } from './pending-queue';
 import { ProcessPool } from './process-pool';
@@ -375,14 +376,39 @@ export async function startChannel(deps: StartChannelDeps): Promise<BridgeChanne
       msg.chatId,
       renderCard(initialState, {
         agentKind: controls.profileConfig.agentKind,
-        model: profileForChat(
+        model: displayModelName(
+          controls.profileConfig.agentKind,
           controls.profileConfig,
-          msg.chatType === 'p2p' ? undefined : msg.chatId,
-        ).preferences.model,
+          profileForChat(
+            controls.profileConfig,
+            msg.chatType === 'p2p' ? undefined : msg.chatId,
+          ).preferences.model,
+        ),
       }),
       earlySendOpts(msg),
       scope,
     );
+  });
+  // A DSH bridge can stay connected while every turn fails. Keep each
+  // instance's streak, cooldown, and owner DM on that instance alone.
+  const dshRunHealth = agent.id === 'dsh' ? new RunHealthMonitor() : undefined;
+  const notifyRunHealth = async (message: string): Promise<void> => {
+    const owner = controls.botOwnerId;
+    if (!owner) {
+      log.warn('run-health', 'no-owner', { reason: 'botOwnerId unknown' });
+      return;
+    }
+    try {
+      // Sending by open_id routes to the owner's p2p chat with the bot.
+      await channel.send(owner, { text: message });
+      log.info('run-health', 'notified', { owner: owner.slice(-6) });
+    } catch (err) {
+      log.warn('run-health', 'notify-failed', { err: String(err) });
+    }
+  };
+  const onDshRunOutcome = dshRunHealth && ((ok: boolean): void => {
+    const decision = ok ? dshRunHealth.recordSuccess() : dshRunHealth.recordFailure();
+    if (decision.notify) void notifyRunHealth(decision.message);
   });
   // f0.5 之后 (steer, Wei 2026-11-10「插话」): runs that can take the user's
   // next message while they work. A batch flushed for such a scope goes into
@@ -506,6 +532,7 @@ export async function startChannel(deps: StartChannelDeps): Promise<BridgeChanne
           lastRunModelByScope,
           scope,
           mode,
+          onDshRunOutcome,
           onCardOpened: (messageId: string) => journal.setCard(scope, runKey, messageId),
           onTerminal: (t: string) => {
             terminal = t;
@@ -1286,6 +1313,7 @@ interface RunBatchDeps {
   onCardOpened?: (messageId: string) => void;
   /** f03p-infra-#6: how the agent's turn ended (done / error / interrupted / idle_timeout). */
   onTerminal?: (terminal: string) => void;
+  onDshRunOutcome?: (ok: boolean) => void;
   /** f0.3.4: the reaction added at flush start; released when real output shows or the round ends. */
   workingReaction?: WorkingReaction;
   /** f0.3.5: the「☤aiduCATing…」card opened at intake; the run adopts it. */
@@ -1768,8 +1796,11 @@ async function renderSegment(deps: RunBatchDeps, core: RunCore, live: LiveRun | 
     return { ...state, blocks: state.blocks.filter((b) => b.kind !== 'tool') };
   };
   const cardRenderOptions: import('../card/run-renderer').RunCardRenderOptions = {
-    // aiduCAT: surface model + start time in the meta panel.
-    model: modelSelection,
+    // aiduCAT: surface model + start time in the meta panel. A dsh profile has
+    // no per-run model (its profile owns it), so it shows its own label. The
+    // `runProfile` in this scope is a narrower re-binding, so read the full
+    // config for the dsh block.
+    model: displayModelName(agentKind, controls.profileConfig, modelSelection),
     // f0.4+: panel icon = this profile's coding agent.
     agentKind,
     startedAt: Date.now(),
@@ -1834,7 +1865,9 @@ async function renderSegment(deps: RunBatchDeps, core: RunCore, live: LiveRun | 
           recordSession,
           async () => {},
           sessions,
-        capability.agentId);
+          capability.agentId,
+          deps.onDshRunOutcome,
+        );
         await cotDone;
         if (cotPublisher.degradedReason) {
           await sendCotDegradedNotice({
@@ -1947,7 +1980,9 @@ async function renderSegment(deps: RunBatchDeps, core: RunCore, live: LiveRun | 
         },
         sessions,
         // (diagnostics)
-        capability.agentId);
+        capability.agentId,
+        deps.onDshRunOutcome,
+      );
       // f0.3.4: claude runs open the card right away — the initial render is
       // the "☤Thinking…" placeholder with the model logo in the panel header —
       // instead of waiting for the first tool call / text (10–200s). Later
@@ -2074,7 +2109,9 @@ async function renderSegment(deps: RunBatchDeps, core: RunCore, live: LiveRun | 
           }
         },
         sessions,
-      capability.agentId);
+        capability.agentId,
+        deps.onDshRunOutcome,
+      );
       let mdDelivered = false;
       try {
         await awaitRenderAwareStream({
@@ -2130,7 +2167,9 @@ async function renderSegment(deps: RunBatchDeps, core: RunCore, live: LiveRun | 
         recordSession,
         async () => {},
         sessions,
-      capability.agentId);
+        capability.agentId,
+        deps.onDshRunOutcome,
+      );
       await sendFinalReply({
         channel,
         chatId,
@@ -2432,6 +2471,7 @@ export async function processAgentStream(
   flush: (state: RunState) => Promise<void>,
   stats: Pick<SessionStore, 'recordUsage' | 'recordMessage' | 'recordModel' | 'recordTurnTps'>,
   agentId: string,
+  onDshRunOutcome?: (ok: boolean) => void,
 ): Promise<RunState> {
   const runStart = Date.now();
   let state: RunState = initialState;
@@ -2606,7 +2646,7 @@ export async function processAgentStream(
       // f0.3.1 #4: must run AFTER reduce — reduce('done') unconditionally sets
       // terminal='done' and used to wipe the guard's error (f0.3 bug).
       if (
-        (agentId === 'claude' || agentId === 'hermes') &&
+        (agentId === 'claude' || agentId === 'hermes' || agentId === 'dsh') &&
         (state.terminal === 'done' || state.terminal === 'error') &&
         (evt.type === 'done' || evt.type === 'error') &&
         substantiveEvents === 0 &&
@@ -2620,6 +2660,11 @@ export async function processAgentStream(
       }
       if (state.footer !== prevFooter || state.terminal !== prevTerminal) {
         log.info('card', 'transition', { footer: state.footer, terminal: state.terminal });
+      }
+      // Only DSH outcomes feed the watchdog. An interrupted terminal event
+      // is not a failure; it breaks the streak.
+      if (agentId === 'dsh' && (evt.type === 'done' || evt.type === 'error')) {
+        onDshRunOutcome?.(evt.type === 'done' || evt.terminationReason === 'interrupted');
       }
       await flush(state);
       // Stop iterating as soon as we have a terminal state. Some claude

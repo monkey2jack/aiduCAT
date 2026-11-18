@@ -1,5 +1,6 @@
 import { readdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 // f031-func-#7: user-facing hints/help/usage must name the real command
@@ -7,7 +8,7 @@ import { describe, expect, it } from 'vitest';
 // PATH after installing aiduCAT. Data dir (~/.lark-channel), service name,
 // bin file path and protocol `source` fields are deliberately untouched.
 
-const ROOT = new URL('../../', import.meta.url).pathname;
+const ROOT = fileURLToPath(new URL('../../', import.meta.url));
 const SUBCOMMAND = /lark-channel-bridge (ps|kill|stop|restart|ui|secrets|run|start)\b/;
 
 async function walk(dir: string): Promise<string[]> {

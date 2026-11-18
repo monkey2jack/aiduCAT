@@ -1,4 +1,8 @@
-import { describe, expect, it } from 'vitest';
+import { existsSync, readFileSync } from 'node:fs';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
+import { afterEach, describe, expect, it } from 'vitest';
 import {
   buildDshArgs,
   isSafeDshSessionId,
@@ -6,10 +10,11 @@ import {
   DSH_PERMISSION_PRESETS,
   DSH_UNATTENDED_APPROVAL,
 } from '../../../src/agent/dsh/argv.js';
+import { resolveTurnPatch } from '../../../src/agent/dsh/adapter.js';
 import { DshStreamTranslator } from '../../../src/agent/dsh/jsonl.js';
 import { dshCapability, usesSessionId } from '../../../src/agent/capability.js';
 
-// f0.6: DSH (DeepSeek Harness) adapter — headless --json protocol mapping.
+// f0.5++: DSH (DeepSeek Harness) adapter — headless --json protocol mapping.
 //
 // The event vocabulary asserted here mirrors DeepSeek Harness 0.2.2-rc.3
 // (@deepseek-ai/dsh-headless/src/json-stream.ts), and the sample payloads are
@@ -70,6 +75,21 @@ describe('dsh argv', () => {
   it('refuses a preset DSH would abort on', () => {
     expect(() => buildDshArgs({ permissionMode: 'bogus' as never })).toThrow(/permission preset/);
     expect(() => buildDshArgs({ approvalPolicy: 'sometimes' as never })).toThrow(/approval policy/);
+  });
+
+  it('places the model overlay before the app arguments', () => {
+    // --patch is a launcher flag: it must precede --json, because everything
+    // after the launcher flags reaches the headless runner, which would reject
+    // an unknown `--patch` option and end the turn.
+    const args = buildDshArgs({
+      patch: resolve('dsh-model.yml'),
+      permissionMode: 'workspace-write',
+      approvalPolicy: 'never',
+    });
+    expect(args.indexOf('--patch')).toBeGreaterThan(args.indexOf('--profile'));
+    expect(args.indexOf('--patch')).toBeLessThan(args.indexOf('--json'));
+    // A relative path is refused: the child may run in a different cwd.
+    expect(() => buildDshArgs({ patch: 'relative.yml' })).toThrow(/patch path/);
   });
 });
 
@@ -250,5 +270,112 @@ describe('dsh env overrides', () => {
     // The filter must still drop everything that looks like a credential, or a
     // /model provider switch could leak keys into the DSH environment.
     expect(src).toContain('KEY|TOKEN|SECRET|PASS');
+  });
+});
+
+describe('dsh private patch (p2p only — 真假猴王 fix)', () => {
+  const cleanups: Array<() => Promise<void>> = [];
+  afterEach(async () => {
+    await Promise.all(cleanups.splice(0).map((c) => c()));
+  });
+
+  async function tempDir(): Promise<string> {
+    const { realpath } = await import('node:fs/promises');
+    const dir = await mkdtemp(join(await realpath(tmpdir()), 'dsh-priv-'));
+    cleanups.push(() => rm(dir, { recursive: true, force: true }));
+    return dir;
+  }
+
+  async function fixture(dir: string, name: string, body: string): Promise<string> {
+    const file = join(dir, name);
+    await writeFile(file, body, 'utf8');
+    return file;
+  }
+
+  const MODEL = '- id: agent-default-model\n  config:\n    model: "GLM-5.3-Flash"\n';
+  const PRIVATE = '# private overlay\n- insert:\n    - id: mcp-aidumei\n';
+
+  it('never rides on group/topic/non-IM turns, even when configured', async () => {
+    const dir = await tempDir();
+    const priv = await fixture(dir, 'private.yml', PRIVATE);
+    const model = await fixture(dir, 'GLM-5.3-Flash.yml', MODEL);
+    const mergedDir = join(dir, 'merged');
+    expect(
+      resolveTurnPatch({
+        modelPatch: model,
+        privatePatchPath: priv,
+        isPrivate: false,
+        turnPatchDir: mergedDir,
+      }),
+    ).toEqual({ patch: model, privateApplied: false });
+    // A group turn must not even create the merge directory.
+    expect(existsSync(mergedDir)).toBe(false);
+  });
+
+  it('passes the private overlay straight through on a p2p turn', async () => {
+    const dir = await tempDir();
+    const priv = await fixture(dir, 'private.yml', PRIVATE);
+    // No per-turn rewrite: the static file is handed to --patch as-is.
+    expect(
+      resolveTurnPatch({
+        modelPatch: undefined,
+        privatePatchPath: priv,
+        isPrivate: true,
+        turnPatchDir: join(dir, 'merged'),
+      }),
+    ).toEqual({ patch: priv, privateApplied: true });
+  });
+
+  it('merges the model overlay and the private patch into one stable file', async () => {
+    const dir = await tempDir();
+    const priv = await fixture(dir, 'private.yml', PRIVATE);
+    const model = await fixture(dir, 'GLM-5.3-Flash.yml', MODEL);
+    const mergedDir = join(dir, 'merged');
+    const first = resolveTurnPatch({
+      modelPatch: model,
+      privatePatchPath: priv,
+      isPrivate: true,
+      turnPatchDir: mergedDir,
+    });
+    expect(first.privateApplied).toBe(true);
+    // One --patch flag, both documents — model rows first, directives after,
+    // the same shape the desktop profile's own patch uses.
+    const merged = readFileSync(first.patch!, 'utf8');
+    expect(merged.indexOf('- id: agent-default-model')).toBeLessThan(merged.indexOf('- insert:'));
+    // Stable name: a long-lived deployment does not accumulate files.
+    const again = resolveTurnPatch({
+      modelPatch: model,
+      privatePatchPath: priv,
+      isPrivate: true,
+      turnPatchDir: mergedDir,
+    });
+    expect(again.patch).toBe(first.patch);
+  });
+
+  it('soft-fails to the model patch when the private file is missing', async () => {
+    const dir = await tempDir();
+    const model = await fixture(dir, 'GLM-5.3-Flash.yml', MODEL);
+    expect(
+      resolveTurnPatch({
+        modelPatch: model,
+        privatePatchPath: join(dir, 'nope.yml'),
+        isPrivate: true,
+        turnPatchDir: join(dir, 'merged'),
+      }),
+    ).toEqual({ patch: model, privateApplied: false });
+  });
+
+  it('cannot merge without a turn-patch directory and says so', async () => {
+    const dir = await tempDir();
+    const priv = await fixture(dir, 'private.yml', PRIVATE);
+    const model = await fixture(dir, 'GLM-5.3-Flash.yml', MODEL);
+    expect(
+      resolveTurnPatch({
+        modelPatch: model,
+        privatePatchPath: priv,
+        isPrivate: true,
+        turnPatchDir: undefined,
+      }),
+    ).toEqual({ patch: model, privateApplied: false });
   });
 });

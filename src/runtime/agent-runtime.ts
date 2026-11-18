@@ -56,6 +56,24 @@ export async function createRuntimeAgent(
       envPassthrough: profileConfig.agentEnv?.passthrough ?? [],
     });
   }
+  if (profileConfig.agentKind === 'dsh') {
+    const { DshAdapter } = await import('../agent/dsh/adapter');
+    const { discoverDshLaunch } = await import('../agent/dsh/launch');
+    const dsh = profileConfig.dsh;
+    // f0.5++: find the install instead of trusting one hand-written launcher.
+    // A configured binaryPath that resolves still wins (it is the operator's
+    // explicit choice); otherwise probe PATH and the Desktop app.
+    const launch = discoverDshLaunch(dsh?.binaryPath);
+    return new DshAdapter({
+      binary: launch?.command ?? dsh?.binaryPath ?? process.env.LARK_CHANNEL_DSH_BIN ?? 'dsh',
+      ...(launch && launch.prefixArgs.length > 0 ? { prefixArgs: launch.prefixArgs } : {}),
+      ...(launch && Object.keys(launch.env).length > 0 ? { launchEnv: launch.env } : {}),
+      ...(dsh?.profile ? { dshProfile: dsh.profile } : {}),
+      ...(dsh?.privatePatch ? { privatePatch: dsh.privatePatch } : {}),
+      larkChannel,
+      envPassthrough: profileConfig.agentEnv?.passthrough ?? [],
+    });
+  }
   if (profileConfig.agentKind === 'hermes') {
     if (!featureEnabled(profileConfig, 'hermes')) {
       throw new Error(`${FEATURE_OFF_REPLY}：hermes（profile features.hermes=false）`);

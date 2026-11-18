@@ -80,6 +80,12 @@ export interface AgentRunOptions {
    * settings tokens, no owner passthrough env.
    */
   ownerRun?: boolean;
+  /**
+   * f0.5++: the originating IM chat type ('p2p' | 'group' | …). Undefined for
+   * non-chat runs (scheduled tasks, commands) — which adapters must treat as
+   * NOT private (fail-closed): the DSH private patch rides on p2p turns only.
+   */
+  chatType?: string;
 }
 
 export interface AgentRun {

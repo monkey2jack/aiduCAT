@@ -11,12 +11,18 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-latest, ubuntu-latest]  # aiduCAT 只在 Linux/macOS 上运行
+        # Windows 是 aiduCAT 的生产平台之一(以 WinSW 服务方式常驻运行),因此纳入 matrix。
+        # Windows 跑 DSH 回归、类型检查和构建；全量测试仍由 macOS/Linux 负责，
+        # 因为其中有断言 POSIX 权限位和 launchd 行为的用例。
+        os: [macos-latest, ubuntu-latest, windows-latest]
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # corepack 随 Node 发布,三平台一致;Windows 上会在 node.exe 旁写入 pnpm.cmd/pnpm.ps1
+      # 垫片,由默认 pwsh 正常调用。此步骤必须排在 setup-node 之前:setup-node 的
+      # `cache: pnpm` 会调用 `pnpm store path` 定位缓存目录,那时就要能解析到 pnpm。
       - name: Enable pnpm
         run: corepack enable
 
@@ -29,11 +35,19 @@ jobs:
       - name: Install
         run: pnpm install --frozen-lockfile
 
+      # 保留 macOS/Linux 全量测试；Windows 跑可移植的 DSH 专项回归。
       - name: Test
+        if: runner.os != 'Windows'
         run: pnpm test
+
+      - name: DSH regression tests on Windows
+        if: runner.os == 'Windows'
+        run: pnpm exec vitest run tests/unit/agent/dsh.test.ts tests/unit/agent/dsh-launch.test.ts tests/unit/agent/dsh-doctor.test.ts tests/unit/agent/dsh-profile-sync.test.ts tests/unit/agent/models.test.ts tests/unit/bot/run-health.test.ts tests/integration/commands/f05pp-dsh-model-card.test.ts
 
       - name: Typecheck
         run: pnpm typecheck
 
+      # `pnpm build` = `pnpm build:web && tsup`:pnpm 在 Windows 上用 cmd.exe 执行脚本,
+      # 支持 `&&`,因此无需 shell 覆盖,也不必拆成两步。
       - name: Build
         run: pnpm build

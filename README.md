@@ -10,9 +10,9 @@
 >
 > **提问在上方，过程收进一只小面板，结果由面板颜色说话。**
 >
-> 给 Claude Code / Codex CLI / Hermes Agent 穿上泡波流的飞书卡片：宣白纸面上灌一道深蓝流光，一只猫，零噪音。
+> 给 Claude Code / Codex CLI / Hermes Agent / DSH 穿上泡波流的飞书卡片：宣白纸面上灌一道深蓝流光，一只猫，零噪音。
 
-[![Version](https://img.shields.io/badge/version-f0.5%2B-blue.svg)](https://github.com/monkey2jack/aiduCAT)
+[![Version](https://img.shields.io/badge/version-f0.5%2B%2B-blue.svg)](https://github.com/monkey2jack/aiduCAT)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Node 20+](https://img.shields.io/badge/node-20.12%2B-brightgreen.svg)](https://nodejs.org/)
 [![Claude Code](https://img.shields.io/badge/agent-Claude%20Code%20%7C%20Codex%20%7C%20Hermes-orange.svg)](https://docs.anthropic.com/en/docs/claude-code/quickstart)
@@ -27,16 +27,16 @@
 
 ## aiduCAT 是什么？
 
-**<b style="color:#000000">ai</b><b style="color:#525252">du</b><b style="color:#1F4E79">CAT</b>·<b style="color:#000000">爱</b><b style="color:#525252">嘟</b><b style="color:#1F4E79">妙咪飞</b>**，全称 **Coding Agent Texting**（编程代理短信/消息化），是给 **Claude Code / Codex CLI / Hermes Agent** 装上的一只飞书猫（按 profile 三选一，f0.4+ 起支持 Hermes） —— 把本地编程 agent 的思考、工具调用和最终答案，实时装进一张仿 [aiduPOP](https://github.com/monkey2jack/aiduPOP) 泡波样式的飞书流式卡片。
+**<b style="color:#000000">ai</b><b style="color:#525252">du</b><b style="color:#1F4E79">CAT</b>·<b style="color:#000000">爱</b><b style="color:#525252">嘟</b><b style="color:#1F4E79">妙咪飞</b>**，全称 **Coding Agent Texting**（编程代理短信/消息化），是给 **Claude Code / Codex CLI / Hermes Agent / DSH(DeepSeek Harness)** 装上的一只飞书猫（按 profile 四选一，f0.4+ 起支持 Hermes、f0.5++ 起支持 DSH） —— 把本地编程 agent 的思考、工具调用和最终答案，实时装进一张仿 [aiduPOP](https://github.com/monkey2jack/aiduPOP) 泡波样式的飞书流式卡片。
 
 aiduCAT 起源并致敬上游 [zarazhangrui/lark-coding-agent-bridge](https://github.com/zarazhangrui/lark-coding-agent-bridge)（npm 包 `lark-channel-bridge`），在 MIT 协议的代码基础之上，做了一套完整的**泡波化改造**：
 
 | 特性 | 说明 |
 |------|------|
-| 🤖 **三种 agent 三选一**（f0.4+） | 每个 profile 选 Claude Code、Codex CLI 或 Hermes Agent，同一套卡片、命令和白名单；见下方「Hermes Agent 接入」 |
+| 🤖 **四种 agent 四选一**（f0.4+ Hermes、f0.5++ DSH） | 每个 profile 选 Claude Code、Codex CLI、Hermes Agent 或 DSH(DeepSeek Harness)，同一套卡片、命令和白名单；见下方「Hermes Agent 接入」与「DSH(DeepSeek Harness)接入」 |
 | 🫧 **单面板泡波样式** | 答案流式显示在上方；思考与全部工具调用收进一只折叠面板（aiduPOP 布局） |
 | 💭 **计数头** | 面板头：`模型 · 💭 思考段数 · 🛠️ 工具数 · ⏱️ 用时`；运行中面板正上方顶格多一行状态词（aiduCATing / Thinking / Running，后跟加载动效），结束即消失 |
-| 🏷 **工具图标** | 面板头左侧显示当前 profile 用的编程工具图标（Claude Code / Codex / Hermes Agent），不看模型；模型名照常写在图标后面 |
+| 🏷 **工具图标** | 面板头左侧显示当前 profile 用的编程工具图标（Claude Code / Codex / Hermes Agent / DSH），不看模型；模型名照常写在图标后面 |
 | 🔌 **多 Provider** | /model 卡三级下拉（Provider→Model→Effort）；provider 密钥走环境变量链不入配置明文；切换下一轮即生效，无需重启；10router 系网关自动识别并只拉 curated combo |
 | 🗜️ **按窗口自动压缩** | 上下文到模型窗口的 60%（`AIDUCAT_COMPACT_PCT`）自动压缩；窗口来自 10router combo（`/api/combos` 带窗口字段时）或 provider 的 `contextWindow`，都没有时 aiduCAT 不覆盖，沿用 Claude Code 自己 `settings.json` 的 `CLAUDE_CODE_MAX_CONTEXT_TOKENS` / `CLAUDE_CODE_AUTO_COMPACT_WINDOW`（f0.3.4 起不再拉 10router 的 `/v1/models` 全量模型表） |
 | 🚦 **边框即状态** | 完成绿 / 停止黄 / 出错红 / 运行中灰 —— 一眼看清结果，无结尾注脚 |
@@ -46,7 +46,7 @@ aiduCAT 起源并致敬上游 [zarazhangrui/lark-coding-agent-bridge](https://gi
 
 ## 快速开始（从零安装）
 
-前提：Node.js >= 20.12.0；本机已装好并能直接运行 [Claude Code](https://docs.anthropic.com/en/docs/claude-code/quickstart)（或 [Codex CLI](https://developers.openai.com/codex/cli)、[Hermes Agent](https://github.com/NousResearch/hermes-agent)，Hermes 的接法见下方「Hermes Agent 接入」），模型网关已在其环境或 `~/.claude/settings.json` 里配好（如 `ANTHROPIC_BASE_URL` / `ANTHROPIC_API_KEY`）。
+前提：Node.js >= 20.12.0；本机已装好并能直接运行 [Claude Code](https://docs.anthropic.com/en/docs/claude-code/quickstart)（或 [Codex CLI](https://developers.openai.com/codex/cli)、[Hermes Agent](https://github.com/NousResearch/hermes-agent)，DSH 与 Hermes 的接法见下方「Hermes Agent 接入」与「DSH(DeepSeek Harness)接入」），模型网关已在其环境或 `~/.claude/settings.json` 里配好（如 `ANTHROPIC_BASE_URL` / `ANTHROPIC_API_KEY`）。
 
 ```bash
 git clone https://github.com/monkey2jack/aiduCAT.git
@@ -72,7 +72,7 @@ node bin/lark-channel-bridge.mjs run
 
 ## Hermes Agent 接入（f0.4+）
 
-aiduCAT 现在有三种 agent，**按 profile 三选一**：Claude Code、Codex CLI、[Hermes Agent](https://github.com/NousResearch/hermes-agent)。卡片、斜杠命令、白名单、群规则都一样，换的只是背后干活的那一个。一台机器可以同时跑几个 profile，各连各的飞书机器人。
+aiduCAT 现在有四种 agent，**按 profile 四选一**：Claude Code、Codex CLI、[Hermes Agent](https://github.com/NousResearch/hermes-agent)。卡片、斜杠命令、白名单、群规则都一样，换的只是背后干活的那一个。一台机器可以同时跑几个 profile，各连各的飞书机器人。
 
 ### 怎么接
 
@@ -140,7 +140,108 @@ aiduCAT start --profile hermes                 # 后台服务；前台跑用 nod
 
 ### 「agent 网关」和「模型网关」不是一回事
 
-在 aiduCAT 里，Claude Code、Codex、Hermes 都**不经过任何 agent 网关**：aiduCAT 直接起它们的命令行（Hermes 0.22 的客户端再去连本机的 Hermes 后台进程，那是 Hermes 内部的事）。**模型网关**（比如 [10router](https://github.com/techysy/10router)）是另一层：它在 agent 后面，把模型请求转给各家模型服务。Claude Code 通过 `ANTHROPIC_BASE_URL` 连它，Hermes 通过自己 `config.yaml` 里的模型服务地址连它，用不用、用哪个都和 aiduCAT 无关。
+在 aiduCAT 里，Claude Code、Codex、Hermes、DSH 都**不经过任何 agent 网关**：aiduCAT 直接起它们的命令行（Hermes 0.22 的客户端再去连本机的 Hermes 后台进程，那是 Hermes 内部的事）。**模型网关**（比如 [10router](https://github.com/techysy/10router)）是另一层：它在 agent 后面，把模型请求转给各家模型服务。Claude Code 通过 `ANTHROPIC_BASE_URL` 连它，Hermes 通过自己 `config.yaml` 里的模型服务地址连它，用不用、用哪个都和 aiduCAT 无关。
+
+## DSH(DeepSeek Harness)接入(f0.5++)
+
+aiduCAT 现在有四种 agent,**按 profile 四选一**:Claude Code、Codex CLI、[Hermes Agent](https://github.com/NousResearch/hermes-agent)、**DSH(DeepSeek Harness)**。卡片、斜杠命令、白名单、群规则都一样,换的只是背后干活的那一个。一台机器可以同时跑几个 profile,各连各的飞书机器人。DSH 这一路一轮起一个 `dsh` 客户端,没有常驻后台进程(和 Hermes 不同)。
+
+### 怎么接
+
+1. 装好 DSH,先在终端确认它能跑一轮(任务正文走 stdin,`-` 必须是唯一的位置参数):
+
+```bash
+echo "你好" | dsh --profile headless --json -
+```
+
+2. 建一个 DSH profile 并启动:
+
+```bash
+aiduCAT profile create dsh --agent dsh   # 默认只记一个 dsh;具体装在哪由运行时自动探测
+aiduCAT start --profile dsh              # 后台服务;前台跑用 node bin/lark-channel-bridge.mjs run --profile dsh
+```
+
+3. 可选配置(`~/.aiducat/config.json` 里 `profiles.<名字>.dsh`):
+
+```json
+{
+  "dsh": {
+    "binaryPath": "C:\\tools\\dsh.cmd",
+    "profile": "headless"
+  }
+}
+```
+
+- `binaryPath`:可写可不写 —— 只在要**钉住某个 build**(或自建 launcher)时才写。找不到它时 aiduCAT 依次找 `LARK_CHANNEL_DSH_BIN`、PATH 上的 `dsh`,最后自动找到 Desktop 安装并按它需要的方式启动(见下方「Windows 启动器」)。
+- `profile`:让 aiduCAT 用 DSH 的哪个 profile(`dsh --profile <名字>`),不写默认 `headless`。DSH 的 profile 放在 `$DSH_HOME/profiles/<名字>`。
+- `modelLabel`:**已废弃**,只为老配置保留。桥接现在直接读 profile 的 `agent-default-model`(并镜像桌面路由)当卡片上的模型名;写死的 label 在桌面换模型后会继续显示旧名字,新配置不要写。
+- 环境变量:除 `LARK_CHANNEL_DSH_BIN` 外,服务环境里要带上 `DSH_HOME`(DSH 自己的数据目录) —— 桥接靠它读 profile、镜像桌面模型、写 `/model` 的 `--patch` 覆盖层;没有 `DSH_HOME` 时这些动作被跳过(只记日志),`/model` 切换不生效。profile 的 aidu 路由按名字读 `AIDU_API_KEY`,这个变量会原样透传给 DSH;`DSH_*`、厂商前缀(`ANTHROPIC_` / `OPENAI_` / `CODEX_` / `CLAUDE_` / `DEEPSEEK_`)以及名字里带 `KEY` / `TOKEN` / `SECRET` / `PASS` 的变量不会透传,以免 `/model` 里配给 Claude Code 的密钥漏给 DSH。
+- DSH 没有单独的 `features` 开关(不像 `features.codex` / `features.hermes`)。
+
+### 一轮怎么跑
+
+```text
+dsh --profile <profile> --json [--patch <abs.yml>] [--permission-mode <preset>] [--approval-policy never] [--session-id <id>] -
+```
+
+- 任务正文走 **stdin**(`-`),`-` 必须是唯一的位置参数;消息文本不经过命令行参数和 shell。
+- `--json` 把 stdout 变成一行一个事件的 NDJSON:`session` / `status` / `text` / `thinking` / `tool_call` / `tool_result` / `error` / `final` / `step_end`;桥接把它们映射成卡片上的思考段、工具行和答案。
+- 成功判定:退出码 `0` **且** `final.reason.kind === "completed"`,两者缺一不可。只看退出码、或只看 `final`,都会把中途断掉的轮次当成成功。失败时卡片显示 DSH 的错误码和消息(形如 `dsh <CODE>: <message>`),完整内容在日志里。
+- 一轮结束进程就退出,没有要维护的后台守护进程。
+
+### 模型:没有 `--model`,靠 profile + `--patch`
+
+- DSH 没有 `--model` 参数。模型来自 profile 配置:`$DSH_HOME/profiles/<profile>/cordis.patch.yml` 里的 `agent-default-model` 行。
+- `/model` 在 DSH profile 上第一项是「跟随 DSH profile(当前 …)」,后面是该 profile **默认 provider** 声明的模型 id;没有 Effort 列(DSH 不接受强度),也不拉 10router combo。
+- 选一个具体模型时,桥接写一个 `--patch` 覆盖层,**整行替换** `agent-default-model`:provider 必须从 profile 一并重述,只写模型 id 会让这一轮路由不过去(报 `UNKNOWN_MODEL`)。覆盖层只写到 `$DSH_HOME/aiducat-model-patches/<模型>.yml`(文件名里的非字母数字字符会替换掉),**不修改 profile 文件**,同一个模型只写一次。
+- 自动刷新:桥接按 profile 文件的 mtime 重解析,所以在桌面增删模型或换默认模型后,下一次打开 `/model` 就能看到,不用重启服务。
+- 一个 profile 可以声明多个 provider,但覆盖层只能重述一个 —— 所以列表只给默认 provider 的模型;别的 provider 的模型通过 `--patch` 路由不过去。
+
+### 模型跟随桌面
+
+- DSH 硬禁止 CLI 运行名为 `desktop` 的 profile(`profile "desktop" is managed exclusively by the Electron application`),飞书和桌面 GUI 没法共用同一份 profile。
+- 于是桥接在**每轮运行前**、以及**打开 `/model` 前**,把 desktop profile 的 `agent-default-model` 与 `llm-pi-ai` 两个条目**镜像**进自己运行的 profile(`$DSH_HOME/profiles/<profile>/cordis.patch.yml`,文件头标着 `GENERATED by aiduCAT`)。desktop 文件**只读不写**,它始终是唯一的事实来源。
+- 只更新已有的 aiduCAT 托管补丁；不会创建缺失文件，也不会覆盖手写配置或跟随重定向。可用 /doctor 查看原因。
+- 效果:在桌面「设置 → 模型」里增删模型或换默认模型,飞书自动跟随。desktop 文件读不到、正被 GUI 半写、或里面没有模型声明时,这一轮沿用上一次的路由 —— 旧但能跑,好过起不来的轮次。
+- 只同步受支持的模型路由字段，不复制内联凭据或桌面 UI 插件。卡片只列当前默认 provider 下的模型。
+
+### 多轮会话
+
+- 每个飞书私聊 / 群 / 话题 / 文档评论一份会话;第一轮拿到 DSH 的 session id,之后每轮用 `--session-id <id>` 恢复,`/new` 开新会话。
+- 会话连续性依赖 `$DSH_HOME` 没被清理:清掉之后旧 id 不再可用,重新发一条消息就会开新会话。
+- `/resume` 在 DSH profile 上不列历史,回「DSH 会话由系统自动接管(--session-id),无需手动 resume。」;`/status` 显示当前 session id。
+
+### 权限与审批
+
+- aiduCAT 的访问级别(配置里的 `full` / `workspace` / `read-only`)换算成 DSH 的三个 preset `read-only` / `workspace-write` / `danger-full-access`,名字和 aiduCAT 内部的 sandbox 取值一致,一一对应。群聊仍封顶 `groupMaxAccess`(默认 `workspace`);评论、会议、team 模式一律封顶 `workspace`。
+- 取值不在三个之内时桥接直接丢掉,让这一轮用 profile 自己的默认 —— 因为 DSH 遇到未知 preset 会**中止**这一轮,而不是回退默认。
+- headless 没有实时审批通道,所以桥接轮次固定带 `--approval-policy never`:需要人工审批的调用会**失败**,而不是挂住等一个没人能点的按钮。要放开能力就提高 preset,别指望在飞书里点审批。
+
+### Windows 启动器
+
+- aiduCAT 自己找 DSH:`dsh.binaryPath` → `LARK_CHANNEL_DSH_BIN` → PATH 上的 `dsh` → **Desktop 安装**。找到 Desktop 版时它会用 `<安装目录>/DeepSeek Harness.exe --expose-internals <安装目录>/resources/app.asar/dsh/node_modules/@deepseek-ai/dsh-desktop-host/lib/cli.js` 启动,并带上 `ELECTRON_RUN_AS_NODE=1`(没有这个变量 Electron 会去开 GUI),不需要你手写 launcher。
+- 想钉住某个 build(或自建 launcher)时才写 `dsh.binaryPath`:写了的永远优先。手写 launcher 是单点故障 —— DSH 升级、换机器、换系统账户都会让它失效,报 `agent-binary-not-found`。
+- 因为直接子进程可能是 cmd / Electron 包装,`/stop` 先发 SIGTERM,过了宽限期(默认 5 秒)再用 `killProcessTree` 杀掉整棵进程树,避免残留进程继续占着工作目录。
+
+### 已知限制
+
+- 需要本机已装 DSH;没装时启动预检就会失败,报 `agent-binary-not-found`。
+- Desktop 版由 aiduCAT 自己找到、以 Electron-as-node 方式启动(冷启动要解包资源,预检超时放宽到 30 秒);CLI 不允许跑 `desktop` profile,模型跟随由镜像完成。
+- `--json` 事件流不带模型字段,卡片显示的模型名是「这一轮会用的那个」(profile 的 `agent-default-model`,或 `/model` 选的那个),不是 DSH 事后回报的。
+- 单块文本有 8 KiB 上限:被截断的块会丢掉,改用 `final.text` 的完整答案补上,所以超长回答仍然是完整的。
+- 模型清单来自 profile 自己的声明,aiduCAT 不内置 DSH 模型表;profile 没声明的模型这一轮跑不了。
+
+### 排障
+
+| 现象 / 错误码 | 原因 | 处理 |
+|---|---|---|
+| `agent-binary-not-found` | 没找到 `dsh` 可执行文件(路径写错、launcher 没了、服务环境的 PATH 里没有) | 检查 `dsh.binaryPath` / `LARK_CHANNEL_DSH_BIN` 指向真实文件,并确认服务环境能跑通同一路径 |
+| 想知道 DSH 装在哪、用的哪份 profile、模型从哪来 | —— | `/doctor` 会打印 dsh 二进制和它的来源(`config` / `env` / `path` / `desktop-app`)、argv 前缀、`--version` 探测、profile、模型与 provider,以及模型路由是否还跟桌面同步 |
+| `MISSING_CREDENTIAL` | profile 里 `agent-default-model` 那条 provider 路由缺凭据(对应的 key 没进服务环境) | 把该 provider 要的凭据放进服务环境并重启服务;注意只有 `AIDU_API_KEY` 和 `agentEnv.passthrough` 放行的变量会透传 |
+| `UNKNOWN_MODEL` | 这一轮要跑的模型 id 不是被重述的那个 provider 提供的(常见于 `--patch` 覆盖层里的模型来自另一个 provider) | 回 `/model` 选列表里的模型,或在桌面把该模型加到默认 provider 名下 |
+| `deepseek-official` 路由错误 | profile 的 `agent-default-model` 指向 `deepseek-official`,但这条路由在这一侧走不通(缺凭据、端点不可达,或模型 id 不属于它) | 给这条路由补上凭据;或把默认模型换成 profile 里已经配好的 provider;或用 `/model` 选默认 provider 的模型 |
+| `/model` 列表为空 | 桥接读不到 `$DSH_HOME/profiles/<profile>/cordis.patch.yml`(`DSH_HOME` 没给服务、profile 名不对) | 在服务环境里设好 `DSH_HOME`,确认 profile 目录存在后重启 |
+| `dsh exited with code N` | DSH 自己非 0 退出 | 按卡片上的摘要先在终端用同样参数手跑一遍;完整 stderr 在 aiduCAT 日志里 |
 
 ## 常用命令
 
@@ -207,8 +308,15 @@ Thinking…                                            ← 运行中面板正上
 - **空跑**（agent 什么都没产出就退出）：直接显示红色报错卡和原因，提示重发
 - **超长 / 被拒**：正文超 25KB 时，第 1 张卡显示到预算边界（在段落、代码块、表格边界切开，末尾「…（未完，见下一张卡）」），其余按顺序发「续 2/N」「续 3/N」卡片，markdown 正常渲染、每张 <30KB、内容不重复；超大代码块按行切开并重新开合代码围栏，超大表格按行切开并重复表头；只有续卡被飞书拒收时，该张起的剩余部分才改发一次纯文本。飞书拒收卡片时先用严格卡（无图片链接、正文 12KB）重试，再不行发纯文本，最后发一句「卡片发送失败」
 
-## 更新日志（f0.5+）
+## 更新日志(f0.5++)
 
+### f0.5++
+
+- **DeepSeek Harness 成为第四种 agent**：`aiduCAT profile create <名字> --agent dsh`，和 Claude Code / Codex / Hermes 并列；DSH 自己找安装（Desktop 版也行，不用手写 launcher），`/model` 通过 `--patch` 覆盖层切模型，模型清单和默认模型跟着桌面走
+- **连续失败会主动告诉你**：服务 Running、WebSocket 连着也可能每一轮都失败；连续 3 轮 DSH 失败私信 owner 一次，之后进入冷却不再刷屏
+- `/doctor` 会打印 DSH 二进制来源、版本、profile，以及模型路由是否还和桌面同步；Windows 进 CI
+
+### f0.5+
 - **插话**：Claude Code 干活时同一个人再发消息，不用等它跑完——它在下一步读到，接着手上的活往下干，不重来；原卡收尾「↪️Steered」，后面的进展写进新消息的卡片
 - 嘟嘟不再「响应后撤回」（后台任务通知产生的空结果不再当成本轮结束）；进行中的状态词前面不再带符号
 
@@ -253,7 +361,7 @@ Thinking…                                            ← 运行中面板正上
 
 - 每个私聊 / 群 / 话题 / 文档评论独立会话
 - 快速连发的消息自动合并处理；运行中再来的消息进入队列，等这轮跑完作为下一轮输入
-- **插话**（Claude Code 卡片模式）：运行中同一个人再发消息，直接交给正在跑的 Claude Code，它在下一步读到并接着干，不重来；原卡收尾为「↪️Steered」，后面的进展写进新消息的卡片。别人的消息、Codex / Hermes 照旧排队
+- **插话**（Claude Code 卡片模式）：运行中同一个人再发消息，直接交给正在跑的 Claude Code，它在下一步读到并接着干，不重来；原卡收尾为「↪️Steered」，后面的进展写进新消息的卡片。别人的消息、Codex / Hermes / DSH 照旧排队
 - 会话历史本地持久化，`/resume` 恢复
 
 ## 运行时说明
@@ -266,6 +374,7 @@ Thinking…                                            ← 运行中面板正上
 aiduCAT profile create claude --agent claude
 aiduCAT profile create codex --agent codex
 aiduCAT profile create hermes --agent hermes
+aiduCAT profile create dsh --agent dsh
 aiduCAT profile list
 aiduCAT profile use <name>
 aiduCAT profile remove <name>            # 归档本地状态
@@ -376,17 +485,17 @@ export ANTHROPIC_API_KEY="sk-ant-..."
 | 能力 | 10router 用户 | 你的网关 |
 |------|--------------|----------|
 | `/model` 的 Model 下拉 | 自动拉 10router **策展 combo**（`/api/combos`，需管理 token） | 拉 `<baseUrl>/v1/models` 或用 `models` 静态清单 |
-| 工具图标 | 有（Claude Code / Codex / Hermes） | 需自行上传一次 img_key（见下节），不传则面板头无图标，不影响对话
+| 工具图标 | 有（Claude Code / Codex / Hermes / DSH） | 需自行上传一次 img_key（见下节），不传则面板头无图标，不影响对话
 
 **合规提醒**：接任何第三方网关/免费池前，先确认其服务条款允许程序化调用；aiduCAT 不做也不支持绕过上游风控的接入。
 
 ### 工具图标（面板头图标）
 
-面板头最左侧显示当前 profile 的编程工具图标（`agentKind`：claude → Claude Code、codex → Codex、hermes → Hermes Agent），与模型无关，展开面板时不翻转；拿不到图标时右侧显示折叠箭头。飞书卡片 `custom_icon` 只认**本租户**上传图片的 `img_key`，外部 URL 会被飞书拒绝，因此仓库里的 `assets/lark-logo-keys.json` 只对上传过它们的那套飞书环境有效——**外部部署者需要自行上传一次并替换 key**：
+面板头最左侧显示当前 profile 的编程工具图标（`agentKind`：claude → Claude Code、codex → Codex、hermes → Hermes Agent、dsh → DeepSeek Harness），与模型无关，展开面板时不翻转；拿不到图标时右侧显示折叠箭头。飞书卡片 `custom_icon` 只认**本租户**上传图片的 `img_key`，外部 URL 会被飞书拒绝，因此仓库里的 `assets/lark-logo-keys.json` 只对上传过它们的那套飞书环境有效——**外部部署者需要自行上传一次并替换 key**：
 
-1. 准备 3 张 128px PNG（图标源：[lobehub icons-static-png](https://github.com/lobehub/lobe-icons) 的 `claudecode-color`、`codex-color`、`hermesagent`）。
+1. 准备 4 张 128px PNG（图标源：[lobehub icons-static-png](https://github.com/lobehub/lobe-icons) 的 `claudecode-color`、`codex-color`、`hermesagent`,DSH 用你自己的 DeepSeek Harness 图标）。
 2. 用你的飞书应用凭证逐张调 `POST /open-apis/im/v1/images`（`image_type=message`）拿到 `img_key`。可用任意脚本/Postman 循环上传。
-3. 把 key 写进 `assets/lark-logo-keys.json` 的 `claudecode`、`codex`、`hermes` 三个键，重新 `pnpm build`。
+3. 把 key 写进 `assets/lark-logo-keys.json` 的 `claudecode`、`codex`、`hermes`、`dsh` 四个键，重新 `pnpm build`。
 4. 没有上传时功能自动降级：面板头不显示图标，不影响任何主功能。
 
 ### 工作目录与工作区
@@ -415,7 +524,7 @@ export ANTHROPIC_API_KEY="sk-ant-..."
 ```
 
 - 群聊运行封顶 `groupMaxAccess`（默认 `workspace`）；评论、会议、team 模式一律封顶 `workspace`；私聊不封顶。值可选 `full` / `workspace` / `read-only`。旧版 `sandbox` 配置键已不再读取（legacy `sandbox` keys are ignored）。
-- agent 子进程的环境变量是白名单：PATH/HOME/LANG/LC_*/代理/证书，Claude 另给 `ANTHROPIC_*`/`CLAUDE_*`，Codex 另给 `OPENAI_*`/`CODEX_*`，Hermes 不额外给（它用自己 `~/.hermes/.env` 里的模型配置，只透传 `HERMES_HOME`）。服务环境里其他变量（如 `AIDU_10ROUTER_URL`、`SSH_AUTH_SOCK`）要在 `agentEnv.passthrough` 里显式放行。
+- agent 子进程的环境变量是白名单：PATH/HOME/LANG/LC_*/代理/证书，Claude 另给 `ANTHROPIC_*`/`CLAUDE_*`，Codex 另给 `OPENAI_*`/`CODEX_*`，Hermes 不额外给（它用自己 `~/.hermes/.env` 里的模型配置，只透传 `HERMES_HOME`）。服务环境里其他变量（如 `AIDU_10ROUTER_URL`、`SSH_AUTH_SOCK`）要在 `agentEnv.passthrough` 里显式放行。DSH 另给 `DSH_HOME` 和 `AIDU_API_KEY`。
 - 群里默认不显示工具调用，`preferences.showToolCallsInGroups: true` 可打开。
 - 超时：`preferences.runIdleTimeoutMinutes`（默认 15 分钟无输出即停）、`preferences.runToolTimeoutMinutes`（单个工具默认最长 30 分钟）。重启后 10 分钟内的排队消息会自动重放，更早的回一句「请重发」；在途卡片标「服务重启，请重发」。
 - 优雅重启：收到停止信号后不接新轮次，先等在途轮次跑完，最多 `preferences.shutdownDrainMinutes` 分钟（默认 10，`0` = 立即停）；期间新消息记下，重启后自动处理。被打断的轮次若 10 分钟内重启完成，会在同一会话里自动发一次「（服务重启，接着刚才的继续）」，只续一次。systemd 单元需要 `KillMode=mixed` 和 `TimeoutStopSec=660`（`aiduCAT start` 安装的单元已自带，手写的要自己加）。

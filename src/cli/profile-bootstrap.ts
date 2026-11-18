@@ -31,6 +31,10 @@ export async function createBootstrapProfileConfig(
       : undefined;
   const hermes =
     input.agentKind === 'hermes' ? await createBootstrapHermesConfig(undefined) : undefined;
+  const dsh =
+    input.agentKind === 'dsh'
+      ? { binaryPath: process.env.LARK_CHANNEL_DSH_BIN ?? 'dsh' }
+      : undefined;
   const profile = createDefaultProfileConfig({
     agentKind: input.agentKind,
     accounts: input.accounts,
@@ -38,6 +42,7 @@ export async function createBootstrapProfileConfig(
     secrets: input.secrets,
     ...(codex ? { codex } : {}),
     ...(hermes ? { hermes } : {}),
+    ...(dsh ? { dsh } : {}),
   });
   if (workspace) {
     profile.workspaces = {

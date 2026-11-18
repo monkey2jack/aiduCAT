@@ -214,7 +214,7 @@ function normalizeEntry(input: unknown): SessionCatalogEntry | undefined {
   if (
     typeof raw.key !== 'string' ||
     typeof raw.scopeId !== 'string' ||
-    (raw.agentId !== 'claude' && raw.agentId !== 'codex' && raw.agentId !== 'hermes') ||
+    (raw.agentId !== 'claude' && raw.agentId !== 'codex' && raw.agentId !== 'hermes' && raw.agentId !== 'dsh') ||
     typeof raw.cwdRealpath !== 'string' ||
     typeof raw.policyFingerprint !== 'string' ||
     (raw.status !== 'active' && raw.status !== 'archived') ||
@@ -247,7 +247,7 @@ function matchesIdentity(entry: SessionCatalogEntry, input: SessionCatalogIdenti
 }
 
 // Both checks below delegate to `usesSessionId`, the single source of truth for
-// "resumed by a session id, not a Codex thread". Before f0.6 they each listed
+// "resumed by a session id, not a Codex thread". Before f0.5++ they each listed
 // the agents inline; that is exactly how DSH was dropped from the write path
 // while the read path was fixed, so keep them derived rather than enumerated.
 function isValidAgentEntry(entry: SessionCatalogEntry): boolean {

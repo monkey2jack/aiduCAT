@@ -1,7 +1,7 @@
 import type { AgentEvent } from '../types';
 
 /**
- * f0.6+: DSH (DeepSeek Harness) `headless --json` → aiduCAT agent events.
+ * f0.5++: DSH (DeepSeek Harness) `headless --json` → aiduCAT agent events.
  *
  * Protocol (DeepSeek Harness 0.2.2-rc.3, one JSON object per stdout line;
  * authoritative source: `@deepseek-ai/dsh-headless/src/json-stream.ts`):

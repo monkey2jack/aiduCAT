@@ -71,6 +71,10 @@ export interface RunPolicyAllow {
   permissionMode: ClaudePermissionMode;
   access: AccessDecision;
   attachments: AgentAttachment[];
+  /** f0.5++: the originating IM chat type ('p2p' | 'group' | …); undefined
+   *  for non-IM runs. The DSH adapter uses p2p to decide whether the private
+   *  patch rides along — fail-closed: missing means not private. */
+  chatType?: string;
   policyFingerprint: string;
   expiresAt: number;
 }
@@ -148,6 +152,7 @@ export function evaluateRunPolicy(input: RunPolicyInput): RunPolicyResult {
     permissionMode,
     access: input.access,
     attachments: input.attachments,
+    chatType: input.scope.chatType,
     expiresAt: input.now + (input.ttlMs ?? DEFAULT_TTL_MS),
     policyFingerprint: policyFingerprint({
       cwdRealpath: input.cwdRealpath,

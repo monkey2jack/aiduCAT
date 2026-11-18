@@ -4,6 +4,22 @@ aiduCAT 的版本号用 `f` 前缀（f0.1、f0.2+ …），`package.json` 里是
 
 > **tag 说明**：`f0.2++` 原先误指 `6fa62f8`（package 0.2.1），**已于 2026-10-31 修正**为真实发布提交 `c7ff90d`（0.2.2）。`f0.2+`、`v0.2.1` 核实后保持 `6fa62f8`：f0.2+ 的 GitHub Release 于 2026-10-20 01:17 从 main 发布，当时 main 的头部就是 `6fa62f8`（package 0.2.1）；版本号提交 `f01fcd2` 与它只差文档和一个测试，没有代码差别。
 
+## f0.5++ — 2026-11-18(package 0.5.2)
+
+基于 f0.5+(`cf48c4c`)。主题:**第四种 agent,DeepSeek Harness**——aiduCAT 现在能驱动 DSH,和 Claude Code / Codex / Hermes 并列;并且 DSH 这一路做到「飞书跟着桌面走」,而不是自成一套。
+
+- **新增 `agentKind: 'dsh'`(DeepSeek Harness)**:一轮 = 一个 `dsh --profile <p> --json -`,任务走 stdin(`-` 必须是唯一位置参数),NDJSON 事件(session/status/text/thinking/tool_call/tool_result/error/final/step_end)映射成卡片上的思考段、工具行和答案;成功判定要求**退出码 0 且 `final.reason.kind = "completed"`**,缺一不可。`/stop` 在 Windows 上先 SIGTERM,宽限期后杀整棵进程树。
+- **DSH 自己找安装,不再依赖手写 launcher**:`dsh.binaryPath` → `LARK_CHANNEL_DSH_BIN` → PATH 上的 `dsh` → **Desktop 安装**(`DeepSeek Harness.exe --expose-internals <cli.js>` + `ELECTRON_RUN_AS_NODE=1`)。`app.asar` 是文件,普通 fs 看不进去,所以探测校验归档本身而不是里面的 cli.js。旧的手写 `dsh-launcher.cmd` 因此从「唯一命脉」降级为「可选覆盖」。
+- **模型:没有 `--model`,靠 profile + `--patch`**:DSH 的模型来自 profile 的 `agent-default-model`;`/model` 选具体模型时写一个 `--patch` 覆盖层整行替换该配置(provider 必须一并重述),只写到 `$DSH_HOME/aiducat-model-patches/`,**不改 profile 文件**;列表只给**默认 provider** 的模型(别的 provider 的 id 过不了 `--patch`,会 `UNKNOWN_MODEL`),并按 profile 的 mtime 自动刷新。
+- **模型跟随桌面**:DSH 硬禁止 CLI 运行 `desktop` profile(`managed exclusively by the Electron application`),于是桥接在每轮前、以及打开 `/model` 前,把 desktop 的 `agent-default-model` 与 `llm-pi-ai` 两个条目**镜像**进自己运行的 profile;desktop 只读。桌面「设置 → 模型」里增删模型或换默认模型,飞书自动跟上。源不可读/半写/无模型行时沿用上一次路由(旧但能跑)。桌面 patch 里混入 aiduCAT 不镜像的顶层指令块(如 11-18 给 aiduMEI 记忆加的 MCP `insert:`)时整块跳过——包括块内缩进的 `- id:` 行——不再误判整份文件无效把模型列表冻住。
+- **`/doctor` 说清 DSH 的三件事**:二进制从哪来(`config` / `env` / `path` / `desktop-app`)、argv 前缀、`--version`;当前 profile 与「模型 + provider + 声明数量」;模型路由是否还和桌面同步(镜像遇到自定义配置时保留原文件并报告原因)。
+- **DSH 私聊故障提醒**：同一桥接实例连续三次失败时私信 owner，受冷却限制；不发送原始错误或聊天标识，不影响其他 agent。
+- **私聊真身（p2p private patch）**:`dsh.privatePatch` 指定的静态覆盖层只随**私聊（p2p）轮次**下发——私聊 monkey 带上桌面同款工具(如 aiduMEI 记忆 MCP,真假猴王就此合并),群聊/话题/非 IM 轮次一律不带,私人工具在工具层与群隔离;与 /model 覆盖层同用时合并为单个 `--patch`,文件缺失软失败不挡聊天。
+- **多轮会话**:`--session-id` 恢复,`/new` 开新会话;`/resume` 在 DSH profile 上回「由系统自动接管」。
+- **权限映射**:aiduCAT 的 `full` / `workspace` / `read-only` 对应 DSH 三个 preset;未知值直接丢弃(DSH 遇到未知 preset 会中止整轮,而不是回退默认);headless 无审批通道,固定 `--approval-policy never`。
+- 配置:`dsh.binaryPath`(仅用于钉版本)、`dsh.profile`(默认 `headless`);`dsh.modelLabel` **已废弃**(模型从 profile 读)。文档:README 三语各补一节,含排障表(`agent-binary-not-found` / `MISSING_CREDENTIAL` / `UNKNOWN_MODEL` / `deepseek-official`)。
+- **Windows CI**：运行 DSH 专项回归、类型检查和构建；macOS/Linux 保留全量测试。
+
 ## f0.5+ — 2026-11-10（package 0.5.1）
 
 ### f0.5+ 之后的修复

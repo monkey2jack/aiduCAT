@@ -1,6 +1,6 @@
 import { spawnProcess } from '../platform/spawn';
 
-export type LocalAgentId = 'claude' | 'codex' | 'hermes';
+export type LocalAgentId = 'claude' | 'codex' | 'hermes' | 'dsh';
 
 export type AgentPreflightErrorCode =
   | 'agent-binary-not-found'
@@ -44,6 +44,12 @@ export interface CheckAgentVersionInput {
   realpath?: string;
   args?: readonly string[];
   timeoutMs?: number;
+  /**
+   * Extra environment for the probe itself. Only the DSH Desktop launch needs
+   * this (`ELECTRON_RUN_AS_NODE=1` — without it the Electron binary starts its
+   * GUI instead of answering `--version`).
+   */
+  env?: NodeJS.ProcessEnv;
 }
 
 export class AgentPreflightError extends Error {
@@ -101,6 +107,7 @@ export async function checkAgentVersion(input: CheckAgentVersionInput): Promise<
       try {
         return spawnProcess(executable, [...args], {
           stdio: ['ignore', 'pipe', 'pipe'],
+          ...(input.env ? { env: { ...process.env, ...input.env } } : {}),
         });
       } catch (err) {
         finish(() =>
@@ -279,7 +286,7 @@ export function isAgentPreflightDiagnostic(input: unknown): input is AgentPrefli
   return (
     typeof raw.code === 'string' &&
     raw.code.startsWith('agent-') &&
-    (raw.agentId === 'claude' || raw.agentId === 'codex' || raw.agentId === 'hermes') &&
+    (raw.agentId === 'claude' || raw.agentId === 'codex' || raw.agentId === 'hermes' || raw.agentId === 'dsh') &&
     typeof raw.agentName === 'string' &&
     typeof raw.command === 'string'
   );

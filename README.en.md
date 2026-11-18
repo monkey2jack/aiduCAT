@@ -10,9 +10,9 @@
 >
 > **Ask on top, process folded into one small panel, the result told by the panel's color.**
 >
-> Dress your Claude Code / Codex CLI / Hermes Agent in a Bubble-Wave Feishu card: deep-blue veins on paper white, one cat, zero noise.
+> Dress your Claude Code / Codex CLI / Hermes Agent / DSH (DeepSeek Harness) in a Bubble-Wave Feishu card: deep-blue veins on paper white, one cat, zero noise.
 
-[![Version](https://img.shields.io/badge/version-f0.5%2B-blue.svg)](https://github.com/monkey2jack/aiduCAT)
+[![Version](https://img.shields.io/badge/version-f0.5%2B%2B-blue.svg)](https://github.com/monkey2jack/aiduCAT)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Node 20+](https://img.shields.io/badge/node-20.12%2B-brightgreen.svg)](https://nodejs.org/)
 [![Claude Code](https://img.shields.io/badge/agent-Claude%20Code%20%7C%20Codex%20%7C%20Hermes-orange.svg)](https://docs.anthropic.com/en/docs/claude-code/quickstart)
@@ -27,16 +27,16 @@
 
 ## What is aiduCAT?
 
-**aiduCAT☤爱嘟妙咪飞** — **Coding Agent Texting** — is a Feishu cat for **Claude Code / Codex CLI / Hermes Agent** (one per profile; Hermes since f0.4+): it streams your local coding agent's thinking, tool calls and final answer into a single Feishu card styled after [aiduPOP](https://github.com/monkey2jack/aiduPOP)'s Bubble Wave.
+**aiduCAT☤爱嘟妙咪飞** — **Coding Agent Texting** — is a Feishu cat for **Claude Code / Codex CLI / Hermes Agent / DSH (DeepSeek Harness)** (one per profile; Hermes since f0.4+, DSH since f0.5++): it streams your local coding agent's thinking, tool calls and final answer into a single Feishu card styled after [aiduPOP](https://github.com/monkey2jack/aiduPOP)'s Bubble Wave.
 
 aiduCAT originates from and credits the upstream [zarazhangrui/lark-coding-agent-bridge](https://github.com/zarazhangrui/lark-coding-agent-bridge) (npm package `lark-channel-bridge`), an MIT-licensed project. On top of that code, aiduCAT adds a complete **Bubble Wave transformation**:
 
 | Feature | What it does |
 |------|------|
-| 🤖 **Three agents, pick one** (f0.4+) | Each profile runs Claude Code, Codex CLI or Hermes Agent with the same cards, commands and allowlists; see "Hermes Agent" below |
+| 🤖 **Four agents, pick one** (Hermes f0.4+, DSH f0.5++) | Each profile runs Claude Code, Codex CLI, Hermes Agent or DSH (DeepSeek Harness) with the same cards, commands and allowlists; see "Hermes Agent" and "DSH (DeepSeek Harness)" below |
 | 🫧 **Single Bubble-Wave panel** | The answer streams on top; thinking and every tool call fold into one collapsible panel (aiduPOP layout) |
 | 💭 **Counter header** | Panel header: `model · 💭 thinking segments · 🛠️ tools · ⏱️ elapsed`; while running a status line sits flush-left right above the panel (aiduCATing / Thinking / Running, followed by loading dots), gone on completion |
-| 🏷 **Agent icon** | The panel header shows the profile's coding agent (Claude Code / Codex / Hermes Agent), not the model vendor; the model id follows the icon |
+| 🏷 **Agent icon** | The panel header shows the profile's coding agent (Claude Code / Codex / Hermes Agent / DSH), not the model vendor; the model id follows the icon |
 | 🔌 **Multi-provider** | `/model` card with Provider → Model → Effort dropdowns; provider keys resolve from env/secret refs, never plaintext; takes effect next turn without restart; 10router gateways only offer curated combos |
 | 🗜️ **Window-based auto-compact** | Compacts at 60% of the model window (`AIDUCAT_COMPACT_PCT`); the window comes from the 10router combo (when `/api/combos` carries a window field) or the provider's `contextWindow`; when neither has one aiduCAT sets nothing and Claude Code keeps `CLAUDE_CODE_MAX_CONTEXT_TOKENS` / `CLAUDE_CODE_AUTO_COMPACT_WINDOW` from its own `settings.json` (since f0.3.4 the full 10router `/v1/models` list is never pulled) |
 | 🚦 **Border = status** | done green / stopped yellow / error red / running grey — no trailing notes |
@@ -46,7 +46,7 @@ aiduCAT originates from and credits the upstream [zarazhangrui/lark-coding-agent
 
 ## Quick start (from scratch)
 
-Prerequisites: Node.js >= 20.12.0, and a working [Claude Code](https://docs.anthropic.com/en/docs/claude-code/quickstart) (or [Codex CLI](https://developers.openai.com/codex/cli), or [Hermes Agent](https://github.com/NousResearch/hermes-agent) — see "Hermes Agent" below) whose model gateway is already configured in its env or `~/.claude/settings.json` (e.g. `ANTHROPIC_BASE_URL` / `ANTHROPIC_API_KEY`).
+Prerequisites: Node.js >= 20.12.0, and a working [Claude Code](https://docs.anthropic.com/en/docs/claude-code/quickstart) (or [Codex CLI](https://developers.openai.com/codex/cli), or [Hermes Agent](https://github.com/NousResearch/hermes-agent) — see "Hermes Agent" and "DSH (DeepSeek Harness)" below) whose model gateway is already configured in its env or `~/.claude/settings.json` (e.g. `ANTHROPIC_BASE_URL` / `ANTHROPIC_API_KEY`).
 
 ```bash
 git clone https://github.com/monkey2jack/aiduCAT.git
@@ -72,7 +72,7 @@ Optional environment variables (in the bot's service environment):
 
 ## Hermes Agent (f0.4+)
 
-aiduCAT now drives three agents, **one per profile**: Claude Code, Codex CLI or [Hermes Agent](https://github.com/NousResearch/hermes-agent). Cards, slash commands, allowlists and group rules are the same; only the agent doing the work changes. One machine can run several profiles, each on its own Feishu bot.
+aiduCAT now drives four agents, **one per profile**: Claude Code, Codex CLI, [Hermes Agent](https://github.com/NousResearch/hermes-agent) or DSH (DeepSeek Harness). Cards, slash commands, allowlists and group rules are the same; only the agent doing the work changes. One machine can run several profiles, each on its own Feishu bot.
 
 ### Setup
 
@@ -140,7 +140,108 @@ There are two ways to put Hermes in Feishu:
 
 ### "Agent gateway" and "model gateway" are different things
 
-In aiduCAT, Claude Code, Codex and Hermes go through **no agent gateway**: aiduCAT starts their CLIs directly (Hermes 0.22's client then talks to its local background process, which is internal to Hermes). A **model gateway** such as [10router](https://github.com/techysy/10router) is another layer: it sits behind the agent and forwards model requests to model providers. Claude Code reaches it through `ANTHROPIC_BASE_URL`, Hermes through the model endpoint in its own `config.yaml`; whether and which one you use has nothing to do with aiduCAT.
+In aiduCAT, Claude Code, Codex, Hermes and DSH go through **no agent gateway**: aiduCAT starts their CLIs directly (Hermes 0.22's client then talks to its local background process, which is internal to Hermes). A **model gateway** such as [10router](https://github.com/techysy/10router) is another layer: it sits behind the agent and forwards model requests to model providers. Claude Code reaches it through `ANTHROPIC_BASE_URL`, Hermes through the model endpoint in its own `config.yaml`; whether and which one you use has nothing to do with aiduCAT.
+
+## DSH (DeepSeek Harness), f0.5++
+
+aiduCAT drives four agents, **one per profile**: Claude Code, Codex CLI, [Hermes Agent](https://github.com/NousResearch/hermes-agent) and **DSH (DeepSeek Harness)**. Cards, slash commands, allowlists and group rules are the same; only the agent doing the work changes. One machine can run several profiles, each on its own Feishu bot. A DSH profile starts one `dsh` client per turn — no resident background process (unlike Hermes).
+
+### Setup
+
+1. Install DSH and check it can run a turn in a terminal (the task rides on stdin, so `-` must be the only positional argument):
+
+```bash
+echo "hello" | dsh --profile headless --json -
+```
+
+2. Create a DSH profile and start it:
+
+```bash
+aiduCAT profile create dsh --agent dsh   # records a default dsh; the install is discovered at run time
+aiduCAT start --profile dsh              # background service; foreground: node bin/lark-channel-bridge.mjs run --profile dsh
+```
+
+3. Optional settings (`profiles.<name>.dsh` in `~/.aiducat/config.json`):
+
+```json
+{
+  "dsh": {
+    "binaryPath": "C:\\tools\\dsh.cmd",
+    "profile": "headless"
+  }
+}
+```
+
+- `binaryPath`: optional in practice — set it only to **pin a specific build** (or to use your own launcher). When it is missing or no longer resolves, aiduCAT probes `LARK_CHANNEL_DSH_BIN`, then `dsh` on PATH, then finds the Desktop install and launches it the way it needs (see "Windows launcher" below).
+- `profile`: which DSH profile aiduCAT runs (`dsh --profile <name>`); default `headless`. DSH keeps profiles under `$DSH_HOME/profiles/<name>`.
+- `modelLabel`:**deprecated**, kept for older configs. The bridge now reads the profile's own `agent-default-model` (and mirrors the desktop routing) for the name on the card; a hand-written label keeps showing a stale model after you change it on the desktop, so do not set it on new configs.
+- Environment: besides `LARK_CHANNEL_DSH_BIN`, give the service a real `DSH_HOME` (DSH's own data dir) — the bridge uses it to read the profile, mirror the desktop model routing and write the `/model` `--patch` overlay; without it those steps are skipped (log only) and `/model` switches do nothing. A profile whose aidu provider route reads `AIDU_API_KEY` gets that variable passed through; `DSH_*`, vendor prefixes (`ANTHROPIC_` / `OPENAI_` / `CODEX_` / `CLAUDE_` / `DEEPSEEK_`) and any name containing `KEY` / `TOKEN` / `SECRET` / `PASS` are never passed (so provider keys configured for Claude Code in `/model` cannot leak into DSH).
+- There is no `features.dsh` switch (unlike `features.codex` / `features.hermes`).
+
+### How a turn runs
+
+```text
+dsh --profile <profile> --json [--patch <abs.yml>] [--permission-mode <preset>] [--approval-policy never] [--session-id <id>] -
+```
+
+- The task rides on **stdin** (`-`, the only positional argument); message text is never argv- or shell-interpreted.
+- `--json` turns stdout into newline-delimited events: `session` / `status` / `text` / `thinking` / `tool_call` / `tool_result` / `error` / `final` / `step_end`; the bridge maps them onto the card's thinking segments, tool rows and answer.
+- Success requires the exit code `0` **and** `final.reason.kind === "completed"` — neither alone is enough, and trusting one alone reports an aborted run as a success. On failure the card shows DSH's error code and message (`dsh <CODE>: <message>`); the full text is in the log.
+- The process exits when the turn ends; nothing stays resident.
+
+### Models: no `--model`, the profile plus `--patch`
+
+- DSH has no `--model` flag. The model is the `agent-default-model` row in `$DSH_HOME/profiles/<profile>/cordis.patch.yml`.
+- On a DSH profile `/model` lists "follow the DSH profile (currently …)" first, then the model ids declared by the profile's **default provider**; there is no Effort column (DSH takes no reasoning effort) and no 10router combo lookup.
+- Picking a concrete model writes a `--patch` overlay that **replaces that whole row**: the provider has to be restated from the profile, since a bare model id would not route and comes back `UNKNOWN_MODEL`. The overlay goes only to `$DSH_HOME/aiducat-model-patches/<model>.yml` (characters outside `A-Za-z0-9._-` are replaced), profile files are never modified, and it is written once per model id.
+- Auto-refresh: the bridge stats and re-parses the profile file, so adding/removing a model or changing the default on the desktop shows up the next time `/model` is opened, with no service restart.
+- A profile may declare several providers, but the overlay can restate only one, so the picker lists the default provider's models alone; another provider's ids cannot be routed by `--patch`.
+
+### Model follows the desktop
+
+- DSH refuses to run a profile named `desktop` from a CLI (`profile "desktop" is managed exclusively by the Electron application`), so Feishu and the GUI cannot share one profile object.
+- Before **every turn** and before **opening `/model`**, the bridge mirrors the desktop profile's `agent-default-model` and `llm-pi-ai` entries into the profile it runs (`$DSH_HOME/profiles/<profile>/cordis.patch.yml`, headed `GENERATED by aiduCAT`). The desktop file is **read-only** and stays the single source of truth.
+- Only an existing aiduCAT-managed run patch is eligible. Missing, redirected, or hand-customized targets are not created or overwritten; `/doctor` reports the reason.
+- So adding/removing models or changing the default model on the desktop (Settings → Models) is followed automatically. An unreadable, half-written (the GUI rewrites the file) or model-less source leaves the previous routing in place: a stale-but-working model beats a turn that cannot start.
+- Only supported routing fields in those entries travel, including model catalogs and environment variable references, not inline credentials or desktop UI plugins. The picker lists the selected provider only.
+
+### Multi-turn sessions
+
+- Each Feishu DM / group / topic / doc comment keeps one session; the first turn returns DSH's session id and every later turn resumes it with `--session-id <id>`; `/new` starts a fresh one.
+- Continuity depends on `$DSH_HOME` not being cleaned: once it is, old ids are gone — send a new message to start over.
+- `/resume` does not list DSH history; it replies "DSH 会话由系统自动接管(--session-id),无需手动 resume。". `/status` shows the current session id.
+
+### Permissions and approvals
+
+- aiduCAT's access levels (`full` / `workspace` / `read-only` in the config) map onto DSH's three presets `read-only` / `workspace-write` / `danger-full-access`, the same names as aiduCAT's internal sandbox values, one to one. Groups stay capped by `groupMaxAccess` (default `workspace`); comment, meeting and team-mode runs are always capped at `workspace`.
+- A value outside the three is dropped so the turn keeps the profile default — DSH **aborts** a run on an unknown preset instead of falling back.
+- Headless has no live approval channel, so a bridged turn always passes `--approval-policy never`: a call that needs human approval **fails** instead of parking forever. Raise the preset to grant more, rather than waiting for an approval nobody can click.
+
+### Windows launcher
+
+- aiduCAT finds DSH on its own: `dsh.binaryPath` → `LARK_CHANNEL_DSH_BIN` → `dsh` on PATH → the **Desktop install**. For the Desktop build it runs `<install>/DeepSeek Harness.exe --expose-internals <install>/resources/app.asar/dsh/node_modules/@deepseek-ai/dsh-desktop-host/lib/cli.js` with `ELECTRON_RUN_AS_NODE=1` (without that variable Electron starts the GUI), so no hand-written launcher is needed.
+- Set `dsh.binaryPath` only to pin a specific build (or to use your own launcher): a configured value always wins. A hand-written launcher is a single point of failure — a DSH upgrade, another machine or another OS account breaks it with `agent-binary-not-found`.
+- Because the direct child can be the cmd / Electron wrapper, `/stop` sends SIGTERM first and, after the grace period (5 seconds by default), kills the whole process tree with `killProcessTree`, so no orphaned process keeps holding the workspace.
+
+### Known limitations
+
+- DSH must be installed locally; without it the startup preflight fails with `agent-binary-not-found`.
+- The Desktop build is found and started automatically in Electron-as-node mode (its cold start unpacks assets, so the preflight timeout is relaxed to 30 seconds); the CLI never runs the `desktop` profile, and the mirror is how Feishu follows it.
+- The `--json` stream carries no model field, so the card shows the model "this turn will use" (the profile's `agent-default-model`, or the `/model` pick) rather than a model DSH reports back.
+- Every non-terminal string is capped at 8 KiB; a capped block is dropped and the lossless `final.text` supplies the whole answer, so long answers stay complete.
+- The model list comes from the profile's own declaration; aiduCAT ships no DSH model table, so a model the profile does not declare cannot run.
+
+### Troubleshooting
+
+| Symptom / code | Cause | Fix |
+|---|---|---|
+| `agent-binary-not-found` | no `dsh` executable found (wrong path, launcher deleted, PATH missing in the service env) | check that `dsh.binaryPath` / `LARK_CHANNEL_DSH_BIN` points at a real file and that the service environment can run it |
+| want to see where DSH lives, which profile it runs, where the model comes from | — | `/doctor` prints the dsh binary and how it was found (`config` / `env` / `path` / `desktop-app`), the argv prefix, the `--version` probe, the profile, the model and provider, and whether the model routing still mirrors the desktop |
+| `MISSING_CREDENTIAL` | the provider route named by the profile's `agent-default-model` has no credential (its key never reached the service env) | put the credential that provider needs into the service environment and restart; only `AIDU_API_KEY` and `agentEnv.passthrough` names are forwarded |
+| `UNKNOWN_MODEL` | the id this turn will run is not served by the provider that got restated (typically a `--patch` overlay whose model belongs to another provider) | pick a model from `/model`, or add that model to the default provider on the desktop |
+| `deepseek-official` route error | the profile's `agent-default-model` points at `deepseek-official` but that route does not work here (missing credential, unreachable endpoint, or an id it does not serve) | give that route its credential, switch the default to a provider already configured in the profile, or `/model`-pick a default-provider model |
+| empty `/model` list | the bridge cannot read `$DSH_HOME/profiles/<profile>/cordis.patch.yml` (`DSH_HOME` not set for the service, wrong profile name) | set `DSH_HOME` in the service environment, check the profile dir exists, restart |
+| `dsh exited with code N` | DSH itself exited non-zero | run the same command by hand in a terminal; the full stderr is in the aiduCAT log |
 
 ## Commands
 
@@ -207,11 +308,16 @@ Thinking…                                            ← flush-left above the 
 - **Empty run** (the agent exits without output): a red error card with the reason, asking you to resend
 - **Too long / rejected**: an answer over 25KB fills card 1 up to the budget (cut at a paragraph, code-block or table boundary, ending in "…（未完，见下一张卡）"), then continues on ordered "续 2/N", "续 3/N" cards — rendered markdown, each <30KB, nothing repeated; an oversized code block is split between lines with the fence reopened, an oversized table between rows with the header repeated; only if Feishu rejects a continuation card does the rest from that card on go out once as plain text. if Feishu rejects the card, a strict card (no image links, 12KB answer) is retried, then plain text, then a one-line "card failed" notice
 
-## Changelog (f0.5+)
+## Changelog (f0.5++)
 
 - **Steer**: message Claude Code again while it works, no waiting for it to finish — it reads the message at its next step and carries on without restarting; the card so far ends as「↪️Steered」and the rest goes into the new message's card
 - No more "reply then recall" (an empty result from a background-task notice no longer ends the turn); no ☤ before the in-progress status words
 
+### f0.5++
+
+- **DeepSeek Harness is the fourth agent**: `aiduCAT profile create <name> --agent dsh`, alongside Claude Code / Codex / Hermes. aiduCAT finds the DSH install itself (the Desktop app included, no hand-written launcher), `/model` switches with a `--patch` overlay, and the model list plus the default model follow the desktop app
+- **DSH failure alerts**: three consecutive DSH failures send the owner a private notice, subject to a cooldown. Other agent types do not use this monitor.
+- `/doctor` prints where the DSH binary came from, its version, the profile, and whether the model routing still mirrors the desktop; Windows is covered by CI
 ### f0.5
 
 - **Status words with motion, more professional**: ☤ is back, followed by Feishu's loading dots; in progress aiduCATing / Thinking / Running, finished Completed / Stopped / Failed / Timed out
@@ -253,7 +359,7 @@ Full details in [CHANGELOG.md](./CHANGELOG.md).
 
 - Each DM / group / topic / doc-comment thread keeps its own session
 - Messages sent in quick succession merge into one batch; messages sent during a run queue up as the next turn
-- **Steer** (Claude Code, card mode): a message from the same person during a run goes straight into the running Claude Code, which reads it at its next step and carries on without restarting; the card so far ends as「↪️Steered」and the rest goes into the new message's card. Other people's messages, Codex and Hermes still queue
+- **Steer** (Claude Code, card mode): a message from the same person during a run goes straight into the running Claude Code, which reads it at its next step and carries on without restarting; the card so far ends as「↪️Steered」and the rest goes into the new message's card. Other people's messages, Codex, Hermes and DSH still queue
 - Session history persists locally; `/resume` restores it
 
 ## Runtime notes
@@ -266,6 +372,7 @@ The daemon installs one **per-profile service** per PersonalAgent app: macOS lau
 aiduCAT profile create claude --agent claude
 aiduCAT profile create codex --agent codex
 aiduCAT profile create hermes --agent hermes
+aiduCAT profile create dsh --agent dsh
 aiduCAT profile list
 aiduCAT profile use <name>
 aiduCAT profile remove <name>            # archive local state
@@ -373,17 +480,17 @@ Same as B: point `baseUrl` at `http://127.0.0.1:11434` (Ollama: enable its OpenA
 | Capability | 10router users | Your gateway |
 |------|--------------|----------|
 | `/model` dropdown | pulls 10router's **curated combos** (`/api/combos`, management token) | pulls `<baseUrl>/v1/models` or uses the static `models` list |
-| Agent icons | shipped (Claude Code / Codex / Hermes) | upload your own tenant img_keys once (next section); without them the panel simply shows no icon |
+| Agent icons | shipped (Claude Code / Codex / Hermes / DSH) | upload your own tenant img_keys once (next section); without them the panel simply shows no icon |
 
 **Compliance note**: before pointing aiduCAT at any third-party gateway or free pool, make sure its terms of service allow programmatic access. aiduCAT does not and will not bypass upstream anti-abuse controls.
 
 ### Agent icons (panel header icon)
 
-The panel header shows the profile's coding agent icon (`agentKind`: claude → Claude Code, codex → Codex, hermes → Hermes Agent) at its far left, regardless of the model; it does not rotate when the panel expands. Without an icon the collapse chevron shows on the right. Feishu cards reject external image URLs for `custom_icon` — they only render `img_key` values from images uploaded **to your own tenant** via `POST /open-apis/im/v1/images`. The shipped `assets/lark-logo-keys.json` is only valid for the tenant that uploaded them. For your own deployment:
+The panel header shows the profile's coding agent icon (`agentKind`: claude → Claude Code, codex → Codex, hermes → Hermes Agent, dsh → DeepSeek Harness) at its far left, regardless of the model; it does not rotate when the panel expands. Without an icon the collapse chevron shows on the right. Feishu cards reject external image URLs for `custom_icon` — they only render `img_key` values from images uploaded **to your own tenant** via `POST /open-apis/im/v1/images`. The shipped `assets/lark-logo-keys.json` is only valid for the tenant that uploaded them. For your own deployment:
 
-1. Prepare 3 PNGs at 128px (from [lobehub icons-static-png](https://github.com/lobehub/lobe-icons): `claudecode-color`, `codex-color`, `hermesagent`).
+1. Prepare 4 PNGs at 128px (from [lobehub icons-static-png](https://github.com/lobehub/lobe-icons): `claudecode-color`, `codex-color`, `hermesagent`, and your own DSH icon).
 2. Upload each via the im/v1/images API with your app credentials and collect the returned `img_key`s.
-3. Put them under the `claudecode`, `codex` and `hermes` keys of `assets/lark-logo-keys.json` and rebuild (`pnpm build`).
+3. Put them under the `claudecode`, `codex`, `hermes` and `dsh` keys of `assets/lark-logo-keys.json` and rebuild (`pnpm build`).
 4. Without an upload the feature degrades gracefully: the header simply renders without an icon; no core functionality is affected.
 
 ### Working directories
@@ -412,7 +519,7 @@ Access is controlled by the canonical `"permissions"` block. **Omitted = `worksp
 ```
 
 - Group runs are capped at `groupMaxAccess` (default `workspace`); comment, meeting and team-mode runs are always capped at `workspace`; DMs are not capped. Values: `full` / `workspace` / `read-only`. The legacy `sandbox` config keys are no longer read.
-- The agent subprocess env is an allowlist: PATH/HOME/LANG/LC_*/proxy/certs, plus `ANTHROPIC_*`/`CLAUDE_*` for Claude or `OPENAI_*`/`CODEX_*` for Codex; Hermes gets nothing extra (it uses the model settings in its own `~/.hermes/.env`; only `HERMES_HOME` is passed). Any other service variable (e.g. `AIDU_10ROUTER_URL`, `SSH_AUTH_SOCK`) must be listed in `agentEnv.passthrough`.
+- The agent subprocess env is an allowlist: PATH/HOME/LANG/LC_*/proxy/certs, plus `ANTHROPIC_*`/`CLAUDE_*` for Claude or `OPENAI_*`/`CODEX_*` for Codex; Hermes gets nothing extra (it uses the model settings in its own `~/.hermes/.env`; only `HERMES_HOME` is passed). Any other service variable (e.g. `AIDU_10ROUTER_URL`, `SSH_AUTH_SOCK`) must be listed in `agentEnv.passthrough`; DSH additionally gets `DSH_HOME` and `AIDU_API_KEY`.
 - Tool calls are hidden in groups by default; set `preferences.showToolCallsInGroups: true` to show them.
 - Timeouts: `preferences.runIdleTimeoutMinutes` (default 15 min without output), `preferences.runToolTimeoutMinutes` (one tool call, default 30 min). After a restart, queued messages younger than 10 minutes are replayed, older ones get a "please resend"; in-flight cards are marked "service restarted, please resend".
 - Graceful restart: on a stop signal the bridge takes no new rounds and waits for the ones in flight, at most `preferences.shutdownDrainMinutes` minutes (default 10, `0` = stop at once); messages arriving meanwhile are kept and handled after the restart. A round that was cut off is continued once, in the same session, with "（服务重启，接着刚才的继续）" if the restart took ≤ 10 minutes. systemd units need `KillMode=mixed` and `TimeoutStopSec=660` (units installed by `aiduCAT start` have them; add them to hand-written units).

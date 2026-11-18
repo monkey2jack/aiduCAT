@@ -1,5 +1,5 @@
 /**
- * f0.6+: DSH (DeepSeek Harness) adapter arguments.
+ * f0.5++: DSH (DeepSeek Harness) adapter arguments.
  *
  *   dsh --profile <p> --json [--permission-mode <preset>]
  *       [--approval-policy <ask|never>] [--session-id <id>] -
@@ -11,11 +11,14 @@
  * `./jsonl.ts` maps onto aiduCAT's `AgentEvent` stream. `--session-id` adopts a
  * persisted session, which is how multi-turn conversations resume.
  *
- * There is no model flag on the headless profile: the model comes from the
- * profile's `agent-default-model` config (patched in cordis.patch.yml), so
- * /model on a dsh profile intentionally shows only the "follow DSH config"
- * option. Permission and approval, unlike the model, ARE per-invocation.
+ * There is no per-invocation model flag on the headless profile: the model
+ * comes from the profile's `agent-default-model` config (patched in
+ * cordis.patch.yml). /model therefore switches it with a `--patch` overlay,
+ * which replaces that row. Permission and approval, by contrast, ARE
+ * per-invocation.
  */
+
+import { isAbsolute } from 'node:path';
 
 const SAFE_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/;
 
@@ -53,6 +56,12 @@ export const DSH_UNATTENDED_APPROVAL = 'never' as const;
 export interface BuildDshArgsInput {
   /** DSH profile under $DSH_HOME/profiles (default: headless). */
   profile?: string;
+  /**
+   * Absolute path to an extra patch overlay applied after the profile layer.
+   * This is how /model switches the DSH model: the overlay replaces the
+   * `agent-default-model` row, since DSH itself has no `--model` flag.
+   */
+  patch?: string;
   /** Exact DSH permission preset to pin for this task, including on resume. */
   permissionMode?: DshPermissionPreset;
   /** Approval policy applied after the preset is selected. */
@@ -67,7 +76,14 @@ export function buildDshArgs(input: BuildDshArgsInput): string[] {
   // The profile IS the headless app here; a bare `headless` word after the
   // flags would join the task argv and DSH rejects "`-` must be the only
   // task argument".
-  const args = ['--profile', profile, '--json'];
+  const args = ['--profile', profile];
+  // Launcher flags must precede the app's own arguments: everything after them
+  // reaches the headless runner, which would reject `--patch` as unknown.
+  if (input.patch !== undefined) {
+    if (!isAbsolute(input.patch)) throw new Error('invalid dsh patch path');
+    args.push('--patch', input.patch);
+  }
+  args.push('--json');
   if (input.permissionMode !== undefined) {
     if (!isDshPermissionPreset(input.permissionMode)) {
       throw new Error(`invalid dsh permission preset: ${input.permissionMode}`);

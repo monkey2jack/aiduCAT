@@ -67,7 +67,7 @@ describe('agent-aware session catalog', () => {
   it('stores a DSH session by sessionId, like Claude and Hermes', async () => {
     // DSH adopts a persisted Session through `--session-id`, so its entry must
     // carry sessionId and no threadId. This is the write-path regression guard:
-    // before f0.6 the guard listed only claude/hermes, so a DSH save fell into
+    // before f0.5++ the guard listed only claude/hermes, so a DSH save fell into
     // the Codex branch and threw, even though the read path already knew dsh.
     const catalog = new SessionCatalog(await path());
     expect(() =>

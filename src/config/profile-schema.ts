@@ -16,7 +16,7 @@ import {
   type PermissionSource,
 } from './permissions';
 
-export type AgentKind = 'claude' | 'codex' | 'hermes';
+export type AgentKind = 'claude' | 'codex' | 'hermes' | 'dsh';
 export type SandboxMode = CodexSandboxMode;
 export type { AccessMode, PermissionConfig, PermissionSource };
 
@@ -73,6 +73,35 @@ export interface HermesConfig {
   binaryPath: string;
   profile?: string;
   outsiderToolsets?: string[];
+}
+
+/**
+ * f0.5++: DSH (DeepSeek Harness) profile settings (`agentKind: 'dsh'`).
+ *  - binaryPath: how to start DSH. Optional in practice: when it is missing or
+ *    no longer resolves, the runtime probes `LARK_CHANNEL_DSH_BIN`, `dsh` on
+ *    PATH, then the Desktop install. Set it only to pin a specific build.
+ *  - profile: `dsh --profile <name>`; default `headless`
+ *  - modelLabel: DEPRECATED (kept for older configs). The card used to have no
+ *    way to know the model, so this was a hand-written label; the bridge now
+ *    reads the model the profile actually declares (and mirrors the desktop
+ *    profile's routing), so a configured label is only a last-resort fallback
+ *    when the profile file cannot be read. Do not set it on new configs — a
+ *    stale label silently misreports the model.
+ */
+export interface DshConfig {
+  binaryPath: string;
+  profile?: string;
+  /**
+   * f0.5++ 真假猴王 fix: absolute path to a static `--patch` overlay applied to
+   * **p2p (private-chat) turns only** — group/topic and non-IM runs never see
+   * it. This is how the owner's DM monkey carries the same tool set as the
+   * desktop profile (e.g. the aiduMEI memory MCP) while group chats stay clean.
+   * Zero secrets in the file: credentials ride file/env references. A missing
+   * or unreadable file soft-fails: the turn runs without the overlay.
+   */
+  privatePatch?: string;
+  /** @deprecated read from the DSH profile instead; fallback only. */
+  modelLabel?: string;
 }
 
 export interface CodexConfig {
@@ -263,6 +292,8 @@ export interface ProfileConfig {
   codex?: CodexConfig;
   /** f0.4+: Hermes Agent settings, required when agentKind is 'hermes'. */
   hermes?: HermesConfig;
+  /** f0.5++: DSH settings, required when agentKind is 'dsh'. */
+  dsh?: DshConfig;
   attachments: AttachmentConfig;
   comments: CommentConfig;
   /** In-meeting agent settings. See {@link MeetingConfig}. */
@@ -346,6 +377,7 @@ export interface CreateDefaultProfileConfigInput {
   permissions?: Partial<PermissionConfig>;
   codex?: CodexConfig;
   hermes?: HermesConfig;
+  dsh?: DshConfig;
   secrets?: SecretsConfig;
   features?: Partial<ProfileFeatures>;
 }
@@ -386,6 +418,7 @@ export function normalizeProfileConfig(input: unknown): ProfileConfig {
     permissions?: Partial<PermissionConfig>;
     codex?: CodexConfig & { flags?: unknown };
     hermes?: unknown;
+    dsh?: unknown;
     attachments?: Partial<AttachmentConfig>;
     comments?: unknown;
     meeting?: unknown;
@@ -398,8 +431,8 @@ export function normalizeProfileConfig(input: unknown): ProfileConfig {
   if (raw.schemaVersion !== 2) {
     throw new Error('profile schemaVersion must be 2');
   }
-  if (raw.agentKind !== 'claude' && raw.agentKind !== 'codex' && raw.agentKind !== 'hermes') {
-    throw new Error('agentKind must be claude, codex or hermes');
+  if (raw.agentKind !== 'claude' && raw.agentKind !== 'codex' && raw.agentKind !== 'hermes' && raw.agentKind !== 'dsh') {
+    throw new Error('agentKind must be claude, codex, hermes or dsh');
   }
   const accounts = normalizeAccounts(raw.accounts);
   if (raw.agentKind === 'codex' && !raw.codex) {
@@ -443,6 +476,7 @@ export function normalizeProfileConfig(input: unknown): ProfileConfig {
       : {}),
     ...(raw.codex ? { codex: normalizeCodex(raw.codex) } : {}),
     ...(raw.hermes || raw.agentKind === 'hermes' ? { hermes: normalizeHermes(raw.hermes) } : {}),
+    ...(raw.dsh || raw.agentKind === 'dsh' ? { dsh: normalizeDsh(raw.dsh) } : {}),
     ...normalizeAgentEnv(raw.agentEnv),
     attachments: {
       maxCount: numberOr(raw.attachments?.maxCount, 10),
@@ -599,6 +633,31 @@ function normalizeHermes(input: unknown): HermesConfig {
     binaryPath,
     ...(profile ? { profile } : {}),
     ...(toolsets && toolsets.length > 0 ? { outsiderToolsets: toolsets } : {}),
+  };
+}
+
+/** f0.5++: a dsh profile without a `dsh` block runs the `dsh` on PATH (headless profile). */
+function normalizeDsh(input: unknown): DshConfig {
+  const raw = (input && typeof input === 'object' ? input : {}) as Record<string, unknown>;
+  const binaryPath =
+    typeof raw.binaryPath === 'string' && raw.binaryPath.trim() ? raw.binaryPath.trim() : 'dsh';
+  const profile =
+    typeof raw.profile === 'string' && /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(raw.profile.trim())
+      ? raw.profile.trim()
+      : undefined;
+  const modelLabel =
+    typeof raw.modelLabel === 'string' && raw.modelLabel.trim()
+      ? raw.modelLabel.trim().slice(0, 80)
+      : undefined;
+  const privatePatch =
+    typeof raw.privatePatch === 'string' && raw.privatePatch.trim()
+      ? raw.privatePatch.trim()
+      : undefined;
+  return {
+    binaryPath,
+    ...(profile ? { profile } : {}),
+    ...(privatePatch ? { privatePatch } : {}),
+    ...(modelLabel ? { modelLabel } : {}),
   };
 }
 

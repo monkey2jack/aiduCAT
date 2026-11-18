@@ -139,6 +139,7 @@ export class RunExecutor {
       stopGraceMs: input.stopGraceMs,
       envOverrides: input.envOverrides,
       ownerRun: input.ownerRun === true,
+      chatType: input.policy.chatType,
     };
     let run: AgentRun;
     try {
