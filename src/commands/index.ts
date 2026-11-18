@@ -387,23 +387,65 @@ export async function runCommandHandler(
  * Send a plain markdown reply, swallowing any send error. Used by command
  * handlers where a failed reply shouldn't bubble up and crash the bot —
  * losing the message is better than dying.
+ *
+ * f0.5++ hotfix (2026-11-19, 不改版本号): the underlying send once hung
+ * forever inside the SDK — production ran /new, the session was reset, and
+ * the reply never arrived with neither success nor failure logged (the hang
+ * produced neither). Each attempt is now bounded by a timeout and retried
+ * once, so a hung send turns into a loud failure plus a second chance on a
+ * fresher socket. A late first attempt can still arrive after the retry —
+ * a duplicated command ack is the cheaper failure mode.
  */
-async function reply(ctx: CommandContext, markdown: string): Promise<void> {
+const REPLY_TIMEOUT_MS = 15_000;
+
+/** One bounded reply attempt: the send resolves, rejects, or times out. */
+export async function replyOnce(ctx: CommandContext, markdown: string): Promise<void> {
+  const send = ctx.channel
+    .send(ctx.msg.chatId, { markdown }, commandReplyOptions(ctx))
+    .then(
+      () => undefined,
+      (err: unknown) => {
+        throw err instanceof Error ? err : new Error(String(err));
+      },
+    );
+  let timer: ReturnType<typeof setTimeout> | undefined;
   try {
-    await ctx.channel.send(ctx.msg.chatId, { markdown }, commandReplyOptions(ctx));
-  } catch (err) {
-    log.fail('command', err, { step: 'reply' });
-    reportMetric('command_fail', 1, { step: 'reply' });
-    if (!isMessageAuditReject(err) || markdown === AUDIT_SAFE_COMMAND_REPLY) return;
+    await Promise.race([
+      send,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(
+          () => reject(new Error(`reply send timed out after ${REPLY_TIMEOUT_MS}ms`)),
+          REPLY_TIMEOUT_MS,
+        );
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+    // The losing side (a hung send failing later) must not surface as an
+    // unhandled rejection — the outcome was already logged above.
+    send.catch(() => undefined);
+  }
+}
+
+/** Exported for the reply-bounds unit tests (tests/unit/commands/reply.test.ts). */
+export async function reply(ctx: CommandContext, markdown: string): Promise<void> {
+  let attempt: { markdown: string; step: string } = { markdown, step: 'reply' };
+  for (;;) {
     try {
-      await ctx.channel.send(
-        ctx.msg.chatId,
-        { markdown: AUDIT_SAFE_COMMAND_REPLY },
-        commandReplyOptions(ctx),
-      );
-    } catch (fallbackErr) {
-      log.fail('command', fallbackErr, { step: 'reply-audit-fallback' });
-      reportMetric('command_fail', 1, { step: 'reply-audit-fallback' });
+      await replyOnce(ctx, attempt.markdown);
+      return;
+    } catch (err) {
+      log.fail('command', err, { step: attempt.step });
+      reportMetric('command_fail', 1, { step: attempt.step });
+      // Bounded: at most the original attempt plus one follow-up. The audit
+      // fallback replaces rejected text once; everything else retries the
+      // same content once on a fresher socket, then gives up quietly.
+      if (attempt.step !== 'reply') return;
+      if (isMessageAuditReject(err) && markdown !== AUDIT_SAFE_COMMAND_REPLY) {
+        attempt = { markdown: AUDIT_SAFE_COMMAND_REPLY, step: 'reply-audit-fallback' };
+      } else {
+        attempt = { markdown, step: 'reply-retry' };
+      }
     }
   }
 }
