@@ -24,6 +24,12 @@ describe('buildOpencodeArgs', () => {
     expect(args).toContain('opencode/hy4-flash-free');
   });
 
+  it('appends effort to model flag when specified', () => {
+    const args = buildOpencodeArgs({ model: 'opencode/hy4-flash-free', effort: 'high' });
+    expect(args).toContain('-m');
+    expect(args).toContain('opencode/hy4-flash-free#high');
+  });
+
   it('configures attach with password and username', () => {
     const args = buildOpencodeArgs({
       attach: 'http://127.0.0.1:7737',

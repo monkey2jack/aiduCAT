@@ -254,3 +254,19 @@ describe('dsh model catalog', () => {
     expect(catalog[0]?.value).toBe(DEFAULT_MODEL);
   });
 });
+
+
+describe('opencode model catalog and display', () => {
+  it('lists OpenCode free models and default sentinel', () => {
+    const catalog = supportedModels('openchamber');
+    expect(catalog[0]?.value).toBe(DEFAULT_MODEL);
+    const values = catalog.map((m) => m.value);
+    expect(values).toContain('opencode/hy4-flash-free');
+    expect(values).toContain('opencode/deepseek-v4.1-flash-free');
+  });
+
+  it('displayModelName strips provider prefix and defaults to active model name', () => {
+    expect(displayModelName('openchamber', {}, 'opencode/hy4-flash-free')).toBe('hy4-flash-free');
+    expect(displayModelName('openchamber', {}, DEFAULT_MODEL)).toBe('hy4-flash-free');
+  });
+});

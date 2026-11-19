@@ -98,6 +98,7 @@ export class OpencodeAdapter implements AgentAdapter {
     const args = buildOpencodeArgs({
       sessionId: opts.sessionId,
       model: opts.model,
+      effort: opts.effort,
       attach: this.serverUrl,
       password: this.password,
       username: this.username,
@@ -223,7 +224,7 @@ export class OpencodeAdapter implements AgentAdapter {
       },
       async forceKillTree(): Promise<void> {
         if (child.pid) {
-          await killProcessTree(child.pid);
+          await killProcessTree(child.pid, 'opencode-force-kill');
         }
       },
     };

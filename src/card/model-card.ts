@@ -18,6 +18,7 @@ import { DEFAULT_PROVIDER, DEFAULT_PROVIDER_VALUE } from '../bot/model-providers
 
 const CLAUDE_EFFORT_LEVELS = ['low', 'medium', 'high', 'xhigh', 'max'] as const;
 const CODEX_EFFORT_LEVELS = ['low', 'medium', 'high', 'xhigh', 'ultra'] as const;
+const OPENCODE_EFFORT_LEVELS = ['low', 'medium', 'high', 'max'] as const;
 const ALL_EFFORT_LEVELS = ['low', 'medium', 'high', 'xhigh', 'max', 'ultra'] as const;
 
 /** effort shows capitalized in cards (Max/High) but travels lowercase. */
@@ -43,7 +44,7 @@ export interface ModelCardOpts {
   /** Currently stored effort, if any. */
   currentEffort?: string;
   /** Agent runtime kind (claude or codex), used for dynamic effort hints and options. */
-  agentKind?: 'claude' | 'codex' | 'hermes' | 'dsh';
+  agentKind?: 'claude' | 'codex' | 'hermes' | 'dsh' | 'openchamber' | 'opencode';
   /**
    * f04-group-cmd-model: set when /model was opened in a group — the card
    * then only changes this group. `own` = the group already has its own
@@ -85,7 +86,8 @@ export function modelCard(opts: ModelCardOpts): object {
 
   const isCodex = opts.agentKind === 'codex';
   const isClaude = opts.agentKind === 'claude';
-  const effortLevels = isCodex ? CODEX_EFFORT_LEVELS : isClaude ? CLAUDE_EFFORT_LEVELS : ALL_EFFORT_LEVELS;
+  const isOpenCode = opts.agentKind === 'opencode' || opts.agentKind === 'openchamber';
+  const effortLevels = isCodex ? CODEX_EFFORT_LEVELS : isClaude ? CLAUDE_EFFORT_LEVELS : isOpenCode ? OPENCODE_EFFORT_LEVELS : ALL_EFFORT_LEVELS;
 
   const modelElements: object[] = [];
 
@@ -272,7 +274,7 @@ export function modelSavedCard(
   effort: string,
   provider?: string,
   defaultProviderName?: string,
-  agentKind?: 'claude' | 'codex' | 'hermes' | 'dsh',
+  agentKind?: 'claude' | 'codex' | 'hermes' | 'dsh' | 'openchamber' | 'opencode',
   /** f04-group-cmd-model: 'chat' = saved for this group only. */
   scope?: 'chat' | 'default',
 ): object {

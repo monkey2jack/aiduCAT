@@ -14,6 +14,7 @@ import {
   DEFAULT_MODEL,
   displayModelName,
   dshModelCatalog,
+  opencodeModelCatalog,
   normalizeModelSelection,
   resolveModelArg,
   supportedModels,
@@ -188,7 +189,7 @@ type Handler = (args: string, ctx: CommandContext) => Promise<void>;
 
 interface ResumeCandidate {
   scopeId: string;
-  agentId: 'claude' | 'codex' | 'hermes' | 'dsh';
+  agentId: 'claude' | 'codex' | 'hermes' | 'dsh' | 'opencode' | 'openchamber';
   cwdRealpath: string;
   policyFingerprint: string;
   sessionId?: string;
@@ -646,6 +647,9 @@ async function handleWsUse(name: string, ctx: CommandContext): Promise<void> {
     await reply(ctx, `未找到工作目录别名：\`${name}\``);
     return;
   }
+  const allowHomeRoot =
+    ctx.controls.profileConfig.workspaces.allowHomeRoot ??
+    (ctx.controls.profileConfig.agentKind === 'openchamber');
   const workspace = await resolveWorkingDirectory(cwd, {
     roots: ctx.controls.profileConfig.workspaces.roots,
     allowHomeRoot,
@@ -1401,6 +1405,9 @@ async function handleDoctor(args: string, ctx: CommandContext): Promise<void> {
     return;
   }
 
+  const allowHomeRoot =
+    ctx.controls.profileConfig.workspaces.allowHomeRoot ??
+    (ctx.controls.profileConfig.agentKind === 'openchamber');
   const workspace = await resolveWorkingDirectory(
     requestedCwd,
     scopeCwdSet
@@ -1673,6 +1680,12 @@ async function handleModel(args: string, ctx: CommandContext): Promise<void> {
     case '':
       return showModelCard(ctx);
     case 'submit':
+      if (
+        ctx.controls.profileConfig.agentKind === 'opencode' ||
+        ctx.controls.profileConfig.agentKind === 'openchamber'
+      ) {
+        return submitOpencodeModelCard(ctx);
+      }
       return submitModelCard(ctx);
     case 'cancel':
       return cancelModelCard(ctx);
@@ -1781,6 +1794,77 @@ async function submitDshModelCard(ctx: CommandContext): Promise<void> {
   await reply(ctx, `✅ 已保存模型：\`${label}\`（下一轮生效;DSH 模型由 profile 覆盖，会写入 --patch 临时层）`);
 }
 
+
+/** OpenCode / OpenChamber /model card (Free models + effort levels). */
+async function showOpencodeModelCard(ctx: CommandContext): Promise<void> {
+  const catalog = opencodeModelCatalog();
+  const eff = effectiveModelPrefs(ctx.controls.profileConfig, chatModelKey(ctx));
+  const card = modelCard({
+    combos: catalog.map((m) => ({ id: m.value, name: m.value, label: m.label })),
+    currentModel: eff.model,
+    currentEffort: eff.effort,
+    source: 'live',
+    agentKind: 'openchamber',
+    ...(inGroup(ctx) ? { chatScope: { own: eff.source === 'chat' } } : {}),
+  });
+  if (ctx.fromCardAction) await recallMessage(ctx, ctx.msg.messageId);
+  await sendManagedCard(ctx.channel, ctx.msg.chatId, card, commandReplyOptions(ctx));
+}
+
+async function submitOpencodeModelCard(ctx: CommandContext): Promise<void> {
+  let fv = (ctx.formValue ?? {}) as Record<string, unknown>;
+  const catalog = opencodeModelCatalog();
+  const parsed = parseModelCardSubmit(
+    fv,
+    catalog.map((m) => ({ name: m.value })),
+  );
+
+  const eff = effectiveModelPrefs(ctx.controls.profileConfig, chatModelKey(ctx));
+  const currentModel = eff.model;
+  const currentEffort = eff.effort;
+  const nextModel = parsed.model ?? currentModel;
+  const nextEffort = parsed.effort ?? currentEffort;
+
+  if (!parsed.model && !parsed.effort) {
+    await reply(ctx, '⚠️ 请至少选择模型或推理强度;');
+    return;
+  }
+
+  try {
+    await saveModelChoice(ctx, { model: nextModel, effort: nextEffort });
+  } catch (err) {
+    log.fail('command', err, { cmd: '/model submit (opencode)' });
+    await reply(ctx, '❌ 模型/强度保存失败,详情见日志。');
+    return;
+  }
+
+  log.info('command', 'model-set', {
+    model: nextModel ?? 'default',
+    agent: 'openchamber',
+    effort: nextEffort ?? 'default',
+    via: 'card',
+    scope: inGroup(ctx) ? 'chat' : 'default',
+  });
+
+  const formMsgId = ctx.msg.messageId;
+  const modelDisp = catalog.find((m) => m.value === nextModel)?.label ?? nextModel ?? '跟随默认';
+  void (async () => {
+    await new Promise((r) => setTimeout(r, FORM_SETTLE_MS));
+    await showResultCardInPlace(
+      ctx,
+      formMsgId,
+      modelSavedCard(
+        modelDisp,
+        nextEffort ?? '默认',
+        undefined,
+        undefined,
+        'openchamber',
+        inGroup(ctx) ? 'chat' : 'default',
+      ),
+    );
+  })();
+}
+
 async function showModelCard(ctx: CommandContext): Promise<void> {
   // f0.5++: a dsh profile owns its model in the profile's own config and has no
   // per-run --model flag, so its choices come from that patch layer. Asking the
@@ -1788,6 +1872,13 @@ async function showModelCard(ctx: CommandContext): Promise<void> {
   // used to say「暂时取不到模型列表」.
   if (ctx.controls.profileConfig.agentKind === 'dsh') {
     await showDshModelCard(ctx);
+    return;
+  }
+  if (
+    ctx.controls.profileConfig.agentKind === 'opencode' ||
+    ctx.controls.profileConfig.agentKind === 'openchamber'
+  ) {
+    await showOpencodeModelCard(ctx);
     return;
   }
   const tr = await resolveTenRouterConfig(ctx.controls.cfg);

@@ -26,7 +26,7 @@ function header(state: RunState, opts: Parameters<typeof renderCard>[1]): Header
 }
 
 describe('panel header agent icon', () => {
-  it.each(['claude', 'codex', 'hermes'] as const)('%s → its own custom_icon on the left, no rotation', (agent) => {
+  it.each(['claude', 'codex', 'hermes', 'dsh', 'openchamber', 'opencode'] as const)('%s → its own custom_icon on the left, no rotation', (agent) => {
     const key = logoImgKeyForAgent(agent);
     expect(key).toBeTruthy();
     for (const s of [thinking, reduce(thinking, { type: 'done', terminationReason: 'normal' })]) {

@@ -247,16 +247,28 @@ export function dshModelCatalog(configuredProfile?: string): ModelOption[] {
   return options;
 }
 
+import {
+  readOpenchamberSettings,
+  resolveOpenchamberActiveSession,
+  opencodeModelCatalog,
+  OPENCODE_FREE_MODELS,
+} from './opencode/desktop';
+export {
+  readOpenchamberSettings,
+  resolveOpenchamberActiveSession,
+  opencodeModelCatalog,
+  OPENCODE_FREE_MODELS,
+};
 export const OPENCODE_MODELS: ModelOption[] = [
-  { value: DEFAULT_MODEL, label: 'Default (OpenCode Default)' },
-  { value: 'opencode/hy4-flash-free', label: 'Hunyuan 4 Flash (Free)' },
+  { value: DEFAULT_MODEL, label: '跟随默认（当前 Hunyuan 4 Flash）' },
+  { value: 'opencode/hy4-flash-free', label: 'Hunyuan 4 Flash · Free' },
 ];
 
 /** The model picker options for a profile's agent kind. */
 export function supportedModels(agentKind: AgentKind): ModelOption[] {
   if (agentKind === 'hermes') return HERMES_MODELS;
   if (agentKind === 'dsh') return dshModelCatalog();
-  if (agentKind === 'opencode' || agentKind === 'openchamber') return OPENCODE_MODELS;
+  if (agentKind === 'opencode' || agentKind === 'openchamber') return opencodeModelCatalog();
   return agentKind === 'codex' ? CODEX_MODELS : CLAUDE_MODELS;
 }
 
@@ -324,9 +336,17 @@ export function displayModelName(
   profile: { dsh?: { modelLabel?: string; profile?: string } },
   selected: string | undefined,
 ): string | undefined {
-  if (agentKind !== 'dsh') return selected;
-  if (!isDefaultModel(selected)) return selected;
-  return (
-    readDshProfileModels(profile.dsh?.profile).model ?? profile.dsh?.modelLabel ?? '跟随 DSH profile'
-  );
+  if (agentKind === 'dsh') {
+    if (!isDefaultModel(selected)) return selected;
+    return (
+      readDshProfileModels(profile.dsh?.profile).model ?? profile.dsh?.modelLabel ?? '跟随 DSH profile'
+    );
+  }
+  if (agentKind === 'openchamber' || agentKind === 'opencode') {
+    const active = isDefaultModel(selected)
+      ? (readOpenchamberSettings().lastSelectedModel ?? 'hy4-flash-free')
+      : (selected ?? 'hy4-flash-free');
+    return active.replace(/^opencode\//, '');
+  }
+  return selected;
 }

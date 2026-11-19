@@ -25,7 +25,7 @@ describe('command reply bounds (f0.5++ hotfix)', () => {
     const send = vi.fn().mockResolvedValue({});
     await reply(ctxFor(send), '已开始新会话。');
     expect(send).toHaveBeenCalledTimes(1);
-    expect(send.mock.calls[0][1]).toEqual({ markdown: '已开始新会话。' });
+    expect((send.mock.calls[0] as any)?.[1]).toEqual({ markdown: '已开始新会话。' });
   });
 
   it('rejects at the timeout when the send hangs forever (replyOnce)', async () => {
@@ -46,7 +46,7 @@ describe('command reply bounds (f0.5++ hotfix)', () => {
     await vi.advanceTimersByTimeAsync(15_000); // retry times out → give up
     await settled;
     expect(send).toHaveBeenCalledTimes(2);
-    expect(send.mock.calls[1][1]).toEqual({ markdown: '已开始新会话。' });
+    expect((send.mock.calls[1] as any)?.[1]).toEqual({ markdown: '已开始新会话。' });
   });
 
   it('swaps to the audit-safe notice when the text is audit-rejected', async () => {
@@ -56,7 +56,7 @@ describe('command reply bounds (f0.5++ hotfix)', () => {
       .mockResolvedValue({});
     await reply(ctxFor(send), '某条会被审计拦下的文本');
     expect(send).toHaveBeenCalledTimes(2);
-    expect(send.mock.calls[1][1]).toEqual({ markdown: AUDIT_SAFE });
+    expect((send.mock.calls[1] as any)?.[1]).toEqual({ markdown: AUDIT_SAFE });
   });
 
   it('gives up after the audit-safe fallback fails once', async () => {
@@ -68,6 +68,6 @@ describe('command reply bounds (f0.5++ hotfix)', () => {
     await vi.advanceTimersByTimeAsync(15_000); // fallback attempt times out
     await settled;
     expect(send).toHaveBeenCalledTimes(2);
-    expect(send.mock.calls[1][1]).toEqual({ markdown: AUDIT_SAFE });
+    expect((send.mock.calls[1] as any)?.[1]).toEqual({ markdown: AUDIT_SAFE });
   });
 });

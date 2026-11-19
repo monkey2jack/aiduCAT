@@ -1,6 +1,6 @@
 import { usesSessionId, type AgentCapability } from '../agent/capability';
 import { compactPct } from './context-window';
-import { resolveModelArg } from '../agent/models';
+import { resolveModelArg, resolveOpenchamberActiveSession } from '../agent/models';
 import type { AgentEvent } from '../agent/types';
 import { runLarkCliIdentityEnv, type ProfileConfig } from '../config/profile-schema';
 import type { AccessDecision } from '../policy/access';
@@ -81,7 +81,20 @@ export interface RecordRunSessionEventInput {
 
 export async function startRunFlow(input: StartRunFlowInput): Promise<StartRunFlowResult> {
   const scopeCwd = input.workspaces.cwdFor(input.scopeId);
-  const requestedCwd = scopeCwd ?? input.profileConfig.workspaces.default ?? '';
+  let requestedCwd = scopeCwd ?? input.profileConfig.workspaces.default ?? '';
+
+  let desktopSession: { sessionId?: string; cwd?: string; model?: string; effort?: string } | undefined;
+  if (
+    input.profileConfig.agentKind === 'openchamber' &&
+    input.scope.chatType === 'p2p' &&
+    !scopeCwd
+  ) {
+    const resolved = resolveOpenchamberActiveSession();
+    if (resolved.sessionId && resolved.cwd) {
+      desktopSession = resolved;
+      requestedCwd = resolved.cwd;
+    }
+  }
   // f03p-infra-#3: a chat's own cwd (set by /cd or /ws use, maybe before the
   // allowlist existed) must be under workspaces.roots; the profile default is
   // the owner's own choice and is not re-checked.
@@ -151,6 +164,15 @@ export async function startRunFlow(input: StartRunFlowInput): Promise<StartRunFl
     if (!resumeFrom && stale?.cwd && stale.cwd !== workspace.cwdRealpath) {
       input.sessions.clear(input.scopeId);
     }
+  }
+  if (
+    !resumeFrom &&
+    desktopSession &&
+    desktopSession.sessionId &&
+    (desktopSession.cwd === workspace.cwdRealpath || desktopSession.cwd === requestedCwd)
+  ) {
+    sessionId = desktopSession.sessionId;
+    resumeFrom = sessionId;
   }
 
   let execution: RunExecution;

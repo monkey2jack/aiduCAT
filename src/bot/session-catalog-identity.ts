@@ -1,5 +1,6 @@
 import type { NormalizedMessage } from '@larksuite/channel';
 import { capabilityFor } from '../agent/capability';
+import { resolveOpenchamberActiveSession } from '../agent/models';
 import type { Controls } from '../commands';
 import type { AccessDecision } from '../policy/access';
 import { evaluateRunPolicy } from '../policy/run-policy';
@@ -16,8 +17,12 @@ export async function commandSessionCatalogIdentity(input: {
   controls: Controls;
   access: AccessDecision;
 }): Promise<SessionCatalogIdentity | undefined> {
+  const scopeCwd = input.workspaces.cwdFor(input.scope);
   const requestedCwd =
-    input.workspaces.cwdFor(input.scope) ?? input.controls.profileConfig.workspaces.default;
+    scopeCwd ??
+    (input.controls.profileConfig.agentKind === 'openchamber' && input.msg.chatType === 'p2p'
+      ? resolveOpenchamberActiveSession().cwd ?? input.controls.profileConfig.workspaces.default
+      : input.controls.profileConfig.workspaces.default);
   if (!requestedCwd) return undefined;
   const allowHomeRoot =
     input.controls.profileConfig.workspaces.allowHomeRoot ??

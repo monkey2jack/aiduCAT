@@ -7,6 +7,7 @@ export function isSafeOpencodeSessionId(value: string | undefined): value is str
 export interface BuildOpencodeArgsInput {
   sessionId?: string;
   model?: string;
+  effort?: string;
   attach?: string;
   password?: string;
   username?: string;
@@ -28,7 +29,11 @@ export function buildOpencodeArgs(input: BuildOpencodeArgsInput): string[] {
   }
 
   if (input.model && input.model !== "default") {
-    args.push("-m", input.model);
+    let modelArg = input.model;
+    if (input.effort && input.effort !== "default" && !modelArg.includes("#")) {
+      modelArg = `${modelArg}#${input.effort}`;
+    }
+    args.push("-m", modelArg);
   }
 
   if (input.attach) {
