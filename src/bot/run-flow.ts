@@ -87,6 +87,7 @@ export async function startRunFlow(input: StartRunFlowInput): Promise<StartRunFl
   if (
     input.profileConfig.agentKind === 'openchamber' &&
     !scopeCwd &&
+    !input.profileConfig.workspaces.default &&
     rawSession?.cwd
   ) {
     requestedCwd = rawSession.cwd;
