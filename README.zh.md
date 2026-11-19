@@ -10,9 +10,9 @@
 >
 > **提问在上方，过程收进一只小面板，结果由面板颜色说话。**
 >
-> 给 Claude Code / Codex CLI / Hermes Agent / DSH 穿上泡波流的飞书卡片：宣白纸面上灌一道深蓝流光，一只猫，零噪音。
+> 给 Claude Code / Codex CLI / Hermes Agent / DSH / OpenCode 穿上泡波流的飞书卡片：宣白纸面上灌一道深蓝流光，一只猫，零噪音。
 
-[![Version](https://img.shields.io/badge/version-f0.5%2B%2B-blue.svg)](https://github.com/monkey2jack/aiduCAT)
+[![Version](https://img.shields.io/badge/version-f0.6-blue.svg)](https://github.com/monkey2jack/aiduCAT)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Node 20+](https://img.shields.io/badge/node-20.12%2B-brightgreen.svg)](https://nodejs.org/)
 [![Claude Code](https://img.shields.io/badge/agent-Claude%20Code%20%7C%20Codex%20%7C%20Hermes-orange.svg)](https://docs.anthropic.com/en/docs/claude-code/quickstart)
@@ -27,16 +27,16 @@
 
 ## aiduCAT 是什么？
 
-**<b style="color:#000000">ai</b><b style="color:#525252">du</b><b style="color:#1F4E79">CAT</b>·<b style="color:#000000">爱</b><b style="color:#525252">嘟</b><b style="color:#1F4E79">妙咪飞</b>**，全称 **Coding Agent Texting**（编程代理短信/消息化），是给 **Claude Code / Codex CLI / Hermes Agent / DSH(DeepSeek Harness)** 装上的一只飞书猫（按 profile 四选一，f0.4+ 起支持 Hermes、f0.5++ 起支持 DSH） —— 把本地编程 agent 的思考、工具调用和最终答案，实时装进一张仿 [aiduPOP](https://github.com/monkey2jack/aiduPOP) 泡波样式的飞书流式卡片。
+**<b style="color:#000000">ai</b><b style="color:#525252">du</b><b style="color:#1F4E79">CAT</b>·<b style="color:#000000">爱</b><b style="color:#525252">嘟</b><b style="color:#1F4E79">妙咪飞</b>**，全称 **Coding Agent Texting**（编程代理短信/消息化），是给 **Claude Code / Codex CLI / Hermes Agent / DSH(DeepSeek Harness) / OpenCode** 装上的一只飞书猫（按 profile 五选一，f0.4+ 起支持 Hermes、f0.5++ 起支持 DSH、f0.6 起支持 OpenCode） —— 把本地编程 agent 的思考、工具调用和最终答案，实时装进一张仿 [aiduPOP](https://github.com/monkey2jack/aiduPOP) 泡波样式的飞书流式卡片。
 
 aiduCAT 起源并致敬上游 [zarazhangrui/lark-coding-agent-bridge](https://github.com/zarazhangrui/lark-coding-agent-bridge)（npm 包 `lark-channel-bridge`），在 MIT 协议的代码基础之上，做了一套完整的**泡波化改造**：
 
 | 特性 | 说明 |
 |------|------|
-| 🤖 **四种 agent 四选一**（f0.4+ Hermes、f0.5++ DSH） | 每个 profile 选 Claude Code、Codex CLI、Hermes Agent 或 DSH(DeepSeek Harness)，同一套卡片、命令和白名单；见下方「Hermes Agent 接入」与「DSH(DeepSeek Harness)接入」 |
+| 🤖 **五种 agent 五选一**（f0.4+ Hermes、f0.5++ DSH、f0.6 OpenCode） | 每个 profile 选 Claude Code、Codex CLI、Hermes Agent、DSH(DeepSeek Harness) 或 OpenCode，同一套卡片、命令和白名单；见下方「Hermes Agent 接入」、「DSH(DeepSeek Harness)接入」与「OpenCode / OpenChamber 接入」 |
 | 🫧 **单面板泡波样式** | 答案流式显示在上方；思考与全部工具调用收进一只折叠面板（aiduPOP 布局） |
 | 💭 **计数头** | 面板头：`模型 · 💭 思考段数 · 🛠️ 工具数 · ⏱️ 用时`；运行中面板正上方顶格多一行状态词（aiduCATing / Thinking / Running，后跟加载动效），结束即消失 |
-| 🏷 **工具图标** | 面板头左侧显示当前 profile 用的编程工具图标（Claude Code / Codex / Hermes Agent / DSH），不看模型；模型名照常写在图标后面 |
+| 🏷 **工具图标** | 面板头左侧显示当前 profile 用的编程工具图标（Claude Code / Codex / Hermes Agent / DSH / OpenCode），不看模型；模型名照常写在图标后面 |
 | 🔌 **多 Provider** | /model 卡三级下拉（Provider→Model→Effort）；provider 密钥走环境变量链不入配置明文；切换下一轮即生效，无需重启；10router 系网关自动识别并只拉 curated combo |
 | 🗜️ **按窗口自动压缩** | 上下文到模型窗口的 60%（`AIDUCAT_COMPACT_PCT`）自动压缩；窗口来自 10router combo（`/api/combos` 带窗口字段时）或 provider 的 `contextWindow`，都没有时 aiduCAT 不覆盖，沿用 Claude Code 自己 `settings.json` 的 `CLAUDE_CODE_MAX_CONTEXT_TOKENS` / `CLAUDE_CODE_AUTO_COMPACT_WINDOW`（f0.3.4 起不再拉 10router 的 `/v1/models` 全量模型表） |
 | 🚦 **边框即状态** | 完成绿 / 停止黄 / 出错红 / 运行中灰 —— 一眼看清结果，无结尾注脚 |
@@ -243,6 +243,25 @@ dsh --profile <profile> --json [--patch <abs.yml>] [--permission-mode <preset>] 
 | `/model` 列表为空 | 桥接读不到 `$DSH_HOME/profiles/<profile>/cordis.patch.yml`(`DSH_HOME` 没给服务、profile 名不对) | 在服务环境里设好 `DSH_HOME`,确认 profile 目录存在后重启 |
 | `dsh exited with code N` | DSH 自己非 0 退出 | 按卡片上的摘要先在终端用同样参数手跑一遍;完整 stderr 在 aiduCAT 日志里 |
 
+## OpenCode / OpenChamber 接入（f0.6）
+
+aiduCAT 现在有五种 agent，**按 profile 五选一**：Claude Code、Codex CLI、Hermes Agent、DSH、**OpenCode（含 OpenChamber 桌面端生态）**。同一套卡片、斜杠命令、白名单和群规则。
+
+### 怎么接
+
+1. 装好 OpenCode 或 OpenChamber 桌面端：
+
+```bash
+aiduCAT profile create opencode --agent opencode   # 自动探测 OpenCode / OpenChamber CLI
+aiduCAT start --profile opencode                  # 后台服务启动
+```
+
+2. 关键特性：
+- **单会话纯净重置（/clear 与 /new）**：针对 OpenCode / OpenChamber 会话机制深度定制。执行 `/clear` 或 `/new` 时，在底层直接清理当前会话的 SQLite 消息历史，使上下文 token 归零重置，**不会在 OpenChamber 桌面端侧边栏无限堆积空会话**。
+- **飞书与桌面工作区打通**：飞书会话默认自动归集至 OpenChamber 桌面端专属 `chats` 工作区，与桌面端交互自然融合、互不冲突。
+- **免费模型与 Effort 调节**：全面支持 `opencode/free-large`、`opencode/free-small` 等模型；在 `/model` 卡片中可自由调节 Reasoning Effort（high / medium / low / off）。
+- **自动路径探测**：优先匹配 `opencode.binaryPath` -> `LARK_CHANNEL_OPENCODE_BIN` -> 系统 PATH -> OpenChamber 桌面版安装路径（`resources/...`）自动寻找 CLI。
+
 ## 常用命令
 
 ### 飞书内斜杠命令
@@ -251,6 +270,7 @@ dsh --profile <profile> --json [--patch <abs.yml>] [--permission-mode <preset>] 
 |---|---|
 | `/help` | 列出所有命令（下拉可直接执行） |
 | `/new` | 中断当前任务并开新会话（沿用模型/强度）；`/new chat` 仅管理员 |
+| `/clear` | 清空当前会话上下文（保留当前会话不新增项，OpenCode 专属保留单会话；其他 Agent 执行 `/new` 效果） |
 | `/reset` | 同 `/new` |
 | `/stop` | 停止当前正在运行的任务；没有任务时回一句提示 |
 | `/status` | 六行状态卡：会话 id、模型 · 强度 · 🗜️ 压缩点、权限/owner、lark-cli/运行/队列、🚩 会话开始时间 · 时长 · 消息数、⏳ 上下文与 token 统计 |
@@ -307,6 +327,14 @@ Thinking…                                            ← 运行中面板正上
 - **结束**：状态词消失；**边框颜色说结果** —— 完成绿 / 停止黄 / 出错红；飞书会话列表预览显示 ✅Completed / ⭕️Stopped / ❌Failed / ⚠️Timed out
 - **空跑**（agent 什么都没产出就退出）：直接显示红色报错卡和原因，提示重发
 - **超长 / 被拒**：正文超 25KB 时，第 1 张卡显示到预算边界（在段落、代码块、表格边界切开，末尾「…（未完，见下一张卡）」），其余按顺序发「续 2/N」「续 3/N」卡片，markdown 正常渲染、每张 <30KB、内容不重复；超大代码块按行切开并重新开合代码围栏，超大表格按行切开并重复表头；只有续卡被飞书拒收时，该张起的剩余部分才改发一次纯文本。飞书拒收卡片时先用严格卡（无图片链接、正文 12KB）重试，再不行发纯文本，最后发一句「卡片发送失败」
+
+## 更新日志(f0.6)
+
+### f0.6
+
+- **OpenCode 成为第五种 agent**：`aiduCAT profile create <名字> --agent opencode`，与 Claude Code / Codex / Hermes / DSH 并列五大 Agent；自动探测 OpenChamber 安装并绑定专属 chats 桌面工作区；
+- **单会话 `/clear` 与防会话堆积**：保留单会话的同时重置上下文，token 计数即时清零，桌面侧边栏不新增无用空会话；
+- **`/model` 免费模型与 Effort 调节**：全面支持 free-large / free-small 等 OpenCode 原生模型，卡片即时调控思考强度。
 
 ## 更新日志(f0.5++)
 

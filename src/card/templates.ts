@@ -224,6 +224,7 @@ export function resumeCard(cwd: string, entries: ResumeEntry[]): object {
  */
 export const HELP_COMMANDS: Array<{ cmd: string; note: string }> = [
   { cmd: 'new', note: '新建会话，重新开始' },
+  { cmd: 'clear', note: '清空当前会话上下文（保留当前会话）' },
   { cmd: 'reset', note: '同 /new（别名）' },
   { cmd: 'resume', note: '列出并恢复历史会话' },
   { cmd: 'cd', note: '切换工作目录' },

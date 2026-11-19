@@ -4,6 +4,26 @@ aiduCAT 的版本号用 `f` 前缀（f0.1、f0.2+ …），`package.json` 里是
 
 > **tag 说明**：`f0.2++` 原先误指 `6fa62f8`（package 0.2.1），**已于 2026-10-31 修正**为真实发布提交 `c7ff90d`（0.2.2）。`f0.2+`、`v0.2.1` 核实后保持 `6fa62f8`：f0.2+ 的 GitHub Release 于 2026-10-20 01:17 从 main 发布，当时 main 的头部就是 `6fa62f8`（package 0.2.1）；版本号提交 `f01fcd2` 与它只差文档和一个测试，没有代码差别。
 
+## f0.6 — 2026-11-19（package 0.6.0）
+
+基于 f0.5++（`a00e2a4`）。主题：**第五种 agent，全面适配 OpenCode / OpenChamber**——aiduCAT 正式支持 OpenCode，与 Claude Code / Codex / Hermes / DSH 并列五大编程 Agent；深度适配 OpenChamber 桌面端生态，实现真正的单会话纯净清空与轻量高效编码。
+
+- **新增第五种 Agent `agentKind: 'opencode'`（OpenCode / OpenChamber）**：
+  - **自动发现安装路径**：优先匹配 `opencode.binaryPath`、`LARK_CHANNEL_OPENCODE_BIN`、PATH 环境变量，或自动定位 OpenChamber 桌面端嵌入式 CLI（`OpenChamber/resources/...`）。
+  - **会话工作区无缝打通**：飞书端会话自动归集至 OpenChamber 桌面端专属 `chats` 工作区，桌面端与飞书端各司其职、互不干扰。
+  - **面板图标与品牌**：面板头左侧展示 OpenCode 官方标识，状态流式展现。
+- **`/model` 自由切换与 effort 调节**：
+  - 完整支持 OpenCode 免费及主流模型（如 `opencode/free-large`、`opencode/free-small` 等）。
+  - 卡片集成 Reasoning Effort 调节（high / medium / low / off），适配不同深度思考需求。
+  - 模型切换仅在当前 profile/会话生效，不破坏桌面端全局默认配置。
+- **单会话 `/clear` 与 `/new` 纯净重置**：
+  - 针对 OpenCode 会话机制量身优化：在保留当前 Session ID 的前提下，通过清理底层 SQLite 消息历史实现真正的上下文清空（重置回系统提示词基线）。
+  - 彻底杜绝每次 `/new` 都在桌面端侧边栏无限堆积空会话的问题；token 统计与上下文长度即时归零刷新。
+  - 飞书卡片同步支持 `/clear` 命令。
+- **进程自愈与稳定性保障**：
+  - Windows 环境下守护进程防僵死加固，自动收束孤儿进程。
+  - 健全会话状态与 Token 监控，`/status` 卡片精确展示上下文占用与会话元数据。
+
 ## f0.5++ — 2026-11-18(package 0.5.2)
 
 基于 f0.5+(`cf48c4c`)。主题:**第四种 agent,DeepSeek Harness**——aiduCAT 现在能驱动 DSH,和 Claude Code / Codex / Hermes 并列;并且 DSH 这一路做到「飞书跟着桌面走」,而不是自成一套。

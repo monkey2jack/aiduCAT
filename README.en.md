@@ -12,7 +12,7 @@
 >
 > Dress your Claude Code / Codex CLI / Hermes Agent / DSH (DeepSeek Harness) in a Bubble-Wave Feishu card: deep-blue veins on paper white, one cat, zero noise.
 
-[![Version](https://img.shields.io/badge/version-f0.5%2B%2B-blue.svg)](https://github.com/monkey2jack/aiduCAT)
+[![Version](https://img.shields.io/badge/version-f0.6-blue.svg)](https://github.com/monkey2jack/aiduCAT)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Node 20+](https://img.shields.io/badge/node-20.12%2B-brightgreen.svg)](https://nodejs.org/)
 [![Claude Code](https://img.shields.io/badge/agent-Claude%20Code%20%7C%20Codex%20%7C%20Hermes-orange.svg)](https://docs.anthropic.com/en/docs/claude-code/quickstart)
@@ -27,16 +27,16 @@
 
 ## What is aiduCAT?
 
-**aiduCAT☤爱嘟妙咪飞** — **Coding Agent Texting** — is a Feishu cat for **Claude Code / Codex CLI / Hermes Agent / DSH (DeepSeek Harness)** (one per profile; Hermes since f0.4+, DSH since f0.5++): it streams your local coding agent's thinking, tool calls and final answer into a single Feishu card styled after [aiduPOP](https://github.com/monkey2jack/aiduPOP)'s Bubble Wave.
+**aiduCAT☤爱嘟妙咪飞** — **Coding Agent Texting** — is a Feishu cat for **Claude Code / Codex CLI / Hermes Agent / DSH (DeepSeek Harness) / OpenCode** (one per profile; Hermes since f0.4+, DSH since f0.5++, OpenCode since f0.6): it streams your local coding agent's thinking, tool calls and final answer into a single Feishu card styled after [aiduPOP](https://github.com/monkey2jack/aiduPOP)'s Bubble Wave.
 
 aiduCAT originates from and credits the upstream [zarazhangrui/lark-coding-agent-bridge](https://github.com/zarazhangrui/lark-coding-agent-bridge) (npm package `lark-channel-bridge`), an MIT-licensed project. On top of that code, aiduCAT adds a complete **Bubble Wave transformation**:
 
 | Feature | What it does |
 |------|------|
-| 🤖 **Four agents, pick one** (Hermes f0.4+, DSH f0.5++) | Each profile runs Claude Code, Codex CLI, Hermes Agent or DSH (DeepSeek Harness) with the same cards, commands and allowlists; see "Hermes Agent" and "DSH (DeepSeek Harness)" below |
+| 🤖 **Five agents, pick one** (Hermes f0.4+, DSH f0.5++, OpenCode f0.6) | Each profile runs Claude Code, Codex CLI, Hermes Agent, DSH (DeepSeek Harness) or OpenCode with the same cards, commands and allowlists; see "Hermes Agent", "DSH (DeepSeek Harness)" and "OpenCode / OpenChamber" below |
 | 🫧 **Single Bubble-Wave panel** | The answer streams on top; thinking and every tool call fold into one collapsible panel (aiduPOP layout) |
 | 💭 **Counter header** | Panel header: `model · 💭 thinking segments · 🛠️ tools · ⏱️ elapsed`; while running a status line sits flush-left right above the panel (aiduCATing / Thinking / Running, followed by loading dots), gone on completion |
-| 🏷 **Agent icon** | The panel header shows the profile's coding agent (Claude Code / Codex / Hermes Agent / DSH), not the model vendor; the model id follows the icon |
+| 🏷 **Agent icon** | The panel header shows the profile's coding agent (Claude Code / Codex / Hermes Agent / DSH / OpenCode), not the model vendor; the model id follows the icon |
 | 🔌 **Multi-provider** | `/model` card with Provider → Model → Effort dropdowns; provider keys resolve from env/secret refs, never plaintext; takes effect next turn without restart; 10router gateways only offer curated combos |
 | 🗜️ **Window-based auto-compact** | Compacts at 60% of the model window (`AIDUCAT_COMPACT_PCT`); the window comes from the 10router combo (when `/api/combos` carries a window field) or the provider's `contextWindow`; when neither has one aiduCAT sets nothing and Claude Code keeps `CLAUDE_CODE_MAX_CONTEXT_TOKENS` / `CLAUDE_CODE_AUTO_COMPACT_WINDOW` from its own `settings.json` (since f0.3.4 the full 10router `/v1/models` list is never pulled) |
 | 🚦 **Border = status** | done green / stopped yellow / error red / running grey — no trailing notes |
@@ -243,6 +243,25 @@ dsh --profile <profile> --json [--patch <abs.yml>] [--permission-mode <preset>] 
 | empty `/model` list | the bridge cannot read `$DSH_HOME/profiles/<profile>/cordis.patch.yml` (`DSH_HOME` not set for the service, wrong profile name) | set `DSH_HOME` in the service environment, check the profile dir exists, restart |
 | `dsh exited with code N` | DSH itself exited non-zero | run the same command by hand in a terminal; the full stderr is in the aiduCAT log |
 
+## OpenCode / OpenChamber integration (f0.6)
+
+aiduCAT supports five agents, **one per profile**: Claude Code, Codex CLI, Hermes Agent, DSH, and **OpenCode (including OpenChamber desktop)**. All share the same cards, slash commands, allowlists, and group rules.
+
+### Setup
+
+1. Install OpenCode or OpenChamber desktop:
+
+```bash
+aiduCAT profile create opencode --agent opencode   # auto-detects OpenCode / OpenChamber CLI
+aiduCAT start --profile opencode                  # start background service
+```
+
+2. Key Features:
+- **Single-session context reset (/clear and /new)**: Tailored for OpenCode's session architecture. Calling `/clear` or `/new` clears message history directly from the SQLite store, resetting tokens to baseline **without cluttering the OpenChamber desktop sidebar with empty sessions**.
+- **Unified workspace**: Feishu sessions bind to OpenChamber's dedicated `chats` workspace, keeping desktop and chat contexts clean and aligned.
+- **Free models & Effort control**: Full support for `opencode/free-large`, `opencode/free-small`, and more; adjusts Reasoning Effort directly via the `/model` card (high / medium / low / off).
+- **Auto CLI discovery**: Resolves path in order: `opencode.binaryPath` -> `LARK_CHANNEL_OPENCODE_BIN` -> system PATH -> OpenChamber desktop app bundle (`resources/...`).
+
 ## Commands
 
 ### Slash commands inside Feishu / Lark
@@ -251,6 +270,7 @@ dsh --profile <profile> --json [--patch <abs.yml>] [--permission-mode <preset>] 
 |---|---|
 | `/help` | List every command (the dropdown runs one directly) |
 | `/new` | Stop the current task and start a new session (keeps model/effort); `/new chat` is admin-only |
+| `/clear` | Clear current session context (preserves session without creating a new one in OpenCode; acts as `/new` for others) |
 | `/reset` | Same as `/new` |
 | `/stop` | Stop the running task; says so when nothing is running |
 | `/status` | Six-line status card: session id, model · effort · 🗜️ compact point, permissions/owner, lark-cli/run/queue, 🚩 session start · age · message counts, ⏳ context and token stats |
@@ -307,6 +327,14 @@ Thinking…                                            ← flush-left above the 
 - **On completion**: the status word disappears; the **border carries the result** — done green / stopped yellow / error red; the Feishu chat-list preview shows ✅Completed / ⭕️Stopped / ❌Failed / ⚠️Timed out
 - **Empty run** (the agent exits without output): a red error card with the reason, asking you to resend
 - **Too long / rejected**: an answer over 25KB fills card 1 up to the budget (cut at a paragraph, code-block or table boundary, ending in "…（未完，见下一张卡）"), then continues on ordered "续 2/N", "续 3/N" cards — rendered markdown, each <30KB, nothing repeated; an oversized code block is split between lines with the fence reopened, an oversized table between rows with the header repeated; only if Feishu rejects a continuation card does the rest from that card on go out once as plain text. if Feishu rejects the card, a strict card (no image links, 12KB answer) is retried, then plain text, then a one-line "card failed" notice
+
+## Changelog (f0.6)
+
+### f0.6
+
+- **OpenCode as the fifth agent**: `aiduCAT profile create <name> --agent opencode`, alongside Claude Code, Codex, Hermes, and DSH; auto-detects OpenChamber desktop CLI and binds to dedicated chats workspace;
+- **Single-session `/clear` context reset**: clears message history while preserving the session ID without cluttering the desktop sidebar; token counts reset instantly;
+- **`/model` free models & effort control**: full support for OpenCode native free models (free-large, free-small) and reasoning effort adjustments on the card.
 
 ## Changelog (f0.5++)
 

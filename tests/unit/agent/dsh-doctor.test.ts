@@ -141,6 +141,7 @@ describe('describeDshRuntime', () => {
 
   it('reports the launch source, version policy, profile and mirror state', async () => {
     await fixture();
+    process.env.LARK_CHANNEL_DSH_BIN = process.execPath;
     const { syncModelRoutingFromDesktop } = await import('../../../src/agent/dsh/profile-sync.js');
     syncModelRoutingFromDesktop();
     resetDshProfileModelsCache();
