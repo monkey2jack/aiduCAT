@@ -205,6 +205,7 @@ const RESUME_APPLIED_REPLY = '已完成，请继续发送下一条消息。';
 const handlers: Record<string, Handler> = {
   '/new': handleNew,
   '/reset': handleNew,
+  '/clear': handleNew,
   '/cd': handleCd,
   '/ws': handleWs,
   '/resume': handleResume,
@@ -492,6 +493,43 @@ async function handleNew(args: string, ctx: CommandContext): Promise<void> {
   }
 
   const wasRunning = ctx.activeRuns.interrupt(ctx.scope);
+  const agentKind = ctx.controls.profileConfig.agentKind;
+
+  const activeSessionId =
+    ctx.sessions.getRaw(ctx.scope)?.sessionId ??
+    (ctx.sessionCatalog && ctx.sessionCatalogIdentity
+      ? ctx.sessionCatalog.activeFor(ctx.sessionCatalogIdentity)?.sessionId
+      : undefined);
+
+  if ((agentKind === 'openchamber' || agentKind === 'opencode') && activeSessionId) {
+    const { clearOpencodeSessionMessages } = await import('../agent/opencode/desktop');
+    clearOpencodeSessionMessages(activeSessionId);
+    ctx.sessions.resetStats(ctx.scope);
+
+    const eff = effectiveModelPrefs(ctx.controls.profileConfig, chatModelKey(ctx));
+    const modelPref = eff.model;
+    const effortPref = eff.effort;
+    const snapshot = [
+      modelPref
+        ? `模型 ${displayModelName(
+            agentKind,
+            ctx.controls.profileConfig,
+            resolveModelArg(agentKind, modelPref) ?? modelPref,
+          )}`
+        : '模型 跟随默认',
+      effortPref ? `effort ${effortPref}` : 'effort 默认',
+      ...(inGroup(ctx) ? [chatModelSourceLabel(eff.source, true)] : []),
+    ].join(' · ');
+
+    await reply(
+      ctx,
+      wasRunning
+        ? `已中断当前任务并清空会话上下文（保留会话，沿用：${snapshot}）。`
+        : `已清空会话上下文（保留会话，沿用：${snapshot}）。`,
+    );
+    return;
+  }
+
   if (ctx.sessionCatalog && ctx.sessionCatalogIdentity) {
     ctx.sessionCatalog.archiveActive({
       ...ctx.sessionCatalogIdentity,
@@ -502,7 +540,6 @@ async function handleNew(args: string, ctx: CommandContext): Promise<void> {
   // aiduCAT: carry a read-only snapshot of the model/effort the new session
   // will inherit, so the user isn't surprised by a silently-persisted /model
   // card choice. Display only — changing it still goes through /model.
-  const agentKind = ctx.controls.profileConfig.agentKind;
   // f04-group-cmd-model: the model THIS chat runs (group's own or default).
   const eff = effectiveModelPrefs(ctx.controls.profileConfig, chatModelKey(ctx));
   const modelPref = eff.model;

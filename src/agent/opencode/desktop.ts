@@ -118,3 +118,30 @@ export function opencodeModelCatalog(): ModelOption[] {
     m.value === OPENCODE_DEFAULT_MODEL ? { ...m, label: defaultLabel } : { ...m },
   );
 }
+
+export function clearOpencodeSessionMessages(sessionId: string): { ok: boolean; clearedMessages?: number; error?: string } {
+  const home = process.env.USERPROFILE || process.env.HOME || '';
+  if (!home) return { ok: false, error: 'no home' };
+  const dbPath = join(home, '.local', 'share', 'opencode', 'opencode.db');
+  if (!existsSync(dbPath)) return { ok: false, error: 'db not found' };
+
+  try {
+    const sqliteMod = require('node:sqlite');
+    if (!sqliteMod?.DatabaseSync) return { ok: false, error: 'node:sqlite unavailable' };
+    const db = new sqliteMod.DatabaseSync(dbPath);
+    try {
+      db.prepare('DELETE FROM session_part WHERE session_id = ?').run(sessionId);
+      const res = db.prepare('DELETE FROM session_message WHERE session_id = ?').run(sessionId) as { changes?: number };
+      db.prepare(`
+        UPDATE session_v2 
+        SET tokens_input = 0, tokens_output = 0, tokens_reasoning = 0, tokens_cache_read = 0, tokens_cache_write = 0, cost = 0, time_updated = ?
+        WHERE id = ?
+      `).run(Date.now(), sessionId);
+      return { ok: true, clearedMessages: res?.changes ?? 0 };
+    } finally {
+      db.close();
+    }
+  } catch (err: any) {
+    return { ok: false, error: err?.message || String(err) };
+  }
+}
