@@ -66,7 +66,7 @@ type StoredProfileConfig = Pick<
   | 'larkCli'
 > &
   // f0.2: optional extension block survives save cycles.
-  Partial<Pick<ProfileConfig, 'modelProviders' | 'defaultProviderName' | 'agentEnv' | 'hermes' | 'dsh'>> & {
+  Partial<Pick<ProfileConfig, 'modelProviders' | 'defaultProviderName' | 'agentEnv' | 'hermes' | 'dsh' | 'opencode'>> & {
     /** f03p-slim-#1: only the switched-off modules are written. */
     features?: Partial<ProfileFeatures>;
     /** Supervisor auto-start flag; only written when the user turned it off. */
@@ -108,6 +108,7 @@ function serializeProfileConfig(profile: ProfileConfig): StoredProfileConfig {
     ...(profile.codex ? { codex: profile.codex } : {}),
     ...(profile.hermes ? { hermes: profile.hermes } : {}),
     ...(profile.dsh ? { dsh: profile.dsh } : {}),
+    ...(profile.opencode ? { opencode: profile.opencode } : {}),
     attachments: profile.attachments,
     comments: {},
     meeting: profile.meeting,
