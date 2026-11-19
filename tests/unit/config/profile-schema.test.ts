@@ -573,4 +573,35 @@ describe('profile schema', () => {
       maxAccess: 'workspace',
     });
   });
+  it('normalizes opencode profile with defaults', () => {
+    const cfg = createDefaultProfileConfig({
+      agentKind: 'opencode',
+      accounts: { app },
+    });
+    expect(cfg.agentKind).toBe('opencode');
+    expect(cfg.opencode).toEqual({
+      binaryPath: 'opencode',
+    });
+  });
+
+  it('normalizes openchamber profile with custom serverUrl and auth', () => {
+    const cfg = normalizeProfileConfig({
+      schemaVersion: 2,
+      agentKind: 'openchamber',
+      accounts: { app },
+      opencode: {
+        binaryPath: 'C:\\Program Files\\openchamber\\opencode.exe',
+        serverUrl: 'http://127.0.0.1:7737',
+        password: 'chamber-pass',
+        username: 'opencode',
+      },
+    });
+    expect(cfg.agentKind).toBe('openchamber');
+    expect(cfg.opencode).toEqual({
+      binaryPath: 'C:\\Program Files\\openchamber\\opencode.exe',
+      serverUrl: 'http://127.0.0.1:7737',
+      password: 'chamber-pass',
+      username: 'opencode',
+    });
+  });
 });

@@ -35,6 +35,10 @@ export async function createBootstrapProfileConfig(
     input.agentKind === 'dsh'
       ? { binaryPath: process.env.LARK_CHANNEL_DSH_BIN ?? 'dsh' }
       : undefined;
+  const opencode =
+    input.agentKind === 'opencode' || input.agentKind === 'openchamber'
+      ? { binaryPath: process.env.LARK_CHANNEL_OPENCODE_BIN ?? 'opencode' }
+      : undefined;
   const profile = createDefaultProfileConfig({
     agentKind: input.agentKind,
     accounts: input.accounts,
@@ -43,6 +47,7 @@ export async function createBootstrapProfileConfig(
     ...(codex ? { codex } : {}),
     ...(hermes ? { hermes } : {}),
     ...(dsh ? { dsh } : {}),
+    ...(opencode ? { opencode } : {}),
   });
   if (workspace) {
     profile.workspaces = {

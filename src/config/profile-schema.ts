@@ -16,7 +16,7 @@ import {
   type PermissionSource,
 } from './permissions';
 
-export type AgentKind = 'claude' | 'codex' | 'hermes' | 'dsh';
+export type AgentKind = 'claude' | 'codex' | 'hermes' | 'dsh' | 'opencode' | 'openchamber';
 export type SandboxMode = CodexSandboxMode;
 export type { AccessMode, PermissionConfig, PermissionSource };
 
@@ -102,6 +102,13 @@ export interface DshConfig {
   privatePatch?: string;
   /** @deprecated read from the DSH profile instead; fallback only. */
   modelLabel?: string;
+}
+
+export interface OpencodeConfig {
+  binaryPath: string;
+  serverUrl?: string;
+  password?: string;
+  username?: string;
 }
 
 export interface CodexConfig {
@@ -294,6 +301,8 @@ export interface ProfileConfig {
   hermes?: HermesConfig;
   /** f0.5++: DSH settings, required when agentKind is 'dsh'. */
   dsh?: DshConfig;
+  /** OpenCode / OpenChamber settings. */
+  opencode?: OpencodeConfig;
   attachments: AttachmentConfig;
   comments: CommentConfig;
   /** In-meeting agent settings. See {@link MeetingConfig}. */
@@ -378,6 +387,7 @@ export interface CreateDefaultProfileConfigInput {
   codex?: CodexConfig;
   hermes?: HermesConfig;
   dsh?: DshConfig;
+  opencode?: OpencodeConfig;
   secrets?: SecretsConfig;
   features?: Partial<ProfileFeatures>;
 }
@@ -431,8 +441,8 @@ export function normalizeProfileConfig(input: unknown): ProfileConfig {
   if (raw.schemaVersion !== 2) {
     throw new Error('profile schemaVersion must be 2');
   }
-  if (raw.agentKind !== 'claude' && raw.agentKind !== 'codex' && raw.agentKind !== 'hermes' && raw.agentKind !== 'dsh') {
-    throw new Error('agentKind must be claude, codex, hermes or dsh');
+  if (raw.agentKind !== 'claude' && raw.agentKind !== 'codex' && raw.agentKind !== 'hermes' && raw.agentKind !== 'dsh' && raw.agentKind !== 'opencode' && raw.agentKind !== 'openchamber') {
+    throw new Error('agentKind must be claude, codex, hermes, dsh, opencode or openchamber');
   }
   const accounts = normalizeAccounts(raw.accounts);
   if (raw.agentKind === 'codex' && !raw.codex) {
@@ -477,6 +487,7 @@ export function normalizeProfileConfig(input: unknown): ProfileConfig {
     ...(raw.codex ? { codex: normalizeCodex(raw.codex) } : {}),
     ...(raw.hermes || raw.agentKind === 'hermes' ? { hermes: normalizeHermes(raw.hermes) } : {}),
     ...(raw.dsh || raw.agentKind === 'dsh' ? { dsh: normalizeDsh(raw.dsh) } : {}),
+    ...(raw.opencode || raw.agentKind === 'opencode' || raw.agentKind === 'openchamber' ? { opencode: normalizeOpencode(raw.opencode) } : {}),
     ...normalizeAgentEnv(raw.agentEnv),
     attachments: {
       maxCount: numberOr(raw.attachments?.maxCount, 10),
@@ -658,6 +669,24 @@ function normalizeDsh(input: unknown): DshConfig {
     ...(profile ? { profile } : {}),
     ...(privatePatch ? { privatePatch } : {}),
     ...(modelLabel ? { modelLabel } : {}),
+  };
+}
+
+function normalizeOpencode(input: unknown): OpencodeConfig {
+  const raw = (input && typeof input === 'object' ? input : {}) as Record<string, unknown>;
+  const binaryPath =
+    typeof raw.binaryPath === 'string' && raw.binaryPath.trim() ? raw.binaryPath.trim() : 'opencode';
+  const serverUrl =
+    typeof raw.serverUrl === 'string' && raw.serverUrl.trim() ? raw.serverUrl.trim() : undefined;
+  const password =
+    typeof raw.password === 'string' && raw.password.trim() ? raw.password.trim() : undefined;
+  const username =
+    typeof raw.username === 'string' && raw.username.trim() ? raw.username.trim() : undefined;
+  return {
+    binaryPath,
+    ...(serverUrl ? { serverUrl } : {}),
+    ...(password ? { password } : {}),
+    ...(username ? { username } : {}),
   };
 }
 

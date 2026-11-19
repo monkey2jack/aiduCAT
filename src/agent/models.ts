@@ -247,10 +247,16 @@ export function dshModelCatalog(configuredProfile?: string): ModelOption[] {
   return options;
 }
 
+export const OPENCODE_MODELS: ModelOption[] = [
+  { value: DEFAULT_MODEL, label: 'Default (OpenCode Default)' },
+  { value: 'opencode/hy4-flash-free', label: 'Hunyuan 4 Flash (Free)' },
+];
+
 /** The model picker options for a profile's agent kind. */
 export function supportedModels(agentKind: AgentKind): ModelOption[] {
   if (agentKind === 'hermes') return HERMES_MODELS;
   if (agentKind === 'dsh') return dshModelCatalog();
+  if (agentKind === 'opencode' || agentKind === 'openchamber') return OPENCODE_MODELS;
   return agentKind === 'codex' ? CODEX_MODELS : CLAUDE_MODELS;
 }
 

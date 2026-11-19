@@ -96,6 +96,9 @@ export function createRuntimeProfileConfig(
     ...(input.agentKind === 'dsh'
       ? { dsh: input.dsh ?? { binaryPath: process.env.LARK_CHANNEL_DSH_BIN ?? 'dsh' } }
       : {}),
+    ...(input.agentKind === 'opencode' || input.agentKind === 'openchamber'
+      ? { opencode: input.opencode ?? { binaryPath: process.env.LARK_CHANNEL_OPENCODE_BIN ?? 'opencode' } }
+      : {}),
   });
 }
 
@@ -615,7 +618,7 @@ class UserCancelledError extends Error {
 }
 
 function displayAgentKind(kind: AgentKind): string {
-  return kind === 'claude' ? 'Claude Code' : kind === 'hermes' ? 'Hermes Agent' : kind === 'dsh' ? 'DeepSeek Harness' : 'Codex CLI';
+  return kind === 'claude' ? 'Claude Code' : kind === 'hermes' ? 'Hermes Agent' : kind === 'dsh' ? 'DeepSeek Harness' : kind === 'opencode' || kind === 'openchamber' ? 'OpenCode' : 'Codex CLI';
 }
 
 async function maybeMigrateRootPlaintextSecret(

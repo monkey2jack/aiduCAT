@@ -733,6 +733,10 @@ async function handleResume(args: string, ctx: CommandContext): Promise<void> {
     await reply(ctx, 'DSH 会话由系统自动接管（--session-id），无需手动 resume。');
     return;
   }
+  if (ctx.controls.profileConfig.agentKind === 'opencode' || ctx.controls.profileConfig.agentKind === 'openchamber') {
+    await reply(ctx, 'OpenCode 会话由系统自动接管（-s/--session），无需手动 resume。');
+    return;
+  }
   const parts = args.trim().split(/\s+/).filter(Boolean);
   const sub = parts[0] ?? '';
   const rest = parts.slice(1).join(' ').trim();

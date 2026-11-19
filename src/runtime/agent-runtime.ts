@@ -88,6 +88,18 @@ export async function createRuntimeAgent(
       envPassthrough: profileConfig.agentEnv?.passthrough ?? [],
     });
   }
+  if (profileConfig.agentKind === 'opencode' || profileConfig.agentKind === 'openchamber') {
+    const { OpencodeAdapter } = await import('../agent/opencode/adapter');
+    const opencode = profileConfig.opencode;
+    return new OpencodeAdapter({
+      binary: opencode?.binaryPath ?? process.env.LARK_CHANNEL_OPENCODE_BIN ?? 'opencode',
+      ...(opencode?.serverUrl ? { serverUrl: opencode.serverUrl } : {}),
+      ...(opencode?.password ? { password: opencode.password } : {}),
+      ...(opencode?.username ? { username: opencode.username } : {}),
+      larkChannel,
+      envPassthrough: profileConfig.agentEnv?.passthrough ?? [],
+    });
+  }
   return new ClaudeAdapter({
     larkChannel,
     envPassthrough: profileConfig.agentEnv?.passthrough ?? [],
@@ -103,7 +115,7 @@ export async function checkRuntimeAgentAvailability(agent: AgentAdapter): Promis
   // The binary named in the diagnostic must match the reported agent id, or a
   // DSH profile with a missing launcher is misdiagnosed as `claude`.
   const agentId: LocalAgentId =
-    agent.id === 'codex' || agent.id === 'hermes' || agent.id === 'dsh' ? agent.id : 'claude';
+    agent.id === 'codex' || agent.id === 'hermes' || agent.id === 'dsh' || agent.id === 'opencode' || agent.id === 'openchamber' ? agent.id : 'claude';
   const diagnostic = {
     code: 'agent-binary-not-found' as const,
     agentId,

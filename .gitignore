@@ -24,3 +24,4 @@ scripts/
 tests-smoke/
 feedback-group-qr.png
 package-lock.json
+.backups/
