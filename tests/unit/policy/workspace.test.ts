@@ -53,6 +53,22 @@ describe('working directory resolver', () => {
       reason: 'temp-root',
     });
   });
+
+  it('allows homedir when allowHomeRoot is explicitly enabled', async () => {
+    const res = await resolveWorkingDirectory(homedir(), { allowHomeRoot: true });
+    expect(res).toMatchObject({
+      ok: true,
+      cwdRealpath: await realpath(homedir()),
+    });
+  });
+
+  it('allows homedir when roots contains home or ~', async () => {
+    const res = await resolveWorkingDirectory(homedir(), { roots: ['~'] });
+    expect(res).toMatchObject({
+      ok: true,
+      cwdRealpath: await realpath(homedir()),
+    });
+  });
 });
 
 async function makeTmp(): Promise<string> {

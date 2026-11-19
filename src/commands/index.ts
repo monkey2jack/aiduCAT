@@ -575,8 +575,12 @@ async function handleCd(args: string, ctx: CommandContext): Promise<void> {
     return;
   }
   const absolute = expandTilde(input);
+  const allowHomeRoot =
+    ctx.controls.profileConfig.workspaces.allowHomeRoot ??
+    (ctx.controls.profileConfig.agentKind === 'openchamber');
   const workspace = await resolveWorkingDirectory(absolute, {
     roots: ctx.controls.profileConfig.workspaces.roots,
+    allowHomeRoot,
   });
   if (!workspace.ok) {
     await reply(ctx, workspace.userVisible);
@@ -644,6 +648,7 @@ async function handleWsUse(name: string, ctx: CommandContext): Promise<void> {
   }
   const workspace = await resolveWorkingDirectory(cwd, {
     roots: ctx.controls.profileConfig.workspaces.roots,
+    allowHomeRoot,
   });
   if (!workspace.ok) {
     await reply(ctx, workspace.userVisible);
@@ -1398,7 +1403,9 @@ async function handleDoctor(args: string, ctx: CommandContext): Promise<void> {
 
   const workspace = await resolveWorkingDirectory(
     requestedCwd,
-    scopeCwdSet ? { roots: ctx.controls.profileConfig.workspaces.roots } : {},
+    scopeCwdSet
+      ? { roots: ctx.controls.profileConfig.workspaces.roots, allowHomeRoot }
+      : { allowHomeRoot },
   );
   if (!workspace.ok) {
     await reply(

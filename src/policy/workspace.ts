@@ -32,6 +32,8 @@ export interface ResolveWorkingDirectoryOptions {
    * sit under one of these roots' realpaths; the blacklist still applies.
    */
   roots?: readonly string[];
+  /** Allow home root as working directory (e.g. for personal desktop agent mode / OpenChamber). */
+  allowHomeRoot?: boolean;
 }
 
 export async function resolveWorkingDirectory(
@@ -57,7 +59,7 @@ export async function resolveWorkingDirectory(
 
   const tempRealpath = await realpath(tmpdir()).catch(() => resolve(tmpdir()));
   const homeRealpath = await realpath(homedir()).catch(() => resolve(homedir()));
-  const broad = classifyHighRiskWorkingDirectory(resolved, requestedCwd, tempRealpath, homeRealpath);
+  const broad = classifyHighRiskWorkingDirectory(resolved, requestedCwd, tempRealpath, homeRealpath, opts);
   if (broad) return broad;
 
   const roots = (opts.roots ?? []).filter((r) => typeof r === 'string' && r.trim());
@@ -100,17 +102,21 @@ function classifyHighRiskWorkingDirectory(
   requestedCwd: string,
   tempRealpath: string,
   homeRealpath: string,
+  opts?: ResolveWorkingDirectoryOptions,
 ): WorkingDirectoryResolveResult | undefined {
   if (real === dirname(real)) {
     return reject('filesystem-root', requestedCwd, '不能把文件系统根目录设为工作目录。');
   }
 
   const home = homeRealpath;
-  if (real === home) {
-    return reject('home-root', requestedCwd, '不能把 Home 根目录设为工作目录，请选择更具体的子目录。');
-  }
-  if (real === dirname(home)) {
-    return reject('user-root', requestedCwd, '不能把用户目录根设为工作目录，请选择更具体的子目录。');
+  const allowHome = Boolean(opts?.allowHomeRoot || opts?.roots?.some((r) => r.trim() === '~' || r.trim() === homeRealpath));
+  if (!allowHome) {
+    if (real === home) {
+      return reject('home-root', requestedCwd, '不能把 Home 根目录设为工作目录，请选择更具体的子目录。');
+    }
+    if (real === dirname(home)) {
+      return reject('user-root', requestedCwd, '不能把用户目录根设为工作目录，请选择更具体的子目录。');
+    }
   }
 
   if (dirname(real) === home && new Set(['Desktop', 'Downloads']).has(basename(real))) {

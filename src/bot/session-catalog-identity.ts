@@ -19,7 +19,10 @@ export async function commandSessionCatalogIdentity(input: {
   const requestedCwd =
     input.workspaces.cwdFor(input.scope) ?? input.controls.profileConfig.workspaces.default;
   if (!requestedCwd) return undefined;
-  const workspace = await resolveWorkingDirectory(requestedCwd);
+  const allowHomeRoot =
+    input.controls.profileConfig.workspaces.allowHomeRoot ??
+    (input.controls.profileConfig.agentKind === 'openchamber');
+  const workspace = await resolveWorkingDirectory(requestedCwd, { allowHomeRoot });
   if (!workspace.ok) return undefined;
   const capability =
     capabilityFor(input.controls.profileConfig);

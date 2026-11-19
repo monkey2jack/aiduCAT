@@ -85,9 +85,14 @@ export async function startRunFlow(input: StartRunFlowInput): Promise<StartRunFl
   // f03p-infra-#3: a chat's own cwd (set by /cd or /ws use, maybe before the
   // allowlist existed) must be under workspaces.roots; the profile default is
   // the owner's own choice and is not re-checked.
+  const allowHomeRoot =
+    input.profileConfig.workspaces.allowHomeRoot ??
+    (input.profileConfig.agentKind === 'openchamber');
   const workspace = await resolveWorkingDirectory(
     requestedCwd,
-    scopeCwd ? { roots: input.profileConfig.workspaces.roots } : {},
+    scopeCwd
+      ? { roots: input.profileConfig.workspaces.roots, allowHomeRoot }
+      : { allowHomeRoot },
   );
   if (!workspace.ok) {
     return {

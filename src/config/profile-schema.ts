@@ -292,6 +292,8 @@ export interface ProfileConfig {
      * profile default above is the owner's choice and is not checked).
      */
     roots?: string[];
+    /** Allow home root as working directory (e.g. for OpenChamber desktop agent). */
+    allowHomeRoot?: boolean;
   };
   sandbox: SandboxConfig;
   permissions: PermissionConfig;
@@ -593,6 +595,7 @@ function normalizeChatMentionMap(input: unknown): Record<string, boolean> {
 function normalizeWorkspaces(input: {
   default?: unknown;
   roots?: unknown;
+  allowHomeRoot?: unknown;
   trusted?: unknown;
   trustedRoots?: unknown;
   riskFlags?: unknown;
@@ -606,9 +609,11 @@ function normalizeWorkspaces(input: {
         .map((r) => r.trim())
         .filter((r) => r === '~' || r.startsWith('~/') || isAbsolute(r))
     : [];
+  const allowHomeRoot = typeof input?.allowHomeRoot === 'boolean' ? input.allowHomeRoot : undefined;
   return {
     ...(defaultWorkspace ? { default: defaultWorkspace } : {}),
     ...(roots.length > 0 ? { roots } : {}),
+    ...(allowHomeRoot !== undefined ? { allowHomeRoot } : {}),
   };
 }
 
