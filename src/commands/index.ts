@@ -505,6 +505,11 @@ async function handleNew(args: string, ctx: CommandContext): Promise<void> {
     const { clearOpencodeSessionMessages } = await import('../agent/opencode/desktop');
     clearOpencodeSessionMessages(activeSessionId);
     ctx.sessions.resetStats(ctx.scope);
+    ctx.sessions.setPreviousSession(
+      ctx.scope,
+      activeSessionId,
+      ctx.sessions.getRaw(ctx.scope)?.cwd,
+    );
 
     const eff = effectiveModelPrefs(ctx.controls.profileConfig, chatModelKey(ctx));
     const modelPref = eff.model;

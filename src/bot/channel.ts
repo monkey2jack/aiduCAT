@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs';
 import type {
   LarkChannel,
   LarkChannelOptions,
@@ -1583,15 +1584,32 @@ async function runAgentBatch(deps: RunBatchDeps): Promise<SegmentEnd | undefined
   const prevModel = lastRunModelByScope.get(scope);
   const modelSwitched = prevModel !== undefined && prevModel !== modelSelection;
   lastRunModelByScope.set(scope, modelSelection);
-  const extraInstructions = modelSwitched
-    ? [
-        `用户刚把本会话使用的模型切换为「${modelLabel(agentKind, modelPref)}」。` +
-          '之前的对话里可能提到别的模型,请以当前模型为准;若被问到你用的是什么模型,据此回答。',
-      ]
-    : undefined;
+  const extraInstructions: string[] = [];
+  if (modelSwitched) {
+    extraInstructions.push(
+      `用户刚把本会话使用的模型切换为「${modelLabel(agentKind, modelPref)}」。` +
+        '之前的对话里可能提到别的模型,请以当前模型为准;若被问到你用的是什么模型,据此回答。',
+    );
+  }
+
+  const prevSession = sessions.getPreviousSession(scope);
+  let continuityNotice: string | undefined;
+  if (runProfile.preferences.sessionContinuity !== false && prevSession?.sessionId) {
+    const targetCwd = workspaces.cwdFor(scope) ?? runProfile.workspaces.default;
+    const hasHandoff = targetCwd ? existsSync(join(targetCwd, 'HANDOFF.md')) : false;
+    continuityNotice = formatContinuityNotice(prevSession, hasHandoff);
+    extraInstructions.push(continuityNotice);
+  }
 
   const prompt = await preRun('prompt', async () =>
-    buildPrompt(batch, attachments, quotes, topicContext, channel.botIdentity, extraInstructions),
+    buildPrompt(
+      batch,
+      attachments,
+      quotes,
+      topicContext,
+      channel.botIdentity,
+      extraInstructions.length > 0 ? extraInstructions : undefined,
+    ),
   );
   log.info('prompt', 'built', {
     promptChars: prompt.length,
@@ -1665,6 +1683,10 @@ async function runAgentBatch(deps: RunBatchDeps): Promise<SegmentEnd | undefined
     });
     await channel.send(chatId, { markdown: flow.rejectReason.userVisible }, sendOpts);
     return;
+  }
+
+  if (continuityNotice) {
+    sessions.consumePreviousSession(scope);
   }
 
   const { execution, cwdRealpath: cwd } = flow;
@@ -2927,6 +2949,26 @@ async function buildSteerPrompt(
     if (q) quotes.push(q);
   }
   return buildPrompt(batch, attachments, quotes, [], channel.botIdentity, [STEER_NOTE]);
+}
+
+function formatContinuityNotice(
+  prev: { sessionId: string; cwd?: string; clearedAt: number },
+  hasHandoff = false,
+): string {
+  const parts = [
+    `【会话连续性提示】当前会话是通过 /new 重置后的全新会话。上一会话 ID 为「${prev.sessionId}」`,
+  ];
+  if (prev.cwd) {
+    parts.push(`（目录：${prev.cwd}）`);
+  }
+  parts.push(
+    '。若用户的问题涉及上一轮的任务、未完成的代码修改或上下文背景，请按需主动查阅相关历史记录',
+  );
+  if (hasHandoff) {
+    parts.push('，或参考工作区中的 HANDOFF.md 文件');
+  }
+  parts.push('，无需让用户从头重复描述。');
+  return parts.join('');
 }
 
 function buildPrompt(

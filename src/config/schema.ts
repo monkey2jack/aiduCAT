@@ -203,6 +203,11 @@ export interface AppPreferences {
    * Range 100-30000; out-of-range values fall back to default.
    */
   agentStopGraceMs?: number;
+  /**
+   * Session continuity: whether to inject previous session context pointer into the
+   * first turn after /new (default true). Set false to disable continuity handoff.
+   */
+  sessionContinuity?: boolean;
 }
 
 /**

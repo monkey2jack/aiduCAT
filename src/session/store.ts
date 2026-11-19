@@ -45,6 +45,12 @@ export interface UsageSample {
   sidechain?: boolean;
 }
 
+export interface PreviousSessionPointer {
+  sessionId: string;
+  cwd?: string;
+  clearedAt: number;
+}
+
 export interface SessionEntry {
   /** May be absent if the entry was created by /timeout before any run
    * recorded a session id. Treat absence as "no resumable session". */
@@ -58,6 +64,8 @@ export interface SessionEntry {
    * scope, undefined = follow global default. Session resets preserve this
    * scope preference while removing the resumable session id/cwd. */
   idleTimeoutMinutes?: number;
+  /** Previous session pointer recorded after /new or session reset for continuity. */
+  previousSession?: PreviousSessionPointer;
 }
 
 type SessionMap = Record<string, SessionEntry>;
@@ -119,14 +127,27 @@ export class SessionStore {
         // f031-#9: stats must survive a restart (they used to be dropped
         // here, so every bot restart silently reset /status counters).
         const stats = validStats(entry.stats);
+        const previousSession =
+          entry.previousSession &&
+          typeof entry.previousSession.sessionId === 'string' &&
+          typeof entry.previousSession.clearedAt === 'number'
+            ? {
+                sessionId: entry.previousSession.sessionId,
+                ...(typeof entry.previousSession.cwd === 'string'
+                  ? { cwd: entry.previousSession.cwd }
+                  : {}),
+                clearedAt: entry.previousSession.clearedAt,
+              }
+            : undefined;
         const hasSession = sessionId !== undefined && cwd !== undefined;
-        if (!hasSession && idleTimeoutMinutes === undefined && !stats) continue;
+        if (!hasSession && idleTimeoutMinutes === undefined && !stats && !previousSession) continue;
         this.data[chatId] = {
           ...(sessionId !== undefined ? { sessionId } : {}),
           ...(cwd !== undefined ? { cwd } : {}),
           updatedAt: entry.updatedAt,
           ...(idleTimeoutMinutes !== undefined ? { idleTimeoutMinutes } : {}),
           ...(stats ? { stats } : {}),
+          ...(previousSession ? { previousSession } : {}),
         };
       }
     } catch (err) {
@@ -164,6 +185,9 @@ export class SessionStore {
       updatedAt: Date.now(),
       ...(prev?.idleTimeoutMinutes !== undefined
         ? { idleTimeoutMinutes: prev.idleTimeoutMinutes }
+        : {}),
+      ...(prev?.previousSession !== undefined
+        ? { previousSession: prev.previousSession }
         : {}),
       ...(stats ? { stats } : {}),
     };
@@ -260,10 +284,22 @@ export class SessionStore {
   clear(chatId: string): void {
     this.pendingUserMessages.delete(chatId);
     const prev = this.data[chatId];
+    const previousSession: PreviousSessionPointer | undefined = prev?.sessionId
+      ? {
+          sessionId: prev.sessionId,
+          ...(prev.cwd ? { cwd: prev.cwd } : {}),
+          clearedAt: Date.now(),
+        }
+      : prev?.previousSession;
+
     if (!prev) {
       // /new on a brand-new scope: still lay down a stats skeleton so the
       // /status card has a session start to show (2026-10-21 猴哥点单).
-      this.data[chatId] = { updatedAt: Date.now(), stats: this.#freshStats() };
+      this.data[chatId] = {
+        updatedAt: Date.now(),
+        stats: this.#freshStats(),
+        ...(previousSession ? { previousSession } : {}),
+      };
       this.schedulePersist();
       return;
     }
@@ -275,9 +311,39 @@ export class SessionStore {
       ...(prev.idleTimeoutMinutes !== undefined
         ? { idleTimeoutMinutes: prev.idleTimeoutMinutes }
         : {}),
+      ...(previousSession ? { previousSession } : {}),
     };
     this.schedulePersist();
+  }
+
+  /** Return previous session pointer for this chat if available. */
+  getPreviousSession(chatId: string): PreviousSessionPointer | undefined {
+    return this.data[chatId]?.previousSession;
+  }
+
+  /** Explicitly record previous session pointer (e.g. for agents that keep session IDs). */
+  setPreviousSession(chatId: string, sessionId: string, cwd?: string): void {
+    const prev = this.data[chatId];
+    this.data[chatId] = {
+      ...(prev ?? { updatedAt: Date.now(), stats: this.#freshStats() }),
+      previousSession: {
+        sessionId,
+        ...(cwd ? { cwd } : {}),
+        clearedAt: Date.now(),
+      },
+      updatedAt: Date.now(),
+    };
     this.schedulePersist();
+  }
+
+  /** Consume and remove previous session pointer for this chat. */
+  consumePreviousSession(chatId: string): PreviousSessionPointer | undefined {
+    const entry = this.data[chatId];
+    if (!entry?.previousSession) return undefined;
+    const prev = entry.previousSession;
+    delete entry.previousSession;
+    this.schedulePersist();
+    return prev;
   }
 
   /** f031-#13: a different session was pinned (/resume) — the old
