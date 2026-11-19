@@ -1052,20 +1052,22 @@ async function handleStatus(_args: string, ctx: CommandContext): Promise<void> {
   const sess = ctx.sessions.getRaw(ctx.scope);
   const isCodex = ctx.controls.profileConfig.agentKind === 'codex';
   const isHermes = ctx.controls.profileConfig.agentKind === 'hermes';
+  const isOpenchamber = ctx.controls.profileConfig.agentKind === 'openchamber';
+  const displayCwd = isOpenchamber && sess?.cwd ? sess.cwd : cwd;
   const catalogEntry =
     isCodex && ctx.sessionCatalog && ctx.sessionCatalogIdentity
       ? ctx.sessionCatalog.activeFor(ctx.sessionCatalogIdentity)
       : undefined;
   const card = statusCard({
     profileName: ctx.controls.profile,
-    cwd,
+    cwd: displayCwd,
     sessionId: isCodex
       ? catalogEntry?.threadId
       : isHermes
         ? hermesSessionDisplay(sess?.sessionId)
         : sess?.sessionId,
     emptySessionText: isCodex ? '(未建立)' : undefined,
-    sessionStale: !isCodex && Boolean(cwd && sess && sess.cwd !== cwd),
+    sessionStale: !isCodex && !isOpenchamber && Boolean(cwd && sess && sess.cwd !== cwd),
     agentName: ctx.agent.displayName,
     runtimeAccess: runtimeAccessStatus(ctx.controls.profileConfig),
     larkCliStatus: await larkCliStatus(ctx),
@@ -1111,9 +1113,13 @@ async function handleStatus(_args: string, ctx: CommandContext): Promise<void> {
         : cli?.window && cli.compactWindow
           ? Math.round((Math.min(cli.compactWindow, cli.window) / cli.window) * 100)
           : undefined;
+      const rawModel = isCodex ? undefined : prefs.model || st?.model || undefined;
+      const model = isOpenchamber
+        ? displayModelName(chatProfile.agentKind, ctx.controls.profileConfig, rawModel || 'default')
+        : rawModel;
       return {
         // f031-#12: chosen model, else the one the CLI actually reported.
-        model: isCodex ? undefined : prefs.model || st?.model || undefined,
+        model,
         effort: (prefs.effort as string | undefined)?.replace(/^./, (c) => c.toUpperCase()),
         ctxUsed: st?.contextTokens,
         ctxTotal: window,

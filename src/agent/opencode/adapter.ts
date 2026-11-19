@@ -96,6 +96,7 @@ export class OpencodeAdapter implements AgentAdapter {
     const stopGraceMs = opts.stopGraceMs ?? this.defaultStopGraceMs;
 
     const args = buildOpencodeArgs({
+      title: opts.sessionId ? undefined : "飞书·小猴",
       sessionId: opts.sessionId,
       model: opts.model,
       effort: opts.effort,

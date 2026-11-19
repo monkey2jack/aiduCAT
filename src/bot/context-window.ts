@@ -40,6 +40,11 @@ export function resolveModelWindow(
   profile: ProfileConfig,
   model: string | undefined,
 ): number | undefined {
+  if (profile.agentKind === "openchamber") {
+    if (model?.includes("256k")) return 262_144;
+    if (model?.includes("128k")) return 131_072;
+    return 1_048_576;
+  }
   return contextWindowForModel(model) ?? providerContextWindow(profile);
 }
 

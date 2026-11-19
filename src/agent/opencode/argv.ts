@@ -12,6 +12,7 @@ export interface BuildOpencodeArgsInput {
   password?: string;
   username?: string;
   thinking?: boolean;
+  title?: string;
 }
 
 export function buildOpencodeArgs(input: BuildOpencodeArgsInput): string[] {
@@ -19,6 +20,10 @@ export function buildOpencodeArgs(input: BuildOpencodeArgsInput): string[] {
 
   if (input.thinking !== false) {
     args.push("--thinking");
+  }
+
+  if (input.title) {
+    args.push("--title", input.title);
   }
 
   if (input.sessionId) {

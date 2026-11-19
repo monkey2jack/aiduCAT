@@ -14,6 +14,7 @@ export class OpencodeStreamTranslator {
   private streamError: string | undefined;
   private seenToolCallIds = new Set<string>();
   private emittedSystem = false;
+  private model: string | undefined;
 
   translate(raw: unknown): AgentEvent[] {
     if (!isRecord(raw) || typeof raw.type !== "string") return [];
@@ -25,9 +26,17 @@ export class OpencodeStreamTranslator {
 
     const events: AgentEvent[] = [];
 
+    const rawModel = str(raw.model) ?? (isRecord(raw.part) ? str(raw.part.model) : undefined);
+    if (rawModel && !this.model) {
+      this.model = rawModel;
+    }
+
     if (this.sessionId && !this.emittedSystem) {
       this.emittedSystem = true;
-      events.push({ type: "system", sessionId: this.sessionId });
+      events.push({ type: "system", sessionId: this.sessionId, ...(this.model ? { model: this.model } : {}) });
+    } else if (rawModel && this.model !== rawModel) {
+      this.model = rawModel;
+      events.push({ type: "system", sessionId: this.sessionId, model: this.model });
     }
 
     switch (raw.type) {
@@ -92,14 +101,33 @@ export class OpencodeStreamTranslator {
         const cache = tokens && isRecord(tokens.cache) ? tokens.cache : undefined;
 
         if (tokens) {
+          const inTok = num(tokens.input);
+          const outTok = num(tokens.output);
+          const cacheRead = num(cache?.read);
+          const cacheWrite = num(cache?.write);
+          const reasoning = num(tokens.reasoning);
+          const cost = num(part.cost);
+
           events.push({
             type: "usage",
-            inputTokens: num(tokens.input),
-            outputTokens: num(tokens.output),
-            cachedInputTokens: num(cache?.read),
-            cacheCreationInputTokens: num(cache?.write),
-            reasoningOutputTokens: num(tokens.reasoning),
-            costUsd: num(part.cost),
+            inputTokens: inTok,
+            outputTokens: outTok,
+            cachedInputTokens: cacheRead,
+            cacheCreationInputTokens: cacheWrite,
+            reasoningOutputTokens: reasoning,
+            costUsd: cost,
+            callFinal: true,
+          });
+
+          events.push({
+            type: "usage",
+            inputTokens: inTok,
+            outputTokens: outTok,
+            cachedInputTokens: cacheRead,
+            cacheCreationInputTokens: cacheWrite,
+            reasoningOutputTokens: reasoning,
+            costUsd: cost,
+            cumulative: true,
           });
         }
         break;

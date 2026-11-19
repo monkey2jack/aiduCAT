@@ -14,6 +14,12 @@ describe('buildOpencodeArgs', () => {
     expect(args).toContain('ses_12345');
   });
 
+  it('includes title when specified', () => {
+    const args = buildOpencodeArgs({ title: '飞书·小猴' });
+    expect(args).toContain('--title');
+    expect(args).toContain('飞书·小猴');
+  });
+
   it('rejects invalid session id', () => {
     expect(() => buildOpencodeArgs({ sessionId: '../escape' })).toThrow(/invalid opencode session id/);
   });
@@ -143,6 +149,17 @@ describe('OpencodeStreamTranslator', () => {
         cacheCreationInputTokens: 0,
         reasoningOutputTokens: 5,
         costUsd: 0.002,
+        callFinal: true,
+      },
+      {
+        type: 'usage',
+        inputTokens: 80,
+        outputTokens: 20,
+        cachedInputTokens: 30,
+        cacheCreationInputTokens: 0,
+        reasoningOutputTokens: 5,
+        costUsd: 0.002,
+        cumulative: true,
       },
     ]);
 
