@@ -4,6 +4,22 @@ aiduCAT 的版本号用 `f` 前缀（f0.1、f0.2+ …），`package.json` 里是
 
 > **tag 说明**：`f0.2++` 原先误指 `6fa62f8`（package 0.2.1），**已于 2026-10-31 修正**为真实发布提交 `c7ff90d`（0.2.2）。`f0.2+`、`v0.2.1` 核实后保持 `6fa62f8`：f0.2+ 的 GitHub Release 于 2026-10-20 01:17 从 main 发布，当时 main 的头部就是 `6fa62f8`（package 0.2.1）；版本号提交 `f01fcd2` 与它只差文档和一个测试，没有代码差别。
 
+## f0.6+ — 2026-11-23（package 0.6.1）
+
+基于 f0.6（`926f111`）。主题：**第六种 agent，pi**——aiduCAT 正式支持 pi（@earendil-works/pi-coding-agent），与 Claude Code / Codex / Hermes / DSH / OpenCode 并列。pi 是六路里协议最干净的一路：官方 `--mode rpc` 长驻子进程（stdin/stdout JSONL），插话、停止、换模型、会话状态全部是原生命令，不再依赖 stdin replay 或 patch 文件 hack。
+
+- **新增第六种 Agent `agentKind: 'pi'`**：
+  - **长驻 RPC 进程池**：一个飞书会话 = 一个 `pi --mode rpc` 子进程（`src/agent/pi/adapter.ts`）。`AgentRun` 只是往对应进程发 prompt 并多路分用事件流；进程崩溃自动按 `--session-id` 重接同一磁盘会话，空闲 30 分钟自动回收。
+  - **原生插话（steer）**：`{"type":"steer"}` 直写 stdin，`queue_update` 事件确认取走即换卡——CC 那套 `SteerInput` + `--replay-user-messages` 回声匹配在 pi 这路完全不需要。
+  - **原生停止与状态**：`/stop` = `abort`（实测 100ms 内响应，`done: interrupted`）；`/status` 的上下文占用直接来自 `get_session_stats` 的 `contextUsage`——Codex 那套读 rollout 文件尾部 16KB 的 history-usage.ts 在 pi 这路整段省掉。
+  - **动态换模型**：`set_model` 即时生效，不用重启进程；`/new` = `new_session`。
+  - **模型白名单 = 10router combo**：专用 pi 配置目录（`<profile>/pi-agent/models.json`）只写 `/api/combos` 的精选组合，绝不拉 ~700 裸模型；combo 缓存 5 分钟后台刷新（复用 tenrouter.ts 零改动）。API key 走 `$AIDUCAT_PI_API_KEY` 环境变量插值，**绝不落盘明文**。
+  - **会话续接**：pi 不在事件流广播 sessionId，适配器在 prompt 接受后用 `get_state` 取回并发射 `system` 事件进会话目录；实测「记住 42 → 同 sessionId 续问 → 答 42」通过。
+  - **面板图标**：pi 官方三色 π logo（pi.dev/logo.svg）已上传飞书，`assets/lark-logo-keys.json` 新增 `pi` 键。
+- **事件翻译（`src/agent/pi/jsonl.ts`）**：`text_delta/thinking_delta` → 文本/思考流；`tool_execution_start/end` → 工具行；`message_end` 的 usage 是**当次响应的真实窗口占用**（非 codex 式全会话累计账单），`stopReason:error` → error 事件。
+- **顺手修复**：`src/session/catalog.ts` 的 `normalizeEntry` 白名单补上 `opencode`/`openchamber`（原先缺失会让这两类会话条目 normalize 失败）及 `pi`。
+- **测试**：新增 `tests/unit/agent/pi.test.ts` 7 项（事件翻译 + models.json 渲染）；全套 1388+7 通过（仅 2 个 opencode live 集成测试因本机无 opencode 二进制失败，与基线一致）。summer 实测：prompt 出字、steer 插话、abort 停止、动态换模型（GLM-5.3-Flash ↔ Gemini-3.8-Flash）、会话续接全链路通过。
+
 ## f0.6 — 2026-11-19（package 0.6.0）
 
 基于 f0.5++（`a00e2a4`）。主题：**第五种 agent，全面适配 OpenCode / OpenChamber**——aiduCAT 正式支持 OpenCode，与 Claude Code / Codex / Hermes / DSH 并列五大编程 Agent；深度适配 OpenChamber 桌面端生态，实现真正的单会话纯净清空与轻量高效编码。

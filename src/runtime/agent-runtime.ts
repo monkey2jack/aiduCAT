@@ -1,3 +1,4 @@
+import { join } from 'node:path';
 import { ClaudeAdapter } from '../agent/claude/adapter';
 import { AgentPreflightError, type AgentAvailability, type LocalAgentId } from '../agent/preflight';
 import type { AgentAdapter } from '../agent/types';
@@ -88,6 +89,62 @@ export async function createRuntimeAgent(
       envPassthrough: profileConfig.agentEnv?.passthrough ?? [],
     });
   }
+  if (profileConfig.agentKind === 'pi') {
+    const { PiAdapter } = await import('../agent/pi/adapter');
+    const { writePiModelsFile, PI_PROVIDER_ID } = await import('../agent/pi/models-file');
+    const { cachedCombos, resolveTenRouterConfig } = await import('../bot/tenrouter');
+    const pi = profileConfig.pi;
+    const agentDir = join(appPaths.profileDir, 'pi-agent');
+    // f0.6+: the pi model catalog is the curated 10router combo list (never
+    // the raw /v1/models firehose). Written at adapter construction; the
+    // combo cache refreshes in the background and the next profile reload
+    // rewrites the file. The API key rides `$AIDUCAT_PI_API_KEY` env
+    // interpolation — it is resolved per spawn, never persisted to disk.
+    let baseUrl = process.env.AIDU_10ROUTER_URL?.trim();
+    if (!baseUrl) {
+      try {
+        const tr = await resolveTenRouterConfig({
+          tenRouter: undefined,
+          accounts: {},
+        } as never);
+        baseUrl = tr?.baseUrl;
+      } catch {
+        baseUrl = undefined;
+      }
+    }
+    const combos = cachedCombos() ?? [];
+    if (baseUrl) {
+      writePiModelsFile(agentDir, {
+        baseUrl: `${baseUrl.replace(/\/+$/, '')}/v1`,
+        models: combos.map((c) => ({
+          id: c.name,
+          ...(c.contextWindow ? { contextWindow: c.contextWindow } : {}),
+        })),
+      });
+    }
+    // The default provider key: env AIDU_10ROUTER_API_KEY wins; otherwise the
+    // profile's default modelProviders entry (id 'default') if one exists.
+    let apiKey = process.env.AIDU_10ROUTER_API_KEY?.trim();
+    if (!apiKey) {
+      const def = profileConfig.modelProviders?.default;
+      if (def) {
+        try {
+          const { resolveProviderKey } = await import('../bot/model-providers');
+          apiKey = await resolveProviderKey(def);
+        } catch {
+          apiKey = undefined;
+        }
+      }
+    }
+    return new PiAdapter({
+      binary: pi?.binaryPath ?? process.env.LARK_CHANNEL_PI_BIN ?? 'pi',
+      agentDir,
+      ...(baseUrl ? { baseUrl } : {}),
+      ...(apiKey ? { apiKey } : {}),
+      larkChannel,
+      envPassthrough: profileConfig.agentEnv?.passthrough ?? [],
+    });
+  }
   if (profileConfig.agentKind === 'opencode' || profileConfig.agentKind === 'openchamber') {
     const { OpencodeAdapter } = await import('../agent/opencode/adapter');
     const opencode = profileConfig.opencode;
@@ -115,7 +172,7 @@ export async function checkRuntimeAgentAvailability(agent: AgentAdapter): Promis
   // The binary named in the diagnostic must match the reported agent id, or a
   // DSH profile with a missing launcher is misdiagnosed as `claude`.
   const agentId: LocalAgentId =
-    agent.id === 'codex' || agent.id === 'hermes' || agent.id === 'dsh' || agent.id === 'opencode' || agent.id === 'openchamber' ? agent.id : 'claude';
+    agent.id === 'codex' || agent.id === 'hermes' || agent.id === 'dsh' || agent.id === 'opencode' || agent.id === 'openchamber' || agent.id === 'pi' ? agent.id : 'claude';
   const diagnostic = {
     code: 'agent-binary-not-found' as const,
     agentId,

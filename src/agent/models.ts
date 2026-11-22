@@ -264,11 +264,18 @@ export const OPENCODE_MODELS: ModelOption[] = [
   { value: 'opencode/hy4-flash-free', label: 'Hunyuan 4 Flash · Free' },
 ];
 
+/** f0.6+: pi — model ids are the 10router combo names (same curated list
+ * the /model card serves, refreshed in the background by tenrouter.ts).
+ * Only the default is fixed here; concrete options arrive via the combo
+ * catalog like hermes. */
+const PI_MODELS: ModelOption[] = [{ value: DEFAULT_MODEL, label: '跟随默认（不指定）' }];
+
 /** The model picker options for a profile's agent kind. */
 export function supportedModels(agentKind: AgentKind): ModelOption[] {
   if (agentKind === 'hermes') return HERMES_MODELS;
   if (agentKind === 'dsh') return dshModelCatalog();
   if (agentKind === 'opencode' || agentKind === 'openchamber') return opencodeModelCatalog();
+  if (agentKind === 'pi') return PI_MODELS;
   return agentKind === 'codex' ? CODEX_MODELS : CLAUDE_MODELS;
 }
 

@@ -16,7 +16,7 @@ import {
   type PermissionSource,
 } from './permissions';
 
-export type AgentKind = 'claude' | 'codex' | 'hermes' | 'dsh' | 'opencode' | 'openchamber';
+export type AgentKind = 'claude' | 'codex' | 'hermes' | 'dsh' | 'opencode' | 'openchamber' | 'pi';
 export type SandboxMode = CodexSandboxMode;
 export type { AccessMode, PermissionConfig, PermissionSource };
 
@@ -109,6 +109,11 @@ export interface OpencodeConfig {
   serverUrl?: string;
   password?: string;
   username?: string;
+}
+
+/** f0.6+: pi (RPC long-lived child). */
+export interface PiConfig {
+  binaryPath: string;
 }
 
 export interface CodexConfig {
@@ -305,6 +310,8 @@ export interface ProfileConfig {
   dsh?: DshConfig;
   /** OpenCode / OpenChamber settings. */
   opencode?: OpencodeConfig;
+  /** f0.6+: pi settings. */
+  pi?: PiConfig;
   attachments: AttachmentConfig;
   comments: CommentConfig;
   /** In-meeting agent settings. See {@link MeetingConfig}. */
@@ -390,6 +397,7 @@ export interface CreateDefaultProfileConfigInput {
   hermes?: HermesConfig;
   dsh?: DshConfig;
   opencode?: OpencodeConfig;
+  pi?: PiConfig;
   secrets?: SecretsConfig;
   features?: Partial<ProfileFeatures>;
 }
@@ -432,6 +440,7 @@ export function normalizeProfileConfig(input: unknown): ProfileConfig {
     hermes?: unknown;
     dsh?: unknown;
     opencode?: unknown;
+    pi?: unknown;
     attachments?: Partial<AttachmentConfig>;
     comments?: unknown;
     meeting?: unknown;
@@ -444,8 +453,9 @@ export function normalizeProfileConfig(input: unknown): ProfileConfig {
   if (raw.schemaVersion !== 2) {
     throw new Error('profile schemaVersion must be 2');
   }
-  if (raw.agentKind !== 'claude' && raw.agentKind !== 'codex' && raw.agentKind !== 'hermes' && raw.agentKind !== 'dsh' && raw.agentKind !== 'opencode' && raw.agentKind !== 'openchamber') {
-    throw new Error('agentKind must be claude, codex, hermes, dsh, opencode or openchamber');
+  const agentKind = raw.agentKind as string;
+  if (!['claude', 'codex', 'hermes', 'dsh', 'opencode', 'openchamber', 'pi'].includes(agentKind)) {
+    throw new Error('agentKind must be claude, codex, hermes, dsh, opencode, openchamber or pi');
   }
   const accounts = normalizeAccounts(raw.accounts);
   if (raw.agentKind === 'codex' && !raw.codex) {
@@ -469,7 +479,7 @@ export function normalizeProfileConfig(input: unknown): ProfileConfig {
 
   return {
     schemaVersion: 2,
-    agentKind: raw.agentKind,
+    agentKind: agentKind as AgentKind,
     mode: raw.mode === 'team' ? 'team' : 'personal',
     accounts,
     ...(raw.secrets ? { secrets: raw.secrets } : {}),
@@ -491,6 +501,7 @@ export function normalizeProfileConfig(input: unknown): ProfileConfig {
     ...(raw.hermes || raw.agentKind === 'hermes' ? { hermes: normalizeHermes(raw.hermes) } : {}),
     ...(raw.dsh || raw.agentKind === 'dsh' ? { dsh: normalizeDsh(raw.dsh) } : {}),
     ...(raw.opencode || raw.agentKind === 'opencode' || raw.agentKind === 'openchamber' ? { opencode: normalizeOpencode(raw.opencode) } : {}),
+    ...(raw.pi || raw.agentKind === 'pi' ? { pi: normalizePi(raw.pi) } : {}),
     ...normalizeAgentEnv(raw.agentEnv),
     attachments: {
       maxCount: numberOr(raw.attachments?.maxCount, 10),
@@ -676,6 +687,13 @@ function normalizeDsh(input: unknown): DshConfig {
     ...(privatePatch ? { privatePatch } : {}),
     ...(modelLabel ? { modelLabel } : {}),
   };
+}
+
+function normalizePi(input: unknown): PiConfig {
+  const raw = (input && typeof input === 'object' ? input : {}) as Record<string, unknown>;
+  const binaryPath =
+    typeof raw.binaryPath === 'string' && raw.binaryPath.trim() ? raw.binaryPath.trim() : 'pi';
+  return { binaryPath };
 }
 
 function normalizeOpencode(input: unknown): OpencodeConfig {

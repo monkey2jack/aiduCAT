@@ -28,10 +28,13 @@ const AGENT_PREFIXES: Record<string, string[]> = {
   // prefix passes: HERMES_YOLO_MODE / HERMES_IGNORE_RULES … in the daemon env
   // would change a turn's launch policy. The adapter forwards HERMES_HOME only.
   hermes: [],
+  // f0.6+: pi reads its key from models.json `$AIDUCAT_PI_API_KEY` interpolation,
+  // injected via overrides (never from the daemon env). No prefixes pass.
+  pi: [],
 };
 
 export function buildAgentEnv(input: {
-  agent: 'claude' | 'codex' | 'hermes' | 'dsh';
+  agent: 'claude' | 'codex' | 'hermes' | 'dsh' | 'pi';
   base?: NodeJS.ProcessEnv;
   overrides?: NodeJS.ProcessEnv;
   /** Extra daemon env names the owner explicitly passes through (profile agentEnv.passthrough). */

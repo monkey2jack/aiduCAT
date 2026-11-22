@@ -2,8 +2,8 @@ import type { AccessMode } from "../config/permissions";
 import type { ProfileConfig } from "../config/profile-schema";
 import { BRIDGE_SYSTEM_PROMPT } from "./bridge-system-prompt";
 
-export type AgentCapabilityId = "claude" | "codex" | "hermes" | "dsh" | "opencode" | "openchamber";
-export type AgentSessionKind = "claude-session" | "codex-thread" | "hermes-session" | "dsh-session" | "opencode-session";
+export type AgentCapabilityId = "claude" | "codex" | "hermes" | "dsh" | "opencode" | "openchamber" | "pi";
+export type AgentSessionKind = "claude-session" | "codex-thread" | "hermes-session" | "dsh-session" | "opencode-session" | "pi-session";
 export type PromptInjectionMode = "append-system-prompt" | "stdin-prefix";
 
 export interface AgentCapability {
@@ -120,6 +120,27 @@ export function opencodeCapability(profile: Pick<ProfileConfig, "permissions">):
   };
 }
 
+/** f0.6+: pi. One long-lived RPC child per session, resumed by --session-id.
+ * The bridge prompt rides the first prompt's text (stdin-prefix semantics:
+ * pi has no per-run --append-system-prompt on the RPC path once the session
+ * exists, so the prompt itself carries the bridge preamble). */
+export function piCapability(profile: Pick<ProfileConfig, "permissions">): AgentCapability {
+  return {
+    agentId: "pi",
+    sessionKind: "pi-session",
+    promptInjection: "stdin-prefix",
+    systemPrompt: BRIDGE_SYSTEM_PROMPT,
+    supportsNativeHistory: false,
+    callback: {
+      marker: "__bridge_cb",
+      legacyMarkers: [],
+    },
+    permissions: {
+      maxAccess: profile.permissions.maxAccess,
+    },
+  };
+}
+
 /** f0.4+: the capability for a profile"s agent kind. */
 export function capabilityFor(
   profile: Pick<ProfileConfig, "permissions" | "agentKind">,
@@ -128,6 +149,7 @@ export function capabilityFor(
   if (profile.agentKind === "hermes") return hermesCapability(profile);
   if (profile.agentKind === "dsh") return dshCapability(profile);
   if (profile.agentKind === "opencode" || profile.agentKind === "openchamber") return opencodeCapability(profile);
+  if (profile.agentKind === "pi") return piCapability(profile);
   return claudeCapability(profile);
 }
 
@@ -143,6 +165,7 @@ export function usesSessionId(agentId: string | undefined): boolean {
     agentId === "hermes" ||
     agentId === "dsh" ||
     agentId === "opencode" ||
-    agentId === "openchamber"
+    agentId === "openchamber" ||
+    agentId === "pi"
   );
 }
