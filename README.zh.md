@@ -10,12 +10,12 @@
 >
 > **提问在上方，过程收进一只小面板，结果由面板颜色说话。**
 >
-> 给 Claude Code / Codex CLI / Hermes Agent / DSH / OpenCode 穿上泡波流的飞书卡片：宣白纸面上灌一道深蓝流光，一只猫，零噪音。
+> 为 Claude Code / Codex CLI / Hermes Agent / DSH / OpenCode / pi 提供统一的飞书桥接：同一张卡片、同一套指令、同一套权限。
 
 [![Version](https://img.shields.io/badge/version-f0.6-blue.svg)](https://github.com/monkey2jack/aiduCAT)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Node 20+](https://img.shields.io/badge/node-20.12%2B-brightgreen.svg)](https://nodejs.org/)
-[![Claude Code](https://img.shields.io/badge/agent-Claude%20Code%20%7C%20Codex%20%7C%20Hermes-orange.svg)](https://docs.anthropic.com/en/docs/claude-code/quickstart)
+[![Claude Code](https://img.shields.io/badge/agent-Claude%20Code%20%7C%20Codex%20%7C%20Hermes%20%7C%20pi-orange.svg)](https://docs.anthropic.com/en/docs/claude-code/quickstart)
 [![aiduCAT](https://img.shields.io/badge/aiduCAT-Claude--code_Agent_Texting-1f4e79.svg)](https://github.com/monkey2jack/aiduCAT)
 
 **中文** | **[📖 English](./README.en.md)**
@@ -33,7 +33,7 @@ aiduCAT 起源并致敬上游 [zarazhangrui/lark-coding-agent-bridge](https://gi
 
 | 特性 | 说明 |
 |------|------|
-| 🤖 **五种 agent 五选一**（f0.4+ Hermes、f0.5++ DSH、f0.6 OpenCode） | 每个 profile 选 Claude Code、Codex CLI、Hermes Agent、DSH(DeepSeek Harness) 或 OpenCode，同一套卡片、命令和白名单；见下方「Hermes Agent 接入」、「DSH(DeepSeek Harness)接入」与「OpenCode / OpenChamber 接入」 |
+| 🎭 **七大 agent 想用哪个**（f0.4+ Hermes、f0.5++ DSH、f0.6 OpenCode、f0.6+ pi） | 每个 profile 跑 Claude Code、Codex CLI、Hermes Agent、DSH(DeepSeek Harness)、OpenCode 或 pi，同一套卡片、指令与权限；详见 "Hermes Agent"、"DSH(DeepSeek Harness)"、"OpenCode / OpenChamber 接入" 与 "pi 接入" |
 | 🫧 **单面板泡波样式** | 答案流式显示在上方；思考与全部工具调用收进一只折叠面板（aiduPOP 布局） |
 | 💭 **计数头** | 面板头：`模型 · 💭 思考段数 · 🛠️ 工具数 · ⏱️ 用时`；运行中面板正上方顶格多一行状态词（aiduCATing / Thinking / Running，后跟加载动效），结束即消失 |
 | 🏷 **工具图标** | 面板头左侧显示当前 profile 用的编程工具图标（Claude Code / Codex / Hermes Agent / DSH / OpenCode），不看模型；模型名照常写在图标后面 |

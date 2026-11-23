@@ -10,12 +10,12 @@
 >
 > **Ask on top, process folded into one small panel, the result told by the panel's color.**
 >
-> Dress your Claude Code / Codex CLI / Hermes Agent / DSH (DeepSeek Harness) in a Bubble-Wave Feishu card: deep-blue veins on paper white, one cat, zero noise.
+> Dress your Claude Code / Codex CLI / Hermes Agent / DSH (DeepSeek Harness) / pi in a Bubble-Wave Feishu card: deep-blue veins on paper white, one cat, zero noise.
 
 [![Version](https://img.shields.io/badge/version-f0.6-blue.svg)](https://github.com/monkey2jack/aiduCAT)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Node 20+](https://img.shields.io/badge/node-20.12%2B-brightgreen.svg)](https://nodejs.org/)
-[![Claude Code](https://img.shields.io/badge/agent-Claude%20Code%20%7C%20Codex%20%7C%20Hermes-orange.svg)](https://docs.anthropic.com/en/docs/claude-code/quickstart)
+[![Claude Code](https://img.shields.io/badge/agent-Claude%20Code%20%7C%20Codex%20%7C%20Hermes%20%7C%20pi-orange.svg)](https://docs.anthropic.com/en/docs/claude-code/quickstart)
 [![aiduCAT](https://img.shields.io/badge/aiduCAT-Claude--code_Agent_Texting-1f4e79.svg)](https://github.com/monkey2jack/aiduCAT)
 
 **[📖 中文](./README.md)** | **English**
@@ -33,7 +33,7 @@ aiduCAT originates from and credits the upstream [zarazhangrui/lark-coding-agent
 
 | Feature | What it does |
 |------|------|
-| 🤖 **Five agents, pick one** (Hermes f0.4+, DSH f0.5++, OpenCode f0.6) | Each profile runs Claude Code, Codex CLI, Hermes Agent, DSH (DeepSeek Harness) or OpenCode with the same cards, commands and allowlists; see "Hermes Agent", "DSH (DeepSeek Harness)" and "OpenCode / OpenChamber" below |
+| 🤖 **Seven agents, pick one** (Hermes f0.4+, DSH f0.5++, OpenCode f0.6, pi f0.6+) | Each profile runs Claude Code, Codex CLI, Hermes Agent, DSH (DeepSeek Harness), OpenCode or pi with the same cards, commands and allowlists; see "Hermes Agent", "DSH (DeepSeek Harness)" and "OpenCode / OpenChamber" and "pi" below |
 | 🫧 **Single Bubble-Wave panel** | The answer streams on top; thinking and every tool call fold into one collapsible panel (aiduPOP layout) |
 | 💭 **Counter header** | Panel header: `model · 💭 thinking segments · 🛠️ tools · ⏱️ elapsed`; while running a status line sits flush-left right above the panel (aiduCATing / Thinking / Running, followed by loading dots), gone on completion |
 | 🏷 **Agent icon** | The panel header shows the profile's coding agent (Claude Code / Codex / Hermes Agent / DSH / OpenCode), not the model vendor; the model id follows the icon |
