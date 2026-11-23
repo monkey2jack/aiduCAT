@@ -283,6 +283,11 @@ export class PiAdapter implements AgentAdapter {
           live.translator.noteSteerQueued();
           live.steerCount += 1;
           log.info('agent', 'pi-steer-sent', { runId: opts.runId, chars: text.length });
+          // f0.6+ cut-over fix: pi 1.6 RPC does not reliably emit a
+          // queue_update echo, so surface the steer marker ourselves —
+          // same semantics as claude's SteerInput: this card ends here
+          // and the queued batch's card carries the run onward.
+          push({ type: 'steer' });
         }
         return ok;
       },
