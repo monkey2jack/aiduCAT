@@ -113,7 +113,12 @@ export async function createRuntimeAgent(
       }
     }
     const combos = cachedCombos() ?? [];
-    if (baseUrl) {
+    // Never overwrite a populated models.json with an empty combo list: on a
+    // cold start the combo cache may not be warmed yet, and writing an empty
+    // catalog would leave the pi child with NO models at all. Keep the
+    // existing file (or a manually provisioned one) until the first real
+    // combo fetch lands.
+    if (baseUrl && combos.length > 0) {
       writePiModelsFile(agentDir, {
         baseUrl: `${baseUrl.replace(/\/+$/, '')}/v1`,
         models: combos.map((c) => ({
