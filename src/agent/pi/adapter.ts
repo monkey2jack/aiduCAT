@@ -35,6 +35,24 @@ import { PI_API_KEY_ENV, PI_PROVIDER_ID } from './models-file';
 const IDLE_REAP_MS = 30 * 60_000;
 const PROMPT_TIMEOUT_MS = 60 * 60_000;
 
+/**
+ * pi-exit-hang (2026-11-23): the executor waits this long for the child to
+ * die after `requestExit()` before escalating to stop() + tree-kill. Tiny on
+ * purpose: the request is delivered in-process; pi either exits promptly or
+ * is wedged (see EXIT_REQUEST_ESCALATE_MS below).
+ */
+const PI_EXIT_REQUEST_GRACE_MS = 5_000;
+
+/**
+ * pi-exit-hang (2026-11-23): how long a requestExit()ed child has to die
+ * before the adapter escalates from stdin-close + SIGTERM to a hard SIGKILL.
+ * pi's rpc mode exits on stdin EOF (rpc-mode.js onInputEnd → shutdown) and on
+ * the FIRST SIGTERM; a SECOND signal during shutdown force-exits. The observed
+ * hang class is an extension/MCP dispose keeping the event loop alive after
+ * the first signal — the escalation is what actually reaps it.
+ */
+const EXIT_REQUEST_ESCALATE_MS = 30_000;
+
 export interface PiAdapterOptions {
   binary: string;
   /** Dedicated pi agent dir (models.json lives here), per profile. */
@@ -69,11 +87,20 @@ interface SessionProcess {
   lastUsed: number;
   exited: boolean;
   stderrTail: string;
+  /** pi-exit-hang: epoch ms when a requestExit() was delivered to the child. */
+  exitRequestAt?: number;
 }
 
 export class PiAdapter implements AgentAdapter {
   readonly id = 'pi';
   readonly displayName = 'pi';
+  /**
+   * pi-exit-hang (2026-11-23): runs serialize on the long-lived rpc child and
+   * the adapter reaps its own processes (requestExit escalation + idle
+   * reaper). The executor must release the scope at the terminal event —
+   * waiting for process death held dudu-pi's chat for half-hour stretches.
+   */
+  readonly releasesScopeAtTerminal = true;
 
   private readonly binary: string;
   private readonly agentDir: string;
@@ -134,13 +161,14 @@ export class PiAdapter implements AgentAdapter {
   /** Kill every child (service shutdown). */
   async dispose(): Promise<void> {
     clearInterval(this.reaper);
+    // pi-exit-hang: graceful delivered shutdown + SIGKILL escalation instead
+    // of a bare SIGTERM — pi treats the first signal as "dispose gracefully",
+    // which an extension/MCP can wedge; the escalation is what reaps it.
     for (const sp of this.processes.values()) {
-      try {
-        sp.child.kill('SIGTERM');
-      } catch {
-        // already gone
-      }
+      this.beginExitRequest(sp, 'dispose');
     }
+    // Give the graceful path a beat before the process itself goes away.
+    await new Promise((r) => setTimeout(r, 1_500));
     this.processes.clear();
   }
 
@@ -215,7 +243,9 @@ export class PiAdapter implements AgentAdapter {
         // retry once; on a second rejection kill the wedged child so the next
         // message spawns a clean one instead of leaving it poisoned.
         if (!sendRes.success && /already processing/i.test(String(sendRes.error ?? ''))) {
-          log.warn('agent', 'pi-busy-abort-retry', { sessionKey: sp.sessionKey });
+          // (pi-exit-hang branch: drive-by typecheck fix — was sp.sessionKey,
+          // a field that does not exist; the local sessionKey is the same key.)
+          log.warn('agent', 'pi-busy-abort-retry', { sessionKey });
           await sp.client.request({ type: 'abort' }, 5_000).catch(() => undefined);
           await new Promise((r) => setTimeout(r, 2_500));
           sendRes = await sp.client.request(
@@ -226,7 +256,9 @@ export class PiAdapter implements AgentAdapter {
         if (!sendRes.success) {
           if (/already processing/i.test(String(sendRes.error ?? ''))) {
             log.warn('agent', 'pi-busy-kill-wedged-child', { pid: sp.child.pid });
-            try { killProcessTree(sp.child.pid); } catch { /* best effort */ }
+            // (pi-exit-hang branch: drive-by typecheck fix — added the missing
+            // "why" argument killProcessTree requires.)
+            try { await killProcessTree(sp.child.pid, 'pi-busy-kill'); } catch { /* best effort */ }
           }
           push({
             type: 'error',
@@ -315,6 +347,14 @@ export class PiAdapter implements AgentAdapter {
           check.unref?.();
         });
       },
+      requestExit: async (): Promise<boolean> => {
+        // pi-exit-hang: graceful, delivered shutdown — pi's rpc mode exits on
+        // stdin EOF (onInputEnd → shutdown) and honours the first SIGTERM as
+        // a graceful-dispose request. SIGKILL escalation is armed inside.
+        if (sp.exited || sp.child.pid === undefined) return false;
+        this.beginExitRequest(sp, `run ${opts.runId} terminal`);
+        return true;
+      },
       waitForExit: (timeoutMs: number): Promise<boolean> => {
         if (finished) return Promise.resolve(true);
         return new Promise<boolean>((resolve) => {
@@ -330,16 +370,20 @@ export class PiAdapter implements AgentAdapter {
       forceKillTree: async (): Promise<void> => {
         if (sp.child.pid) await killProcessTree(sp.child.pid, 'pi-force-kill');
       },
+      exitRequestGraceMs: PI_EXIT_REQUEST_GRACE_MS,
     };
   }
 
   /** Get or spawn the RPC child for a session. */
   private ensureProcess(sessionKey: string, cwd: string, opts: AgentRunOptions): SessionProcess {
     const existing = this.processes.get(sessionKey);
-    if (existing && !existing.exited && existing.active === undefined) {
+    // pi-exit-hang: a child with a delivered exit request is dying (stdin EOF
+    // / SIGTERM / SIGKILL escalation in flight) — never hand it a new prompt;
+    // spawn a fresh one on the same pinned session instead.
+    if (existing && !existing.exited && existing.exitRequestAt === undefined && existing.active === undefined) {
       return existing;
     }
-    if (existing && !existing.exited && existing.active) {
+    if (existing && !existing.exited && existing.exitRequestAt === undefined && existing.active) {
       // A run is already live on this session — should not happen (the
       // bridge serializes runs per scope), but fail safe by reusing it.
       return existing;
@@ -358,11 +402,14 @@ export class PiAdapter implements AgentAdapter {
       passthrough: this.envPassthrough,
     });
 
+    // (pi-exit-hang branch: drive-by typecheck fix — pick the model first so
+    // the spread cannot produce an `undefined` array element.)
+    const modelPick = opts.model ?? this.defaultModel;
     const args = [
       '--mode', 'rpc',
       // pi requires --model together with --provider; without an explicit
       // pick we pass neither and select via set_model after spawn.
-      ...(this.defaultModel || opts.model ? ['--provider', PI_PROVIDER_ID, '--model', opts.model ?? this.defaultModel] : []),
+      ...(modelPick ? ['--provider', PI_PROVIDER_ID, '--model', modelPick] : []),
       '--session-dir', join(this.agentDir, 'sessions'),
       ...(opts.sessionId ? ['--session-id', opts.sessionId] : []),
       '--name', '飞书·嘟嘟',
@@ -398,13 +445,28 @@ export class PiAdapter implements AgentAdapter {
     });
     child.on('exit', (code, signal) => {
       log.info('agent', 'pi-exit', { pid: child.pid ?? null, code, signal, session: sessionKey });
+      // pi-exit-hang: record how long death took after a requestExit() so the
+      // 日志 can prove the grace is honoured (echo check per the 2026-11-23 ticket).
+      const pid = child.pid;
+      if (pid !== undefined && sp.exitRequestAt !== undefined) {
+        log.info('agent', 'pi-exit-after-request', {
+          pid,
+          session: sessionKey,
+          delayMs: Date.now() - sp.exitRequestAt,
+          signal: signal ?? null,
+          code: code ?? null,
+        });
+      }
       sp.exited = true;
       client.failAll(new Error(`pi exited (code ${code ?? 'null'} signal ${signal ?? 'null'})`));
       this.failActive(
         sp,
         `pi exited unexpectedly (code ${code ?? 'null'}): ${sp.stderrTail.slice(-300)}`,
       );
-      this.processes.delete(sessionKey);
+      // pi-exit-hang: a replacement child may already own this map slot (a
+      // dying child can be swapped out by ensureProcess while its exit event
+      // is still in flight) — only delete our own entry, never the new one.
+      if (this.processes.get(sessionKey) === sp) this.processes.delete(sessionKey);
     });
 
     log.info('agent', 'pi-spawn', {
@@ -419,7 +481,46 @@ export class PiAdapter implements AgentAdapter {
     return sp;
   }
 
+  /**
+   * pi-exit-hang: deliver an exit request (stdin EOF + SIGTERM) and arm the
+   * SIGKILL escalation. Idempotent per child; safe to call from both the
+   * executor (requestExit) and the idle reaper.
+   */
+  private beginExitRequest(sp: SessionProcess, reason: string): void {
+    const pid = sp.child.pid;
+    if (sp.exited || pid === undefined || sp.exitRequestAt !== undefined) return;
+    sp.exitRequestAt = Date.now();
+    try {
+      sp.child.stdin?.end();
+    } catch {
+      // stdin already closed — pi will still see the SIGTERM
+    }
+    try {
+      sp.child.kill('SIGTERM');
+    } catch {
+      // already gone
+    }
+    log.info('agent', 'pi-request-exit', { pid, reason });
+    const timer = setTimeout(() => {
+      if (sp.exited || sp.child.exitCode !== null || sp.child.signalCode !== null) return;
+      log.warn('agent', 'pi-exit-escalate-sigkill', {
+        pid,
+        reason,
+        afterMs: EXIT_REQUEST_ESCALATE_MS,
+      });
+      try {
+        sp.child.kill('SIGKILL');
+      } catch {
+        // gone already
+      }
+    }, EXIT_REQUEST_ESCALATE_MS);
+    timer.unref?.();
+  }
+
   private dispatch(sp: SessionProcess, evt: Record<string, unknown> & { type: string }): void {
+    // pi-exit-hang: ANY inbound protocol activity means the child is alive and
+    // in use (extension UI requests included) — refresh the idle clock.
+    sp.lastUsed = Date.now();
     const live = sp.active;
     if (!live) return;
     // Capture pi's own session id for the bridge's session store.
@@ -458,12 +559,12 @@ export class PiAdapter implements AgentAdapter {
     for (const [key, sp] of this.processes) {
       if (sp.active) continue;
       if (sp.exited || now - sp.lastUsed > IDLE_REAP_MS) {
+        // pi-exit-hang: reap = request an exit (stdin EOF + SIGTERM, SIGKILL
+        // escalation armed) instead of a bare SIGTERM — pi treats the first
+        // signal as "shut down gracefully", and when an extension/MCP dispose
+        // wedges the loop only the escalation actually reaps it.
         log.info('agent', 'pi-idle-reap', { session: key, pid: sp.child.pid ?? null });
-        try {
-          sp.child.kill('SIGTERM');
-        } catch {
-          // gone already
-        }
+        this.beginExitRequest(sp, 'idle-reap');
         this.processes.delete(key);
       }
     }

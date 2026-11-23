@@ -93,6 +93,13 @@ export interface AgentRun {
   readonly events: AsyncIterable<AgentEvent>;
   stop(): Promise<void>;
   /**
+   * Ask the agent to exit its process. Per-turn agents exit on their own
+   * (returns false — nothing for the caller to do); long-lived agents (pi
+   * rpc) honour it by shutting the child down gracefully. Resolve false
+   * when the request could not be delivered; never throw.
+   */
+  requestExit?(): Promise<boolean>;
+  /**
    * Wait up to `timeoutMs` for the agent process to exit on its own.
    * Resolves true if it exited within the window, false if the timer
    * fired first (caller usually wants to fall back to stop()).
@@ -106,6 +113,12 @@ export interface AgentRun {
   waitForExit(timeoutMs: number): Promise<boolean>;
   /** Kill the live agent process tree when a stop grace period expires. */
   forceKillTree?(): Promise<void>;
+  /**
+   * pi-exit-hang (2026-11-23): grace window for the shutdown request sent by
+   * `requestExit()` before the executor escalates to stop() + tree-kill.
+   * Only meaningful when requestExit is defined; undefined = executor default.
+   */
+  exitRequestGraceMs?: number;
   /**
    * f0.5 之后 (steer): hand a new user message to the run while it works —
    * the agent reads it at its next step and carries on (no restart). A
@@ -139,4 +152,13 @@ export interface AgentAdapter {
    * Adapters that don't bake identity into their prompts may omit it.
    */
   setBotIdentity?(identity: AgentBotIdentity): void;
+  /**
+   * pi-exit-hang (2026-11-23): long-lived adapters (pi rpc) serialize runs on
+   * the child itself and reap their own processes (idle reaper, requestExit
+   * escalation). The executor must NOT hold the scope/pool slot until the
+   * process dies — that held dudu-pi's chat for half-hour stretches. When
+   * true, the terminal event releases the scope immediately and the
+   * post-terminal settle still runs, out of the user's way.
+   */
+  readonly releasesScopeAtTerminal?: boolean;
 }
