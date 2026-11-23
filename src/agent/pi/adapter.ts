@@ -206,11 +206,28 @@ export class PiAdapter implements AgentAdapter {
             log.warn('agent', 'pi-set-model-failed', { model, error: res.error });
           }
         }
-        const sendRes = await sp.client.request(
+        let sendRes = await sp.client.request(
           { type: 'prompt', message: prompt },
           15_000,
         );
+        // f0.6+ cut-over fix: a pi child can stay wedged "already processing"
+        // after a timed-out/aborted run. Abort, give it a moment to settle, then
+        // retry once; on a second rejection kill the wedged child so the next
+        // message spawns a clean one instead of leaving it poisoned.
+        if (!sendRes.success && /already processing/i.test(String(sendRes.error ?? ''))) {
+          log.warn('agent', 'pi-busy-abort-retry', { sessionKey: sp.sessionKey });
+          await sp.client.request({ type: 'abort' }, 5_000).catch(() => undefined);
+          await new Promise((r) => setTimeout(r, 2_500));
+          sendRes = await sp.client.request(
+            { type: 'prompt', message: prompt },
+            15_000,
+          );
+        }
         if (!sendRes.success) {
+          if (/already processing/i.test(String(sendRes.error ?? ''))) {
+            log.warn('agent', 'pi-busy-kill-wedged-child', { pid: sp.child.pid });
+            try { killProcessTree(sp.child.pid); } catch { /* best effort */ }
+          }
           push({
             type: 'error',
             message: `pi prompt rejected: ${sendRes.error ?? 'unknown'}`,
