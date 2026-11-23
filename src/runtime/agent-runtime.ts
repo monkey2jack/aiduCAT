@@ -141,11 +141,13 @@ export async function createRuntimeAgent(
         }
       }
     }
+    const prefModel = (profileConfig as { preferences?: { model?: string } }).preferences?.model;
     return new PiAdapter({
       binary: pi?.binaryPath ?? process.env.LARK_CHANNEL_PI_BIN ?? 'pi',
       agentDir,
       ...(baseUrl ? { baseUrl } : {}),
       ...(apiKey ? { apiKey } : {}),
+      ...(prefModel ? { model: prefModel } : {}),
       larkChannel,
       envPassthrough: profileConfig.agentEnv?.passthrough ?? [],
     });

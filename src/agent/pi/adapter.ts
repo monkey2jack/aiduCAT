@@ -46,6 +46,8 @@ export interface PiAdapterOptions {
   stopGraceMs?: number;
   larkChannel?: LarkChannelEnvContext;
   envPassthrough?: readonly string[];
+  /** Profile's preferred model — sent as --provider/--model at every spawn. */
+  model?: string;
 }
 
 type PiChild = SpawnedProcessByStdio<Writable, Readable, Readable>;
@@ -80,6 +82,7 @@ export class PiAdapter implements AgentAdapter {
   private readonly defaultStopGraceMs: number;
   private readonly larkChannel: LarkChannelEnvContext | undefined;
   private readonly envPassthrough: readonly string[];
+  private readonly defaultModel?: string;
   private botIdentity: AgentBotIdentity | undefined;
 
   private readonly processes = new Map<string, SessionProcess>();
@@ -93,6 +96,7 @@ export class PiAdapter implements AgentAdapter {
     this.defaultStopGraceMs = opts.stopGraceMs ?? 5000;
     this.larkChannel = opts.larkChannel;
     this.envPassthrough = opts.envPassthrough ?? [];
+    this.defaultModel = opts.model;
     this.reaper = setInterval(() => this.reapIdle(), 60_000);
     this.reaper.unref();
   }
@@ -326,6 +330,7 @@ export class PiAdapter implements AgentAdapter {
         ...larkEnv,
         PI_CODING_AGENT_DIR: this.agentDir,
         ...(this.apiKey ? { [PI_API_KEY_ENV]: this.apiKey } : {}),
+      ...(process.env.AIDUMEI_PI_STATE_DIR ? { AIDUMEI_PI_STATE_DIR: process.env.AIDUMEI_PI_STATE_DIR } : {}),
         ...(opts.envOverrides ?? {}),
       },
       passthrough: this.envPassthrough,
@@ -335,7 +340,7 @@ export class PiAdapter implements AgentAdapter {
       '--mode', 'rpc',
       // pi requires --model together with --provider; without an explicit
       // pick we pass neither and select via set_model after spawn.
-      ...(opts.model ? ['--provider', PI_PROVIDER_ID, '--model', opts.model] : []),
+      ...(this.defaultModel || opts.model ? ['--provider', PI_PROVIDER_ID, '--model', opts.model ?? this.defaultModel] : []),
       '--session-dir', join(this.agentDir, 'sessions'),
       ...(opts.sessionId ? ['--session-id', opts.sessionId] : []),
       '--name', '飞书·嘟嘟',

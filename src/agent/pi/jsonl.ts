@@ -102,7 +102,10 @@ export class PiStreamTranslator {
         if (msg?.role !== 'assistant') break;
         if (msg.usage) {
           const base = usageEvent(msg.usage);
-          if (base.type === 'usage') out.push({ ...base, callFinal: true });
+          if (base.type === 'usage') {
+            out.push({ ...base, callFinal: true });
+            out.push({ ...base, cumulative: true });
+          }
         }
         if (msg.stopReason === 'error') {
           out.push({
