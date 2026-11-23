@@ -33,7 +33,7 @@ import { PI_API_KEY_ENV, PI_PROVIDER_ID } from './models-file';
  */
 
 const IDLE_REAP_MS = 30 * 60_000;
-const PROMPT_TIMEOUT_MS = 10 * 60_000;
+const PROMPT_TIMEOUT_MS = 60 * 60_000;
 
 export interface PiAdapterOptions {
   binary: string;
