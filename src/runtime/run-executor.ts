@@ -57,6 +57,24 @@ const DEFAULT_POST_DONE_EXIT_GRACE_MS = 15000;
 // ahead anyway (logged) — a wedged process must not block the chat forever.
 const DRAIN_KILL_BUDGET_MS = 10_000;
 
+/**
+ * pi-exit-hang (2026-11-23): when the adapter exposes requestExit() the
+ * executor uses the adapter's tiny exitRequestGraceMs and then relies on the
+ * adapter's own SIGKILL escalation; this reserve (escalation window + margin)
+ * is how long waitForPreviousExit is willing to wait before force-killing
+ * and releasing the scope anyway.
+ */
+const EXIT_REQUEST_RESERVE_MS = 35_000;
+
+/**
+ * pi-exit-hang (2026-11-23): when the scope was already handed back at the
+ * terminal event (background settle), the process settle may take its time —
+ * real-world pi needed ~21s for its graceful dispose (MCP/extension close).
+ * Generous on purpose: nobody is waiting anymore, and stopping too early
+ * would cut a healthy shutdown mid-flight.
+ */
+const BACKGROUND_SETTLE_GRACE_MS = 60_000;
+
 /** f031-stab-#3: one per spawned run, until its process has exited. */
 interface ScopeProcess {
   /** The run's turn is over (terminal event seen, or interrupted). */
@@ -64,6 +82,8 @@ interface ScopeProcess {
   /** Resolves once the process exited (or was killed). */
   exited: Promise<void>;
   forceKillTree?: () => Promise<void>;
+  /** pi-exit-hang: grace the executor waits before escalating, from the run. */
+  exitGraceMs?: number;
 }
 
 export class RunExecutor {
@@ -73,6 +93,12 @@ export class RunExecutor {
   private readonly createRunId: () => string;
   private readonly now: () => number;
   private readonly postDoneExitGraceMs: number;
+  /**
+   * pi-exit-hang (2026-11-23): long-lived adapters (pi rpc) serialize runs on
+   * the child itself and reap their own processes. Terminal immediately frees
+   * the scope; the pool slot stays held until the settle finishes.
+   */
+  private readonly releasesScopeAtTerminal: boolean;
   /**
    * f031-stab-#3: the agent process currently owning each scope. It stays here
    * after its turn ends (card final, scope idle) until the process exits, and
@@ -88,6 +114,7 @@ export class RunExecutor {
     this.createRunId = deps.createRunId ?? randomUUID;
     this.now = deps.now ?? Date.now;
     this.postDoneExitGraceMs = deps.postDoneExitGraceMs ?? DEFAULT_POST_DONE_EXIT_GRACE_MS;
+    this.releasesScopeAtTerminal = deps.agent.releasesScopeAtTerminal === true;
   }
 
   async submit(input: SubmitRunInput): Promise<RunExecution> {
@@ -206,36 +233,32 @@ export class RunExecutor {
         drained = resolve;
       }),
       forceKillTree: run.forceKillTree?.bind(run),
+      exitGraceMs: run.exitRequestGraceMs,
     };
     this.scopeProcs.set(input.scopeId, proc);
     let cleaning: Promise<void> | undefined;
-    const cleanup = (alreadyStopped: boolean): Promise<void> => {
+    const cleanup = (alreadyStopped: boolean, background = false): Promise<void> => {
       cleaning ??= (async () => {
         this.activeRuns.unregister(input.scopeId, run);
-        try {
-          if (!alreadyStopped) {
-            const exited = await run.waitForExit(this.postDoneExitGraceMs);
-            if (!exited) {
-              log.warn('run', 'post-done-exit-timeout', {
-                ...dimensions,
-                graceMs: this.postDoneExitGraceMs,
-              });
-              await run.stop().catch((err) => {
-                log.warn('run', 'post-done-stop-failed', {
-                  ...dimensions,
-                  err: err instanceof Error ? err.message : String(err),
-                });
-              });
-              if (run.forceKillTree) {
-                await run.forceKillTree().catch((err) => {
-                  log.warn('run', 'post-done-tree-kill-failed', {
-                    ...dimensions,
-                    err: err instanceof Error ? err.message : String(err),
-                  });
-                });
-              }
+        if (background) {
+          // pi-exit-hang: long-lived agents reap their own children — the chat
+          // must not wait on process death. Free the scope NOW (synchronously,
+          // before consumers see the terminal event), END THIS CLEANUP
+          // immediately (the fanout's stream must not park on the settle), and
+          // run the settle + pool release detached.
+          if (this.scopeProcs.get(input.scopeId) === proc) this.scopeProcs.delete(input.scopeId);
+          drained();
+          void (async () => {
+            try {
+              if (!alreadyStopped) await this.settleProcessAfterTerminal(run, dimensions, true);
+            } finally {
+              release();
             }
-          }
+          })().catch(() => {});
+          return;
+        }
+        try {
+          if (!alreadyStopped) await this.settleProcessAfterTerminal(run, dimensions, false);
         } finally {
           release();
           if (this.scopeProcs.get(input.scopeId) === proc) this.scopeProcs.delete(input.scopeId);
@@ -254,7 +277,13 @@ export class RunExecutor {
       // Runs synchronously before consumers see the terminal event, so a
       // follow-up submit can never slip in between "card done" and cleanup.
       terminalSeen = true;
-      void cleanup(false);
+      if (this.releasesScopeAtTerminal && !handle.interrupted) {
+        // pi-exit-hang: deliver the exit request synchronously (its side
+        // effects run before the first await) so ensureProcess can never
+        // hand the dying child to a submit that lands in the microtask gap.
+        void run.requestExit?.().catch(() => {});
+      }
+      void cleanup(false, this.releasesScopeAtTerminal);
     });
 
     return {
@@ -279,12 +308,102 @@ export class RunExecutor {
     };
   }
 
+  /**
+   * pi-exit-hang (2026-11-23): the turn is over — settle the agent process.
+   *
+   * Per-turn agents (claude/codex/…) exit on their own: unchanged f031-stab-#3
+   * path (waitForExit grace → stop → tree-kill). Long-lived agents (pi rpc)
+   * never exit on their own and a blind stop() was strangling the child the
+   * next message needed. For them: requestExit() first (delivered shutdown,
+   * SIGKILL escalation armed inside the adapter), wait only the adapter's
+   * tiny grace; if it is still alive after that the child is wedged, so
+   * stop() + tree-kill fire as the fallback — same as before, but only for
+   * genuinely wedged children.
+   */
+  private async settleProcessAfterTerminal(
+    run: AgentRun,
+    dimensions: Record<string, unknown>,
+    background = false,
+  ): Promise<void> {
+    if (!run.requestExit) {
+      const exited = await run.waitForExit(this.postDoneExitGraceMs);
+      if (!exited) {
+        log.warn('run', 'post-done-exit-timeout', {
+          ...dimensions,
+          graceMs: this.postDoneExitGraceMs,
+        });
+        await run.stop().catch((err) => {
+          log.warn('run', 'post-done-stop-failed', {
+            ...dimensions,
+            err: err instanceof Error ? err.message : String(err),
+          });
+        });
+        if (run.forceKillTree) {
+          await run.forceKillTree().catch((err) => {
+            log.warn('run', 'post-done-tree-kill-failed', {
+              ...dimensions,
+              err: err instanceof Error ? err.message : String(err),
+            });
+          });
+        }
+      }
+      return;
+    }
+
+    // Adapter-managed shutdown path: deliver the request, wait the adapter's
+    // tiny grace, and hard-stop anything still alive after it. When the
+    // request could NOT be delivered, give in-flight death only a hair of
+    // grace — if the process is somehow still alive, it gets the same
+    // stop() + tree-kill fallback as before (nobody walks away unpunished).
+    let delivered: boolean;
+    try {
+      delivered = await run.requestExit();
+    } catch (err) {
+      log.warn('run', 'post-done-request-exit-failed', {
+        ...dimensions,
+        err: err instanceof Error ? err.message : String(err),
+      });
+      delivered = false;
+    }
+    const graceMs = background
+      ? BACKGROUND_SETTLE_GRACE_MS
+      : delivered
+        ? (run.exitRequestGraceMs ?? this.postDoneExitGraceMs)
+        : 1_000;
+    const exited = await run.waitForExit(graceMs);
+    if (exited) return;
+    log.warn('run', 'post-done-exit-timeout', {
+      ...dimensions,
+      graceMs,
+      requested: delivered,
+    });
+    // Wedged child: the adapter's SIGKILL escalation may already be armed;
+    // stop() adds the abort/interrupt side (a second signal force-exits pi),
+    // tree-kill is the guaranteed reaper.
+    await run.stop().catch((err) => {
+      log.warn('run', 'post-done-stop-failed', {
+        ...dimensions,
+        err: err instanceof Error ? err.message : String(err),
+      });
+    });
+    if (run.forceKillTree) {
+      await run.forceKillTree().catch((err) => {
+        log.warn('run', 'post-done-tree-kill-failed', {
+          ...dimensions,
+          err: err instanceof Error ? err.message : String(err),
+        });
+      });
+    }
+  }
+
   /** f031-stab-#3: hold a new submit until the scope's previous process exited. */
   private async waitForPreviousExit(scopeId: string, prev: ScopeProcess): Promise<void> {
     const startedAt = this.now();
     log.info('run', 'wait-previous-exit', { scope: scopeId });
     let timer: NodeJS.Timeout | undefined;
-    const capMs = this.postDoneExitGraceMs + DRAIN_KILL_BUDGET_MS;
+    const capMs =
+      (prev.exitGraceMs ?? this.postDoneExitGraceMs) +
+      (prev.exitGraceMs !== undefined ? EXIT_REQUEST_RESERVE_MS : DRAIN_KILL_BUDGET_MS);
     const outcome = await Promise.race([
       prev.exited.then(() => 'exited' as const),
       new Promise<'timeout'>((resolve) => {
