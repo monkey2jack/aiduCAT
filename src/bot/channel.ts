@@ -1763,7 +1763,9 @@ async function runAgentBatch(deps: RunBatchDeps): Promise<SegmentEnd | undefined
   // while it works (see steer-input.ts); the flush loop renders each one.
   const steerFn = execution.run.steer?.bind(execution.run);
   let live: LiveRun | undefined;
-  if (deps.steer && steerFn && agentKind === 'claude' && getMessageReplyMode(controls.cfg) === 'card') {
+  // f0.6+ cut-over fix: pi's adapter exposes run.steer too, so a steered
+  // card can end with the Steered footer exactly like claude's.
+  if (deps.steer && steerFn && (agentKind === 'claude' || agentKind === 'pi') && getMessageReplyMode(controls.cfg) === 'card') {
     live = { actorId: firstMsg.senderId, queue: [], steer: steerFn, core };
     deps.steer.register(live);
   }

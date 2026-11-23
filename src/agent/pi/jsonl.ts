@@ -89,11 +89,10 @@ export class PiStreamTranslator {
       case 'queue_update': {
         const steering = Array.isArray(evt.steering) ? (evt.steering as unknown[]) : [];
         if (this.steeringOutstanding > 0 && steering.length === 0) {
-          // pi took the queued steering message in — the old card closes and
-          // everything after this belongs to the steered message (same
-          // semantics as claude's replay echo).
+          // pi took the queued steering message in. The adapter emits the
+          // steer event itself on send (pi's echo is unreliable), so only
+          // clear the counter here to avoid closing the card twice.
           this.steeringOutstanding = 0;
-          out.push({ type: 'steer' });
         }
         break;
       }
