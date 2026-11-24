@@ -13,9 +13,15 @@ import type { RpcEvent } from './rpc-client';
  *  - queue_update → steer marker when a queued steering message is taken
  *    in (its queue empties), mirroring claude's --replay-user-messages echo
  *  - agent_settled → done (aborted → interrupted)
- *  - assistant message_end with stopReason 'error' → error
- *  - auto_retry_* are informational and surface as nothing (run-watchdog
- *    already has its own timeout machinery)
+ *  - assistant message_end with stopReason 'error' → error, but DEFERRED
+ *    until agent_settled: pi auto-retries retryable provider errors (429,
+ *    overloaded, socket closed, fetch failed…) after message_end, so an
+ *    error is only terminal once pi settles without a successful retry.
+ *    Emitting it early made the bridge end the run, abort pi mid-retry and
+ *    SIGKILL it (2026-11-24 Hangzhou "chats break after a few turns").
+ *  - auto_retry_start → a short thinking note (the card shows we are
+ *    waiting on the upstream, not hung); clears the pending error
+ *  - auto_retry_end{success:false} → pending error = finalError
  */
 
 interface Usage {
@@ -38,6 +44,8 @@ export class PiStreamTranslator {
   private sawText = false;
   private steeringOutstanding = 0;
   private settled = false;
+  /** Error held back until agent_settled (pi may still auto-retry it). */
+  private pendingError: string | undefined;
 
   /** Mark that the bridge queued a steer (its queue_update will confirm). */
   noteSteerQueued(): void {
@@ -107,20 +115,45 @@ export class PiStreamTranslator {
           }
         }
         if (msg.stopReason === 'error') {
-          out.push({
-            type: 'error',
-            message: msg.errorMessage ?? 'pi run failed',
-            terminationReason: 'failed',
-          });
+          this.pendingError = msg.errorMessage ?? 'pi run failed';
+        } else {
+          // a later successful response supersedes an earlier failure
+          this.pendingError = undefined;
+        }
+        break;
+      }
+      case 'auto_retry_start': {
+        this.pendingError = undefined;
+        const attempt = Number(evt.attempt ?? 0);
+        const max = Number(evt.maxAttempts ?? 0);
+        const secs = Math.round(Number(evt.delayMs ?? 0) / 1000);
+        out.push({
+          type: 'thinking',
+          delta: `\n（上游繁忙，${secs} 秒后自动重试 ${attempt}/${max}）\n`,
+        });
+        break;
+      }
+      case 'auto_retry_end': {
+        if (evt.success === false) {
+          this.pendingError = String(evt.finalError ?? this.pendingError ?? 'pi run failed');
+        } else {
+          this.pendingError = undefined;
         }
         break;
       }
       case 'agent_settled': {
         this.settled = true;
-        out.push({
-          type: 'done',
-          terminationReason: evt.aborted === true ? 'interrupted' : 'normal',
-        });
+        const aborted = evt.aborted === true;
+        const err = this.pendingError;
+        this.pendingError = undefined;
+        if (err && !aborted) {
+          out.push({ type: 'error', message: err, terminationReason: 'failed' });
+        } else {
+          out.push({
+            type: 'done',
+            terminationReason: aborted ? 'interrupted' : 'normal',
+          });
+        }
         break;
       }
       default:

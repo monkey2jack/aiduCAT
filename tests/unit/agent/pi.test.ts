@@ -42,12 +42,11 @@ describe('PiStreamTranslator', () => {
     expect(end[0]).toMatchObject({ type: 'tool_result', id: 'c1', output: 'ok', isError: false });
   });
 
-  it('emits steer when the steering queue drains', () => {
+  it('does not emit steer on queue drain (the adapter emits it on send)', () => {
     const t = new PiStreamTranslator();
     t.noteSteerQueued();
     expect(t.translate({ type: 'queue_update', steering: ['x'], followUp: [] })).toEqual([]);
-    const out = t.translate({ type: 'queue_update', steering: [], followUp: [] });
-    expect(out).toEqual([{ type: 'steer' }]);
+    expect(t.translate({ type: 'queue_update', steering: [], followUp: [] })).toEqual([]);
   });
 
   it('maps agent_settled to done', () => {
@@ -75,7 +74,56 @@ describe('PiStreamTranslator', () => {
     });
     const usage = out.find((e) => e.type === 'usage');
     expect(usage).toMatchObject({ callFinal: true, inputTokens: 5 });
-    expect(out.some((e) => e.type === 'error' && e.message === '401 unauthorized')).toBe(true);
+    // held until agent_settled — pi may still auto-retry it
+    expect(out.some((e) => e.type === 'error')).toBe(false);
+    expect(t.translate({ type: 'agent_settled', aborted: false })).toEqual([
+      { type: 'error', message: '401 unauthorized', terminationReason: 'failed' },
+    ]);
+    expect(t.hasSettled).toBe(true);
+  });
+
+  const errEnd = (msg: string) => ({
+    type: 'message_end',
+    message: { role: 'assistant', stopReason: 'error', errorMessage: msg },
+  });
+
+  it('does not fail the run when pi auto-retries a 429 and then succeeds', () => {
+    const t = new PiStreamTranslator();
+    expect(t.translate(errEnd('429: queued upstream')).some((e) => e.type === 'error')).toBe(false);
+    const note = t.translate({ type: 'auto_retry_start', attempt: 1, maxAttempts: 6, delayMs: 5000, errorMessage: '429' });
+    expect(note).toHaveLength(1);
+    expect(note[0]).toMatchObject({ type: 'thinking' });
+    expect((note[0] as { delta: string }).delta).toContain('1/6');
+    t.translate({
+      type: 'message_update',
+      assistantMessageEvent: { type: 'text_delta', delta: '好的' },
+    });
+    t.translate({ type: 'message_end', message: { role: 'assistant', stopReason: 'stop' } });
+    t.translate({ type: 'auto_retry_end', success: true, attempt: 1 });
+    expect(t.translate({ type: 'agent_settled', aborted: false })).toEqual([
+      { type: 'done', terminationReason: 'normal' },
+    ]);
+  });
+
+  it('fails with the final error once retries are exhausted', () => {
+    const t = new PiStreamTranslator();
+    t.translate(errEnd('429 a'));
+    t.translate({ type: 'auto_retry_start', attempt: 1, maxAttempts: 1, delayMs: 10 });
+    t.translate(errEnd('other side closed'));
+    t.translate({ type: 'auto_retry_end', success: false, attempt: 1, finalError: 'other side closed' });
+    expect(t.translate({ type: 'agent_settled', aborted: false })).toEqual([
+      { type: 'error', message: 'other side closed', terminationReason: 'failed' },
+    ]);
+  });
+
+  it('a /stop during a retry wait ends as interrupted, not failed', () => {
+    const t = new PiStreamTranslator();
+    t.translate(errEnd('429'));
+    t.translate({ type: 'auto_retry_start', attempt: 1, maxAttempts: 6, delayMs: 5000 });
+    t.translate({ type: 'auto_retry_end', success: false, attempt: 1, finalError: 'Retry cancelled' });
+    expect(t.translate({ type: 'agent_settled', aborted: true })).toEqual([
+      { type: 'done', terminationReason: 'interrupted' },
+    ]);
   });
 });
 

@@ -112,13 +112,15 @@ export async function createRuntimeAgent(
         baseUrl = undefined;
       }
     }
-    const combos = cachedCombos() ?? [];
     // Never overwrite a populated models.json with an empty combo list: on a
     // cold start the combo cache may not be warmed yet, and writing an empty
     // catalog would leave the pi child with NO models at all. Keep the
     // existing file (or a manually provisioned one) until the first real
-    // combo fetch lands.
-    if (baseUrl && combos.length > 0) {
+    // combo fetch lands. Re-run before every pi spawn so a cold-start stale
+    // catalog heals itself (2026-11-24: /model GPT-6-Luna "Model not found").
+    const refreshCatalog = (): string[] | undefined => {
+      const combos = cachedCombos() ?? [];
+      if (!baseUrl || combos.length === 0) return undefined;
       writePiModelsFile(agentDir, {
         baseUrl: `${baseUrl.replace(/\/+$/, '')}/v1`,
         models: combos.map((c) => ({
@@ -126,7 +128,9 @@ export async function createRuntimeAgent(
           ...(c.contextWindow ? { contextWindow: c.contextWindow } : {}),
         })),
       });
-    }
+      return combos.map((c) => c.name);
+    };
+    refreshCatalog();
     // The default provider key: env AIDU_10ROUTER_API_KEY wins; otherwise the
     // profile's default modelProviders entry (id 'default') if one exists.
     let apiKey = process.env.AIDU_10ROUTER_API_KEY?.trim();
@@ -150,6 +154,7 @@ export async function createRuntimeAgent(
       ...(prefModel ? { model: prefModel } : {}),
       larkChannel,
       envPassthrough: profileConfig.agentEnv?.passthrough ?? [],
+      refreshCatalog,
     });
   }
   if (profileConfig.agentKind === 'opencode' || profileConfig.agentKind === 'openchamber') {

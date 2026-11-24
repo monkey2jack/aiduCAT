@@ -48,6 +48,13 @@ export interface PiAdapterOptions {
   envPassthrough?: readonly string[];
   /** Profile's preferred model — sent as --provider/--model at every spawn. */
   model?: string;
+  /**
+   * Rewrite models.json from the live combo cache; returns the model ids
+   * written, or undefined when the cache is cold (file left untouched).
+   * Called before each spawn and when a requested model is missing from a
+   * live child's catalog.
+   */
+  refreshCatalog?: () => string[] | undefined;
 }
 
 type PiChild = SpawnedProcessByStdio<Writable, Readable, Readable>;
@@ -69,6 +76,8 @@ interface SessionProcess {
   lastUsed: number;
   exited: boolean;
   stderrTail: string;
+  /** Model ids in models.json when this child spawned (undefined = unknown). */
+  catalog?: Set<string>;
 }
 
 export class PiAdapter implements AgentAdapter {
@@ -83,6 +92,7 @@ export class PiAdapter implements AgentAdapter {
   private readonly larkChannel: LarkChannelEnvContext | undefined;
   private readonly envPassthrough: readonly string[];
   private readonly defaultModel?: string;
+  private readonly refreshCatalog?: () => string[] | undefined;
   private botIdentity: AgentBotIdentity | undefined;
 
   private readonly processes = new Map<string, SessionProcess>();
@@ -97,6 +107,7 @@ export class PiAdapter implements AgentAdapter {
     this.larkChannel = opts.larkChannel;
     this.envPassthrough = opts.envPassthrough ?? [];
     this.defaultModel = opts.model;
+    this.refreshCatalog = opts.refreshCatalog;
     this.reaper = setInterval(() => this.reapIdle(), 60_000);
     this.reaper.unref();
   }
@@ -183,6 +194,19 @@ export class PiAdapter implements AgentAdapter {
       }
     })();
 
+    // A child loads models.json once at spawn. If the requested model is
+    // missing from an idle child's catalog but the refreshed combo list has
+    // it, recycle the child (same --session-id, so the conversation resumes).
+    const idle = this.processes.get(sessionKey);
+    if (model && idle && !idle.exited && !idle.active && idle.catalog && !idle.catalog.has(model)) {
+      const fresh = this.safeRefreshCatalog();
+      if (fresh?.includes(model)) {
+        log.info('agent', 'pi-catalog-recycle', { model, pid: idle.child.pid ?? null });
+        idle.exited = true;
+        this.processes.delete(sessionKey);
+        try { idle.child.kill('SIGTERM'); } catch { /* gone */ }
+      }
+    }
     const sp = this.ensureProcess(sessionKey, cwd, opts);
 
     const live: LiveRun = {
@@ -204,6 +228,10 @@ export class PiAdapter implements AgentAdapter {
           );
           if (!res.success) {
             log.warn('agent', 'pi-set-model-failed', { model, error: res.error });
+            push({
+              type: 'thinking',
+              delta: `\n（模型 ${model} 暂不可用：${String(res.error ?? '').slice(0, 120)}，本轮沿用当前模型）\n`,
+            });
           }
         }
         let sendRes = await sp.client.request(
@@ -215,7 +243,7 @@ export class PiAdapter implements AgentAdapter {
         // retry once; on a second rejection kill the wedged child so the next
         // message spawns a clean one instead of leaving it poisoned.
         if (!sendRes.success && /already processing/i.test(String(sendRes.error ?? ''))) {
-          log.warn('agent', 'pi-busy-abort-retry', { sessionKey: sp.sessionKey });
+          log.warn('agent', 'pi-busy-abort-retry', { sessionKey: sp.sessionId });
           await sp.client.request({ type: 'abort' }, 5_000).catch(() => undefined);
           await new Promise((r) => setTimeout(r, 2_500));
           sendRes = await sp.client.request(
@@ -226,7 +254,7 @@ export class PiAdapter implements AgentAdapter {
         if (!sendRes.success) {
           if (/already processing/i.test(String(sendRes.error ?? ''))) {
             log.warn('agent', 'pi-busy-kill-wedged-child', { pid: sp.child.pid });
-            try { killProcessTree(sp.child.pid); } catch { /* best effort */ }
+            try { if (sp.child.pid) void killProcessTree(sp.child.pid, 'pi-busy-kill-wedged'); } catch { /* best effort */ }
           }
           push({
             type: 'error',
@@ -345,6 +373,7 @@ export class PiAdapter implements AgentAdapter {
       return existing;
     }
 
+    const catalogIds = this.safeRefreshCatalog();
     const larkEnv = buildLarkChannelEnv(this.larkChannel, { forAgent: true });
     const env = buildAgentEnv({
       agent: 'pi' as never,
@@ -362,7 +391,7 @@ export class PiAdapter implements AgentAdapter {
       '--mode', 'rpc',
       // pi requires --model together with --provider; without an explicit
       // pick we pass neither and select via set_model after spawn.
-      ...(this.defaultModel || opts.model ? ['--provider', PI_PROVIDER_ID, '--model', opts.model ?? this.defaultModel] : []),
+      ...(this.defaultModel || opts.model ? ['--provider', PI_PROVIDER_ID, '--model', (opts.model ?? this.defaultModel) as string] : []),
       '--session-dir', join(this.agentDir, 'sessions'),
       ...(opts.sessionId ? ['--session-id', opts.sessionId] : []),
       '--name', '飞书·嘟嘟',
@@ -382,6 +411,7 @@ export class PiAdapter implements AgentAdapter {
       lastUsed: Date.now(),
       exited: false,
       stderrTail: '',
+      ...(catalogIds ? { catalog: new Set(catalogIds) } : {}),
     };
 
     child.stderr.on('data', (chunk: Buffer) => {
@@ -404,7 +434,8 @@ export class PiAdapter implements AgentAdapter {
         sp,
         `pi exited unexpectedly (code ${code ?? 'null'}): ${sp.stderrTail.slice(-300)}`,
       );
-      this.processes.delete(sessionKey);
+      // a recycled/replaced child must not evict its successor
+      if (this.processes.get(sessionKey) === sp) this.processes.delete(sessionKey);
     });
 
     log.info('agent', 'pi-spawn', {
@@ -417,6 +448,17 @@ export class PiAdapter implements AgentAdapter {
     });
     this.processes.set(sessionKey, sp);
     return sp;
+  }
+
+  private safeRefreshCatalog(): string[] | undefined {
+    try {
+      return this.refreshCatalog?.();
+    } catch (err) {
+      log.warn('agent', 'pi-catalog-refresh-failed', {
+        err: err instanceof Error ? err.message : String(err),
+      });
+      return undefined;
+    }
   }
 
   private dispatch(sp: SessionProcess, evt: Record<string, unknown> & { type: string }): void {
@@ -439,8 +481,8 @@ export class PiAdapter implements AgentAdapter {
     } else if (evt.type === 'message_end') {
       const msg = evt.message as { role?: string; stopReason?: string } | undefined;
       if (msg?.role === 'assistant' && msg.stopReason === 'error') {
-        // The translator already emitted the error event; agent_settled
-        // follows immediately after in pi's stream, so don't finish here.
+        // The translator holds the error until agent_settled: pi may still
+        // auto-retry it, so never finish (or let the bridge kill pi) here.
       }
     }
   }
