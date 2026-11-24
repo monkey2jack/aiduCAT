@@ -1,4 +1,5 @@
 import type { CardActionEvent, LarkChannel, NormalizedMessage } from '@larksuite/channel';
+import { answeredClarifyCard, clarifyCardsFor, clarifyReceiptElements } from './clarify-cards';
 import type { AgentAdapter } from '../agent/types';
 import type { ActiveRuns } from '../bot/active-runs';
 import type { ChatModeCache } from '../bot/chat-mode-cache';
@@ -267,18 +268,18 @@ function forwardToAgent(
       // f0.2: receipt on the SAME card — swap the form for a chosen line so
       // the question can't be answered twice. updateCard targets the message
       // that carries the card (evt.messageId).
+      // 2026-11-25 (Wei): keep the whole answer card — swap only the form for
+      // the receipt. Falls back to the bare receipt when the run's final card
+      // was not remembered (degraded run, very old card).
       void (async () => {
         try {
-          await deps.channel.updateCard(deps.evt.messageId, {
-            schema: '2.0',
-            config: {},
-            body: {
-              elements: [
-                { tag: 'markdown', content: `⁉️ **TBC**：${question}` },
-                { tag: 'markdown', content: `✅ **已选**：${answer}` },
-              ],
-            },
-          });
+          const stored = clarifyCardsFor(deps.sessions.filePath).take(deps.evt.messageId);
+          const full = stored ? answeredClarifyCard(stored, question, answer) : undefined;
+          if (!full) log.info('cardAction', 'clarify-receipt-bare', { hadStored: Boolean(stored) });
+          await deps.channel.updateCard(
+            deps.evt.messageId,
+            full ?? { schema: '2.0', config: {}, body: { elements: clarifyReceiptElements(question, answer) } },
+          );
         } catch (err) {
           log.warn('cardAction', 'clarify-receipt-update-failed', {
             err: err instanceof Error ? err.message : String(err),

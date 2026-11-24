@@ -108,6 +108,11 @@ export class SessionStore {
     this.path = path;
   }
 
+  /** Where this profile's sessions.json lives (sibling state files key off it). */
+  get filePath(): string {
+    return this.path;
+  }
+
   async load(): Promise<void> {
     try {
       const text = await readFile(this.path, 'utf8');

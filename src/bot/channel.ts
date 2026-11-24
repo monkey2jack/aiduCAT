@@ -1,4 +1,5 @@
 import { existsSync } from 'node:fs';
+import { clarifyCardsFor } from '../card/clarify-cards';
 import type {
   LarkChannel,
   LarkChannelOptions,
@@ -2058,8 +2059,13 @@ async function renderSegment(deps: RunBatchDeps, core: RunCore, live: LiveRun | 
       // f03p-fix-#8: the streaming card shows page 1 of a long answer — the
       // rest follows as ordered 「续 i/N」 cards (no plain-text copy).
       if (!degraded && controls.profileConfig.agentKind !== 'codex' && progress.opened() && !progress.abandoned()) {
-        const pages = renderCardWithInfo(filterForPrefs(latestState), cardRenderOptions).continuations;
-        await sendContinuationCards({ channel, chatId, scope, pages, sendOpts });
+        const finalRender = renderCardWithInfo(filterForPrefs(latestState), cardRenderOptions);
+        await sendContinuationCards({ channel, chatId, scope, pages: finalRender.continuations, sendOpts });
+        // 2026-11-25: remember a card that ends on a clarify form so the
+        // answer can keep the whole card (src/card/clarify-cards.ts).
+        if (latestState.clarify && cardCtrl?.messageId) {
+          clarifyCardsFor(deps.sessions.filePath).remember(cardCtrl.messageId, finalRender.card);
+        }
       }
       await recallIfEmptyStreamedReply(channel, progress, filterForPrefs(latestState), scope);
       // aiduCAT: In card mode, if the progress stream card successfully opened, it already
