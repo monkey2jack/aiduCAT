@@ -127,6 +127,7 @@ export async function createRuntimeAgent(
         // pi's silent 128k default
         contextWindow: c.contextWindow ?? c.gatewayWindow ?? PI_DEFAULT_CONTEXT_WINDOW,
         ...(c.maxOutput ? { maxTokens: Math.min(c.maxOutput, 32000) } : {}),
+        ...(c.vision ? { vision: true } : {}),
       }));
       writePiModelsFile(agentDir, {
         baseUrl: `${baseUrl.replace(/\/+$/, '')}/v1`,

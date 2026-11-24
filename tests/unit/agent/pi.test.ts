@@ -184,3 +184,13 @@ describe('pi settings.json (compaction 70% + retry defaults)', () => {
     expect(readFileSync(join(dir, 'settings.json'), 'utf8')).toBe('{oops');
   });
 });
+
+describe('pi models.json vision', () => {
+  it('marks vision models with input text+image and leaves others text-only', async () => {
+    const { renderModelsJson } = await import('../../../src/agent/pi/models-file');
+    const j = JSON.parse(renderModelsJson({ baseUrl: 'http://x/v1', models: [{ id: 'V', vision: true }, { id: 'T' }] }));
+    const [v, t] = j.providers['10router'].models;
+    expect(v.input).toEqual(['text', 'image']);
+    expect(t.input).toBeUndefined();
+  });
+});

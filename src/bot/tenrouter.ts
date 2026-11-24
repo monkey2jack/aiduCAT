@@ -30,6 +30,8 @@ export interface TenRouterCombo {
   gatewayWindow?: number;
   /** pi only: max output tokens from /v1/models, when known. */
   maxOutput?: number;
+  /** pi only: gateway says this combo accepts images. */
+  vision?: boolean;
 }
 
 export interface TenRouterConfig {
@@ -171,7 +173,7 @@ type RawCombo = {
 // (measured 2026-11-24), hence its own budget and a last-good cache so one
 // slow refresh never drops the windows already learned.
 const MODELS_ENRICH_TIMEOUT_MS = 30_000;
-const lastGateway = new Map<string, { win?: number; out?: number }>();
+const lastGateway = new Map<string, { win?: number; out?: number; vision?: boolean }>();
 
 function applyLastGateway(combos: TenRouterCombo[]): void {
   for (const c of combos) {
@@ -179,6 +181,7 @@ function applyLastGateway(combos: TenRouterCombo[]): void {
     if (!g) continue;
     if (g.win && !c.gatewayWindow) c.gatewayWindow = g.win;
     if (g.out && !c.maxOutput) c.maxOutput = g.out;
+    if (g.vision !== undefined && c.vision === undefined) c.vision = g.vision;
   }
 }
 
@@ -197,7 +200,7 @@ async function enrichFromModels(baseUrl: string, combos: TenRouterCombo[]): Prom
         context_length?: unknown;
         context_window?: unknown;
         max_completion_tokens?: unknown;
-        capabilities?: { contextWindow?: unknown; maxOutput?: unknown } | null;
+        capabilities?: { contextWindow?: unknown; maxOutput?: unknown; vision?: unknown } | null;
       }>;
     };
     const byId = new Map((body.data ?? []).map((m) => [String(m.id ?? ''), m]));
@@ -211,7 +214,9 @@ async function enrichFromModels(baseUrl: string, combos: TenRouterCombo[]): Prom
       const out = positiveNumber(m.max_completion_tokens) ?? positiveNumber(m.capabilities?.maxOutput);
       if (win) c.gatewayWindow = win;
       if (out) c.maxOutput = out;
-      if (win || out) lastGateway.set(c.name, { win, out });
+      const vision = m.capabilities?.vision === true;
+      c.vision = vision;
+      lastGateway.set(c.name, { win, out, vision });
     }
   } catch (err) {
     log.warn('tenrouter', 'models-enrich-failed', {

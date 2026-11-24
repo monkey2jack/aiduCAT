@@ -32,6 +32,8 @@ export interface PiModelEntry {
   id: string;
   contextWindow?: number;
   maxTokens?: number;
+  /** accepts images (gateway capabilities.vision) */
+  vision?: boolean;
 }
 
 export interface PiModelsFileInput {
@@ -52,6 +54,9 @@ export function renderModelsJson(input: PiModelsFileInput): string {
         name: m.id,
         ...(m.contextWindow ? { contextWindow: m.contextWindow } : {}),
         maxTokens: m.maxTokens ?? 32000,
+        // vision models: pi's read tool then hands images to the model
+        // instead of refusing them (Wei 2026-11-25「要打开」)
+        ...(m.vision ? { input: ['text', 'image'] } : {}),
       })),
     },
   };
