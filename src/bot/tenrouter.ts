@@ -167,13 +167,28 @@ type RawCombo = {
  * Runs only inside the background combo refresh, never on the message path
  * (the f0.3.4 latency rule).
  */
+// /v1/models lists every upstream model and takes 5–10 s on the gateway
+// (measured 2026-11-24), hence its own budget and a last-good cache so one
+// slow refresh never drops the windows already learned.
+const MODELS_ENRICH_TIMEOUT_MS = 30_000;
+const lastGateway = new Map<string, { win?: number; out?: number }>();
+
+function applyLastGateway(combos: TenRouterCombo[]): void {
+  for (const c of combos) {
+    const g = lastGateway.get(c.name);
+    if (!g) continue;
+    if (g.win && !c.gatewayWindow) c.gatewayWindow = g.win;
+    if (g.out && !c.maxOutput) c.maxOutput = g.out;
+  }
+}
+
 async function enrichFromModels(baseUrl: string, combos: TenRouterCombo[]): Promise<void> {
   const key = (process.env.AIDU_10ROUTER_API_KEY ?? process.env.AIDUCAT_PI_API_KEY ?? '').trim();
   if (!key) return;
   try {
     const res = await fetch(`${baseUrl}/v1/models`, {
       headers: { Authorization: `Bearer ${key}` },
-      signal: AbortSignal.timeout(COMBOS_TIMEOUT_MS),
+      signal: AbortSignal.timeout(MODELS_ENRICH_TIMEOUT_MS),
     });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const body = (await res.json()) as {
@@ -196,6 +211,7 @@ async function enrichFromModels(baseUrl: string, combos: TenRouterCombo[]): Prom
       const out = positiveNumber(m.max_completion_tokens) ?? positiveNumber(m.capabilities?.maxOutput);
       if (win) c.gatewayWindow = win;
       if (out) c.maxOutput = out;
+      if (win || out) lastGateway.set(c.name, { win, out });
     }
   } catch (err) {
     log.warn('tenrouter', 'models-enrich-failed', {
@@ -230,8 +246,11 @@ function refreshCombos(cfg: TenRouterConfig): Promise<TenRouterCombo[] | undefin
       const body = (await res.json()) as { combos?: RawCombo[] };
       const combos = (body.combos ?? []).map(parseCombo).filter((c) => c.id && c.name);
       if (combos.length === 0) throw new Error('empty combo list');
-      await enrichFromModels(cfg.baseUrl, combos);
+      // carry last-known gateway windows now; refresh them in the background
+      // (/v1/models is slow) — never makes /model or a cold start wait.
+      applyLastGateway(combos);
       cache = { combos, fetchedAt: Date.now() };
+      void enrichFromModels(cfg.baseUrl, combos);
       log.info('tenrouter', 'combos-fetched', { count: combos.length });
       return combos;
     } catch (err) {
