@@ -221,7 +221,11 @@ describe('f0.3.4 context window: combo → provider → CLI settings.json', () =
     const { readFile } = await import('node:fs/promises');
     const tr = await readFile(new URL('../../../src/bot/tenrouter.ts', import.meta.url), 'utf8');
     const cw = await readFile(new URL('../../../src/bot/context-window.ts', import.meta.url), 'utf8');
-    expect(tr).not.toMatch(/fetchContextWindows|MODELS_TTL_MS|\$\{[^}]*\}\/v1\/models/);
+    expect(tr).not.toMatch(/fetchContextWindows|MODELS_TTL_MS/);
+    // 2026-11-24: one /v1/models read is allowed, only inside the background
+    // combo refresh (enrichFromModels → pi's gatewayWindow), never per message.
+    expect(tr.match(/\$\{[^}]*\}\/v1\/models/g) ?? []).toHaveLength(1);
+    expect(tr).toMatch(/async function enrichFromModels[\s\S]*\/v1\/models[\s\S]*function parseCombo/);
     expect(cw).not.toMatch(/fetchContextWindows|v1\/models'/);
   });
 });

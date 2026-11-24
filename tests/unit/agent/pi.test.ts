@@ -146,3 +146,41 @@ describe('pi models.json', () => {
     expect(text).not.toContain('sk-');
   });
 });
+
+describe('pi settings.json (compaction 70% + retry defaults)', () => {
+  it('writes per-model reserveTokens at 30% of each window and keeps owner keys', async () => {
+    const { mkdtempSync, readFileSync, writeFileSync } = await import('node:fs');
+    const { tmpdir } = await import('node:os');
+    const { join } = await import('node:path');
+    const { writePiSettings } = await import('../../../src/agent/pi/models-file');
+    const dir = mkdtempSync(join(tmpdir(), 'pi-settings-'));
+    writeFileSync(join(dir, 'settings.json'), JSON.stringify({
+      retry: { enabled: true, maxRetries: 9 },
+      theme: 'dark',
+      compaction: { keepRecentTokens: 30000, modelOverrides: { '10router/Gone': { reserveTokens: 1 }, 'other/x': { reserveTokens: 5 } } },
+    }));
+    writePiSettings(dir, [{ id: 'Big', contextWindow: 1_000_000 }, { id: 'Luna', contextWindow: 229370 }]);
+    const s = JSON.parse(readFileSync(join(dir, 'settings.json'), 'utf8'));
+    expect(s.theme).toBe('dark');
+    expect(s.retry).toEqual({ enabled: true, maxRetries: 9 });
+    expect(s.compaction.keepRecentTokens).toBe(30000);
+    expect(s.compaction.modelOverrides).toEqual({
+      'other/x': { reserveTokens: 5 },
+      '10router/Big': { reserveTokens: 300000 },
+      '10router/Luna': { reserveTokens: 68811 },
+    });
+  });
+
+  it('adds retry defaults when absent and never clobbers an unparseable file', async () => {
+    const { mkdtempSync, readFileSync, writeFileSync } = await import('node:fs');
+    const { tmpdir } = await import('node:os');
+    const { join } = await import('node:path');
+    const { writePiSettings, PI_RETRY_DEFAULTS } = await import('../../../src/agent/pi/models-file');
+    const dir = mkdtempSync(join(tmpdir(), 'pi-settings-'));
+    writePiSettings(dir, [{ id: 'A', contextWindow: 100_000 }]);
+    expect(JSON.parse(readFileSync(join(dir, 'settings.json'), 'utf8')).retry).toEqual(PI_RETRY_DEFAULTS);
+    writeFileSync(join(dir, 'settings.json'), '{oops');
+    writePiSettings(dir, [{ id: 'A', contextWindow: 100_000 }]);
+    expect(readFileSync(join(dir, 'settings.json'), 'utf8')).toBe('{oops');
+  });
+});

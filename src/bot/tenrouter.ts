@@ -24,6 +24,12 @@ export interface TenRouterCombo {
   models: string[];
   /** f0.3.4: context window, only when /api/combos carries one (it doesn't as of 2026-11-02). */
   contextWindow?: number;
+  /** pi only (2026-11-24): window the gateway's /v1/models reports for this
+   *  combo. Kept apart from contextWindow so Claude Code's window logic
+   *  (settings.json) is unchanged. */
+  gatewayWindow?: number;
+  /** pi only: max output tokens from /v1/models, when known. */
+  maxOutput?: number;
 }
 
 export interface TenRouterConfig {
@@ -153,6 +159,51 @@ type RawCombo = {
   capabilities?: { contextWindow?: unknown } | null;
 };
 
+/**
+ * /api/combos carries no context window, but the gateway's OpenAI-style
+ * /v1/models lists every combo by name with context_length and
+ * max_completion_tokens. Best effort: any failure leaves combos as they are.
+ * Without this pi fell back to its 128k default for every model (2026-11-24).
+ * Runs only inside the background combo refresh, never on the message path
+ * (the f0.3.4 latency rule).
+ */
+async function enrichFromModels(baseUrl: string, combos: TenRouterCombo[]): Promise<void> {
+  const key = (process.env.AIDU_10ROUTER_API_KEY ?? process.env.AIDUCAT_PI_API_KEY ?? '').trim();
+  if (!key) return;
+  try {
+    const res = await fetch(`${baseUrl}/v1/models`, {
+      headers: { Authorization: `Bearer ${key}` },
+      signal: AbortSignal.timeout(COMBOS_TIMEOUT_MS),
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const body = (await res.json()) as {
+      data?: Array<{
+        id?: unknown;
+        context_length?: unknown;
+        context_window?: unknown;
+        max_completion_tokens?: unknown;
+        capabilities?: { contextWindow?: unknown; maxOutput?: unknown } | null;
+      }>;
+    };
+    const byId = new Map((body.data ?? []).map((m) => [String(m.id ?? ''), m]));
+    for (const c of combos) {
+      const m = byId.get(c.name) ?? byId.get(c.id);
+      if (!m) continue;
+      const win =
+        positiveNumber(m.context_length) ??
+        positiveNumber(m.context_window) ??
+        positiveNumber(m.capabilities?.contextWindow);
+      const out = positiveNumber(m.max_completion_tokens) ?? positiveNumber(m.capabilities?.maxOutput);
+      if (win) c.gatewayWindow = win;
+      if (out) c.maxOutput = out;
+    }
+  } catch (err) {
+    log.warn('tenrouter', 'models-enrich-failed', {
+      err: err instanceof Error ? err.message : String(err),
+    });
+  }
+}
+
 function parseCombo(c: RawCombo): TenRouterCombo {
   const contextWindow =
     positiveNumber(c.contextWindow) ??
@@ -179,6 +230,7 @@ function refreshCombos(cfg: TenRouterConfig): Promise<TenRouterCombo[] | undefin
       const body = (await res.json()) as { combos?: RawCombo[] };
       const combos = (body.combos ?? []).map(parseCombo).filter((c) => c.id && c.name);
       if (combos.length === 0) throw new Error('empty combo list');
+      await enrichFromModels(cfg.baseUrl, combos);
       cache = { combos, fetchedAt: Date.now() };
       log.info('tenrouter', 'combos-fetched', { count: combos.length });
       return combos;

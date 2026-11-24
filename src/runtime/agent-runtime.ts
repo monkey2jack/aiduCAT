@@ -91,7 +91,7 @@ export async function createRuntimeAgent(
   }
   if (profileConfig.agentKind === 'pi') {
     const { PiAdapter } = await import('../agent/pi/adapter');
-    const { writePiModelsFile, PI_PROVIDER_ID } = await import('../agent/pi/models-file');
+    const { writePiModelsFile, writePiSettings, PI_PROVIDER_ID, PI_DEFAULT_CONTEXT_WINDOW } = await import('../agent/pi/models-file');
     const { cachedCombos, resolveTenRouterConfig } = await import('../bot/tenrouter');
     const pi = profileConfig.pi;
     const agentDir = join(appPaths.profileDir, 'pi-agent');
@@ -121,13 +121,18 @@ export async function createRuntimeAgent(
     const refreshCatalog = (): string[] | undefined => {
       const combos = cachedCombos() ?? [];
       if (!baseUrl || combos.length === 0) return undefined;
+      const models = combos.map((c) => ({
+        id: c.name,
+        // gateway-reported window; unknown → 1M (Wei 2026-11-24), never
+        // pi's silent 128k default
+        contextWindow: c.contextWindow ?? c.gatewayWindow ?? PI_DEFAULT_CONTEXT_WINDOW,
+        ...(c.maxOutput ? { maxTokens: Math.min(c.maxOutput, 32000) } : {}),
+      }));
       writePiModelsFile(agentDir, {
         baseUrl: `${baseUrl.replace(/\/+$/, '')}/v1`,
-        models: combos.map((c) => ({
-          id: c.name,
-          ...(c.contextWindow ? { contextWindow: c.contextWindow } : {}),
-        })),
+        models,
       });
+      writePiSettings(agentDir, models);
       return combos.map((c) => c.name);
     };
     refreshCatalog();
