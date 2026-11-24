@@ -27,6 +27,7 @@ aiduCAT 的版本号用 `f` 前缀（f0.1、f0.2+ …），`package.json` 里是
 - **pi 用上模型的真实上下文窗口**：以前 models.json 不写窗口，pi 一律按 128K 算、过早压缩。现在后台从网关 `/v1/models` 读每个 combo 的窗口和最大输出（只给 pi 用，Claude Code 的窗口逻辑不变；这个接口要 5–10 秒，所以放后台、有上次成功的缓存，不拖慢 `/model` 和冷启动），读不到按 1M。（`d9d043b` `fae9252`）
 - **pi 到 70% 自动压缩**（Wei 11-24）：aiduCAT 往 pi 的 settings.json 合并写 `compaction.modelOverrides["10router/<模型>"].reserveTokens` = 窗口的 30%；settings.json 没有 retry 时补默认（6 次、5 秒起、最长 60 秒）。只改自己管的键，主人写的其它设置保留，读不出的文件不碰。（`d9d043b`）
 - **pi 能看图**：网关标为支持视觉的 combo 在 models.json 里声明 `input: ["text","image"]`，pi 的读文件工具就会把图片交给模型，而不是拒收。（`a599e89`）
+- **clarify 选完保留整张卡**（Wei 11-25）：以前在 clarify 下拉框里选完，整张卡被替换成两行回执，前面的回答和面板都不见了（Claude Code / pi 都这样）。现在 aiduCAT 记住以 clarify 结尾的终卡（落盘、重启不丢，最多 30 张、14 天），选完只把下拉框换成「✅ 已选」，其余原样保留；找不到旧卡时才退回两行回执。（`7ff366c`）
 
 ## f0.6 — 2026-11-19（package 0.6.0）
 
