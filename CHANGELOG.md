@@ -20,6 +20,14 @@ aiduCAT 的版本号用 `f` 前缀（f0.1、f0.2+ …），`package.json` 里是
 - **顺手修复**：`src/session/catalog.ts` 的 `normalizeEntry` 白名单补上 `opencode`/`openchamber`（原先缺失会让这两类会话条目 normalize 失败）及 `pi`。
 - **测试**：新增 `tests/unit/agent/pi.test.ts` 7 项（事件翻译 + models.json 渲染）；全套 1388+7 通过（仅 2 个 opencode live 集成测试因本机无 opencode 二进制失败，与基线一致）。summer 实测：prompt 出字、steer 插话、abort 停止、动态换模型（GLM-5.3-Flash ↔ Gemini-3.8-Flash）、会话续接全链路通过。
 
+### f0.6+ 之后的修复
+
+- **pi 卡住自愈与插话收尾**：子进程卡在忙碌状态会自动回收重启（`dc7bf37`）；插话标记不再等 pi 的 `queue_update` 回声就显示，被插话的卡正常收尾为「↪️Steered」（`87270a3` `f5915e0`）；单轮硬上限从 10 分钟放到 60 分钟（`27e5edf`）。
+- **上游繁忙不再直接断卡**（嘟嘟 11-24 卡片频繁报错）：pi 遇到 429/断连会自己重试，aiduCAT 以前却在第一次出错就判本轮失败。现在出错先扣住，等 pi 真正收尾再定：重试成功照常出答案，卡片显示「上游繁忙，n 秒后重试 i/N」；重试用尽才报错，并带上最终错误；重试中 `/stop` 正常停止。每次启动 pi 前按最新 combo 重写 models.json，缺模型时回收空闲子进程；换模型失败显示在卡片上；旧子进程退出不再误删新进程。（`d442a23`）
+- **pi 用上模型的真实上下文窗口**：以前 models.json 不写窗口，pi 一律按 128K 算、过早压缩。现在后台从网关 `/v1/models` 读每个 combo 的窗口和最大输出（只给 pi 用，Claude Code 的窗口逻辑不变；这个接口要 5–10 秒，所以放后台、有上次成功的缓存，不拖慢 `/model` 和冷启动），读不到按 1M。（`d9d043b` `fae9252`）
+- **pi 到 70% 自动压缩**（Wei 11-24）：aiduCAT 往 pi 的 settings.json 合并写 `compaction.modelOverrides["10router/<模型>"].reserveTokens` = 窗口的 30%；settings.json 没有 retry 时补默认（6 次、5 秒起、最长 60 秒）。只改自己管的键，主人写的其它设置保留，读不出的文件不碰。（`d9d043b`）
+- **pi 能看图**：网关标为支持视觉的 combo 在 models.json 里声明 `input: ["text","image"]`，pi 的读文件工具就会把图片交给模型，而不是拒收。（`a599e89`）
+
 ## f0.6 — 2026-11-19（package 0.6.0）
 
 基于 f0.5++（`a00e2a4`）。主题：**第五种 agent，全面适配 OpenCode / OpenChamber**——aiduCAT 正式支持 OpenCode，与 Claude Code / Codex / Hermes / DSH 并列五大编程 Agent；深度适配 OpenChamber 桌面端生态，实现真正的单会话纯净清空与轻量高效编码。
